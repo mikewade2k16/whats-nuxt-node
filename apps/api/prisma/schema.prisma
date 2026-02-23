@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+}
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Tenant {
+  id               String         @id @default(cuid())
+  slug             String         @unique
+  name             String
+  whatsappInstance String?
+  evolutionApiKey  String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  users            User[]
+  conversations    Conversation[]
+  messages         Message[]
+}
+
+model User {
+  id           String         @id @default(cuid())
+  tenantId     String
+  email        String
+  name         String
+  passwordHash String
+  role         UserRole       @default(AGENT)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments  Conversation[] @relation("ConversationAssignee")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  tenantId      String
+  assignedToId  String?
+  channel       ChannelType
+  externalId    String
+  contactName   String?
+  contactAvatarUrl String?
+  contactPhone  String?
+  status        ConversationStatus @default(OPEN)
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages      Message[]
+
+  @@unique([tenantId, externalId, channel])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([assignedToId])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  direction         MessageDirection
+  senderName        String?
+  senderAvatarUrl   String?
+  content           String
+  externalMessageId String?
+  status            MessageStatus    @default(PENDING)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId, createdAt])
+}
