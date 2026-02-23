@@ -13,11 +13,12 @@ Montar um fluxo omnichannel com separacao clara entre:
 ## Componentes
 
 1. `web` (Nuxt 4 + Nuxt UI)
-2. `api` (Fastify + Prisma + JWT + Socket.IO)
-3. `worker` (BullMQ para envio outbound)
-4. `postgres` (dados transacionais)
-5. `redis` (fila e pub/sub realtime)
-6. `evolution` (conector WhatsApp nao oficial; profile opcional)
+2. `web-bff` (rotas server do Nuxt para proxy HTTP `/api/bff/*`)
+3. `api` (Fastify + Prisma + JWT + Socket.IO)
+4. `worker` (BullMQ para envio outbound)
+5. `postgres` (dados transacionais)
+6. `redis` (fila e pub/sub realtime)
+7. `evolution` (conector WhatsApp nao oficial; profile opcional)
 
 ## Fluxo de entrada (inbound)
 
@@ -31,11 +32,13 @@ Montar um fluxo omnichannel com separacao clara entre:
 ## Fluxo de saida (outbound)
 
 1. Agente envia mensagem pela Inbox no Nuxt.
-2. API grava mensagem com status `PENDING`.
-3. API enfileira job no BullMQ.
-4. Worker consome fila, chama endpoint de envio da Evolution.
-5. Worker atualiza status para `SENT` ou `FAILED`.
-6. Worker publica evento para atualizar UI em tempo real.
+2. Front chama BFF local (`/api/bff/conversations/...`).
+3. BFF encaminha request para API Node.
+4. API grava mensagem com status `PENDING`.
+5. API enfileira job no BullMQ.
+6. Worker consome fila, chama endpoint de envio da Evolution.
+7. Worker atualiza status para `SENT` ou `FAILED`.
+8. Worker publica evento para atualizar UI em tempo real.
 
 ## Multi-tenant
 
@@ -64,5 +67,9 @@ Montar um fluxo omnichannel com separacao clara entre:
 6. Cliente Evolution: `apps/api/src/services/evolution-client.ts`
 7. Worker outbound: `apps/api/src/workers/outbound-worker.ts`
 8. Modulo Inbox front: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-9. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-10. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
+9. Estado e dominio da Inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+10. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+11. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
+12. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
+13. Cliente HTTP front: `apps/web/composables/useApi.ts`
+14. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`

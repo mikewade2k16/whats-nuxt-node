@@ -9,7 +9,9 @@ Padronizar a interface do MVP com Nuxt UI e classes semanticas, mantendo evoluca
 1. Nuxt 4
 2. Nuxt UI (v4+)
 3. Tailwind (via Nuxt UI)
-4. Tokens CSS customizados
+4. Pinia (`@pinia/nuxt`) para estado de sessao
+5. BFF Nuxt (`/api/bff/*`) para proxy HTTP ao backend
+6. Tokens CSS customizados
 
 Observacao:
 - Componentes `UDashboardGroup`, `UDashboardPanel` e `UDashboardSidebar` exigem `@nuxt/ui` v4 ou superior.
@@ -19,12 +21,21 @@ Observacao:
 1. Entrada de estilos globais: `apps/web/assets/css/main.css`
 2. Tokens e estilos globais: `apps/web/assets/css/tokens.css`
 3. Tema Nuxt UI global: `apps/web/app.config.ts`
-4. Modulo Inbox: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-5. Modulo Admin canal WhatsApp: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-6. Wrappers de rota:
+4. Orquestrador da Inbox: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+5. Sidebar de conversas da Inbox: `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+6. Painel central de chat da Inbox: `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
+7. Sidebar de detalhes da Inbox: `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+8. Tipos compartilhados da Inbox: `apps/web/components/omnichannel/inbox/types.ts`
+9. Composable da Inbox (estado/socket/paginacao): `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+10. Modulo Admin canal WhatsApp: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+11. Wrappers de rota:
 - `apps/web/pages/index.vue`
 - `apps/web/pages/admin.vue`
-7. Login: `apps/web/pages/login.vue`
+12. Login: `apps/web/pages/login.vue`
+13. Store de autenticacao: `apps/web/stores/auth.ts`
+14. Composable de auth: `apps/web/composables/useAuth.ts`
+15. Cliente HTTP do front: `apps/web/composables/useApi.ts`
+16. Proxy BFF: `apps/web/server/api/bff/[...path].ts`
 
 ## Convencao de classes
 
@@ -37,6 +48,15 @@ Observacao:
 1. Todo componente usado no template deve ter import explicito no `<script setup>`.
 2. Componentes do Nuxt UI devem ser importados de `#components`.
 3. Nao depender de auto-import para componentes de tela/modulo (`pages` e `components/omnichannel`).
+
+## Estado e seguranca no front
+
+1. Estado de sessao (token/user/hydration) deve viver em Pinia: `apps/web/stores/auth.ts`.
+2. O composable `useAuth` e a unica API de acesso ao estado de sessao para componentes/paginas.
+3. Chamadas HTTP do front devem passar por `useApi`.
+4. `useApi` chama somente o BFF local (`/api/bff/*`) e nao chama backend externo diretamente.
+5. O BFF encaminha para `NUXT_API_INTERNAL_BASE` e preserva cabecalho `Authorization`.
+6. `NUXT_PUBLIC_API_BASE` fica reservado para WebSocket/realtime no browser.
 
 ## Componentes Nuxt UI usados
 
@@ -74,9 +94,34 @@ Observacao:
 3. Coluna esquerda e direita sao colapsaveis e redimensionaveis com `UDashboardSidebar` (min/default/max/collapsed).
 4. Coluna central usa `UDashboardPanel` e cresce automaticamente quando sidebars colapsam.
 
+## Arquitetura modular da inbox
+
+1. `OmnichannelInboxModule.vue` atua como container de composicao (wiring de componentes e binds).
+2. `InboxConversationsSidebar.vue` renderiza filtros e lista de conversas.
+3. `InboxChatPanel.vue` renderiza header de conversa, historico, marcador de nao lidas e composer.
+4. `InboxDetailsSidebar.vue` renderiza contato, status, responsavel e notas internas.
+5. `inbox/types.ts` concentra contratos de item de select e itens renderizados do historico.
+6. `useOmnichannelInbox.ts` concentra estado, chamadas de API, socket, leitura/nao lidas, scroll e paginacao.
+7. Toda comunicacao entre componentes filhos e orquestrador deve ocorrer via `props` e `emit` tipados.
+
+## Contratos dos componentes da inbox
+
+1. `InboxConversationsSidebar.vue`
+- Props: colapso, filtros, loading de lista, conversas filtradas, conversa ativa, ids nao lidos, itens de select.
+- Emits: `update:collapsed`, `update:showFilters`, `update:search`, `update:channel`, `update:status`, `selectConversation`, `logout`.
+2. `InboxChatPanel.vue`
+- Props: conversa ativa, label da conversa, role do usuario, loading de mensagens, itens renderizados do historico, estado do composer e reply.
+- Emits: `body-mounted`, `chat-scroll`, `send`, `close-conversation`, `set-reply`, `clear-reply`, `update:draft`.
+3. `InboxDetailsSidebar.vue`
+- Props: colapso, conversa ativa, label, itens de status/assignee, estado de loading/update, notas internas.
+- Emits: `update:collapsed`, `update:internalNotes`, `update:assigneeModel`, `update-status`, `update-assignee`.
+
 ## Comportamento de chat implementado no modulo inbox
 
-Arquivo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+Arquivos:
+1. `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+2. `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+3. `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
 
 1. Carregamento inicial traz sempre bloco mais recente de mensagens.
 2. Scroll para cima carrega historico com paginacao (`beforeId`) sem perder posicao de scroll.
@@ -86,6 +131,21 @@ Arquivo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
 6. Data fixa no topo durante scroll da conversa.
 7. Destaque visual de mencoes (`@usuario`/`@numero`) no corpo da mensagem.
 
+## Fluxo de refactor sem perda de codigo
+
+1. Criar componente novo sem apagar o bloco original.
+2. Copiar somente uma secao por vez (esquerda, centro, direita).
+3. Ligar o novo componente no orquestrador e validar build antes do proximo bloco.
+4. Somente remover markup antigo depois que o novo bloco estiver funcional.
+5. Registrar no documento:
+- arquivo criado/alterado
+- props e emits adicionados
+- dependencias de componente Nuxt UI usadas
+6. Sempre manter import explicito de todo componente utilizado no template.
+7. Ao finalizar, rodar:
+- `docker compose exec web npm run build`
+- `docker compose restart web` (se necessario)
+
 ## Ajustes rapidos comuns
 
 1. Trocar visual global:
@@ -93,14 +153,22 @@ Arquivo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
 - edite overrides do Nuxt UI em `apps/web/app.config.ts`
 
 2. Alterar layout da inbox:
-- edite blocos `chat-page__*` em `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+- estrutura e fluxo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+- coluna esquerda: `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+- coluna central: `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
+- coluna direita: `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
 
-3. Alterar fluxo de conexao WhatsApp no admin:
+3. Alterar regras de estado/socket/paginacao da inbox:
+- `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+
+4. Alterar fluxo de conexao WhatsApp no admin:
 - edite `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
 
-4. Alterar endpoint consumido no front:
+5. Alterar endpoint consumido no front:
 - `apps/web/composables/useApi.ts`
-- base URL em `NUXT_PUBLIC_API_BASE`
+- proxy server em `apps/web/server/api/bff/[...path].ts`
+- backend interno em `NUXT_API_INTERNAL_BASE`
+- realtime/browser em `NUXT_PUBLIC_API_BASE`
 
 ## Diretriz para modulo plugavel
 
@@ -108,5 +176,5 @@ Para plugar este front em outro projeto no futuro:
 
 1. Isolar a inbox e admin em componentes de dominio dentro de `apps/web/components/omnichannel/`.
 2. Manter contratos HTTP no `useApi.ts` e tipos em `apps/web/types/index.ts`.
-3. Exportar configuracao por variaveis (`NUXT_PUBLIC_API_BASE`, tema via tokens).
-4. Evitar dependencia de estado global fora de `useAuth` e composables de dominio.
+3. Exportar configuracao por variaveis (`NUXT_PUBLIC_API_BASE`, `NUXT_API_INTERNAL_BASE`, tema via tokens).
+4. Evitar dependencia de estado global fora de stores Pinia e composables de dominio.

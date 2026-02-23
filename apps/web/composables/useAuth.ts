@@ -1,46 +1,19 @@
-import type { AuthUser } from "~/types";
-
-const TOKEN_KEY = "omni:token";
-const USER_KEY = "omni:user";
+import { storeToRefs } from "pinia";
+import { useAuthStore } from "~/stores/auth";
 
 export function useAuth() {
-  const token = useState<string | null>("auth:token", () => null);
-  const user = useState<AuthUser | null>("auth:user", () => null);
-  const hydrated = useState<boolean>("auth:hydrated", () => false);
+  const store = useAuthStore();
+  store.hydrate();
 
-  if (import.meta.client && !hydrated.value) {
-    token.value = localStorage.getItem(TOKEN_KEY);
-    const rawUser = localStorage.getItem(USER_KEY);
-    user.value = rawUser ? (JSON.parse(rawUser) as AuthUser) : null;
-    hydrated.value = true;
-  }
-
-  const isAuthenticated = computed(() => Boolean(token.value && user.value));
-
-  function setSession(nextToken: string, nextUser: AuthUser) {
-    token.value = nextToken;
-    user.value = nextUser;
-    if (import.meta.client) {
-      localStorage.setItem(TOKEN_KEY, nextToken);
-      localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-    }
-  }
-
-  function clearSession() {
-    token.value = null;
-    user.value = null;
-    if (import.meta.client) {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-    }
-  }
+  const { token, user, hydrated, isAuthenticated } = storeToRefs(store);
 
   return {
     token,
     user,
+    hydrated,
     isAuthenticated,
-    setSession,
-    clearSession
+    hydrate: store.hydrate,
+    setSession: store.setSession,
+    clearSession: store.clearSession
   };
 }
-

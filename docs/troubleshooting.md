@@ -24,8 +24,41 @@
 3. Se houve upgrade de dependencia:
    - rebuild do front (`docker compose exec web npm run build`)
    - restart do container (`docker compose restart web`)
+4. Conferir configuracao do BFF:
+   - `NUXT_API_INTERNAL_BASE` precisa apontar para a API acessivel pelo container `web` (ex.: `http://api:4000`).
+   - `NUXT_PUBLIC_API_BASE` e usado no browser para realtime/socket (ex.: `http://localhost:4000`).
+
+## Fluxo seguro para refactor de tela (evitar perda de codigo)
+
+1. Nunca apagar o arquivo de tela inteiro para refazer.
+2. Extrair um bloco por vez para componente novo.
+3. Conectar o componente novo no arquivo pai antes de remover o bloco antigo.
+4. Validar compatibilidade de versao primeiro quando aparecer erro de runtime de componente.
+5. Validar imports explicitos de todos componentes usados no template.
+6. Rodar build do front a cada etapa de extracao:
+   - `docker compose exec web npm run build`
+7. Registrar no documento:
+   - arquivo novo
+   - props/emits
+   - pontos de extensao e rotas impactadas
 
 ## Problemas comuns e correcao
+
+## 0) Front sem dados apos migracao para BFF
+
+Causa comum:
+
+1. `NUXT_API_INTERNAL_BASE` ausente ou apontando para host errado.
+2. Container `web` nao consegue resolver host da API.
+
+Correcao:
+
+1. Ajustar `.env`:
+   - `NUXT_API_INTERNAL_BASE=http://api:4000`
+2. Rebuild/restart do web:
+   - `docker compose up -d --build web`
+3. Testar proxy direto:
+   - `http://localhost:3000/api/bff/health`
 
 ## 1) Login falha com "Credenciais invalidas"
 
@@ -177,7 +210,7 @@ Causa comum:
 Correcao:
 
 1. Validar uso de paginacao no front:
-   - arquivo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+   - arquivo: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
 2. Validar contrato da API:
    - `GET /conversations/:conversationId/messages?limit=...&beforeId=...`
    - retorno com `hasMore`
@@ -218,5 +251,10 @@ Invoke-RestMethod -Method Post `
 4. Erro de envio outbound: `apps/api/src/workers/outbound-worker.ts`
 5. Erro webhook inbound: `apps/api/src/routes/webhooks.ts`
 6. Erro realtime: `apps/api/src/event-bus.ts` e `apps/api/src/main.ts`
-7. Erro de UI inbox: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-8. Erro de UI admin: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+7. Erro de UI inbox (container): `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+8. Erro de dominio inbox (estado/socket/paginacao): `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+9. Erro de UI inbox (sidebar conversas): `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+10. Erro de UI inbox (chat): `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
+11. Erro de UI inbox (detalhes): `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+12. Tipos inbox: `apps/web/components/omnichannel/inbox/types.ts`
+13. Erro de UI admin: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`

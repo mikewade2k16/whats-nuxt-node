@@ -1,5 +1,9 @@
 export default defineNuxtRouteMiddleware((to) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, hydrate } = useAuth();
+
+  if (import.meta.client) {
+    hydrate();
+  }
 
   if (to.path === "/login") {
     if (isAuthenticated.value) {
@@ -12,4 +16,3 @@ export default defineNuxtRouteMiddleware((to) => {
     return navigateTo("/login");
   }
 });
-
