@@ -13,6 +13,21 @@ Padronizar a interface do MVP com Nuxt UI e classes semanticas, mantendo evoluca
 5. BFF Nuxt (`/api/bff/*`) para proxy HTTP ao backend
 6. Tokens CSS customizados
 
+## Testes de composable
+
+1. Configuracao de testes:
+- `apps/web/vitest.config.ts`
+- `apps/web/tests/setup.ts`
+2. Testes atuais:
+- `apps/web/tests/composables/useOmnichannelInbox.spec.ts`
+- `apps/web/tests/composables/useOmnichannelAdmin.spec.ts`
+3. Scripts:
+- `npm run test` (suite completa em modo run)
+- `npm run test:watch` (modo observacao durante desenvolvimento)
+- `npm run test:composables` (apenas testes dos composables)
+4. Em Docker:
+- `docker compose exec web npm run test:composables`
+
 Observacao:
 - Componentes `UDashboardGroup`, `UDashboardPanel` e `UDashboardSidebar` exigem `@nuxt/ui` v4 ou superior.
 
@@ -28,14 +43,15 @@ Observacao:
 8. Tipos compartilhados da Inbox: `apps/web/components/omnichannel/inbox/types.ts`
 9. Composable da Inbox (estado/socket/paginacao): `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
 10. Modulo Admin canal WhatsApp: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-11. Wrappers de rota:
+11. Composable Admin (estado/polling/acoes): `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+12. Wrappers de rota:
 - `apps/web/pages/index.vue`
 - `apps/web/pages/admin.vue`
-12. Login: `apps/web/pages/login.vue`
-13. Store de autenticacao: `apps/web/stores/auth.ts`
-14. Composable de auth: `apps/web/composables/useAuth.ts`
-15. Cliente HTTP do front: `apps/web/composables/useApi.ts`
-16. Proxy BFF: `apps/web/server/api/bff/[...path].ts`
+13. Login: `apps/web/pages/login.vue`
+14. Store de autenticacao: `apps/web/stores/auth.ts`
+15. Composable de auth: `apps/web/composables/useAuth.ts`
+16. Cliente HTTP do front: `apps/web/composables/useApi.ts`
+17. Proxy BFF: `apps/web/server/api/bff/[...path].ts`
 
 ## Convencao de classes
 
@@ -104,6 +120,12 @@ Observacao:
 6. `useOmnichannelInbox.ts` concentra estado, chamadas de API, socket, leitura/nao lidas, scroll e paginacao.
 7. Toda comunicacao entre componentes filhos e orquestrador deve ocorrer via `props` e `emit` tipados.
 
+## Arquitetura modular do admin
+
+1. `OmnichannelAdminModule.vue` atua como container de composicao da tela admin.
+2. `useOmnichannelAdmin.ts` concentra estado da tela, polling de QR, chamadas da API e regras de permissao.
+3. Template deve consumir somente estado/metodos retornados pelo composable.
+
 ## Contratos dos componentes da inbox
 
 1. `InboxConversationsSidebar.vue`
@@ -163,6 +185,7 @@ Arquivos:
 
 4. Alterar fluxo de conexao WhatsApp no admin:
 - edite `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+- regras/estado/polling em `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
 
 5. Alterar endpoint consumido no front:
 - `apps/web/composables/useApi.ts`

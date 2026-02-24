@@ -21,6 +21,7 @@ Entregar uma plataforma multi-tenant de atendimento para:
 6. Se precisa planejar evolucao de banco/escala: leia `docs/data-model-target.md`.
 7. Se precisa ajustar UI/front: leia `docs/frontend-ui.md`.
 8. Se precisa acompanhar evolucao para paridade WhatsApp Web: leia `docs/roadmap-whatsapp-parity.md`.
+9. Se precisa rodar testes de composable/front: use scripts em `apps/web/package.json` e veja a secao de testes em `docs/frontend-ui.md`.
 
 ## Mapa rapido de codigo
 

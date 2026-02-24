@@ -257,4 +257,5 @@ Invoke-RestMethod -Method Post `
 10. Erro de UI inbox (chat): `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
 11. Erro de UI inbox (detalhes): `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
 12. Tipos inbox: `apps/web/components/omnichannel/inbox/types.ts`
-13. Erro de UI admin: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+13. Erro de UI admin (container): `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+14. Erro de dominio admin (estado/polling): `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`

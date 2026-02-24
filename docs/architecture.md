@@ -69,7 +69,8 @@ Montar um fluxo omnichannel com separacao clara entre:
 8. Modulo Inbox front: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
 9. Estado e dominio da Inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
 10. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-11. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
-12. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
-13. Cliente HTTP front: `apps/web/composables/useApi.ts`
-14. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`
+11. Estado e dominio do Admin: `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+12. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
+13. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
+14. Cliente HTTP front: `apps/web/composables/useApi.ts`
+15. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`
