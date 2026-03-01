@@ -17,6 +17,7 @@ interface EvolutionClientConfig {
 type EvolutionRequestOptions = {
   params?: Record<string, unknown>;
   data?: Record<string, unknown>;
+  timeoutMs?: number;
 };
 
 export class EvolutionApiError extends Error {
@@ -33,6 +34,22 @@ export class EvolutionApiError extends Error {
 
 function removeTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function resolvePathTemplate(template: string, instanceName: string) {
+  const normalizedTemplate = template.trim();
+  if (!normalizedTemplate) {
+    throw new EvolutionApiError("Path da Evolution API nao configurado", 500, {
+      template
+    });
+  }
+
+  const encodedInstance = encodeURIComponent(instanceName);
+  const resolved = normalizedTemplate.includes(":instance")
+    ? normalizedTemplate.replace(":instance", encodedInstance)
+    : normalizedTemplate;
+
+  return resolved.startsWith("/") ? resolved : `/${resolved}`;
 }
 
 export class EvolutionClient {
@@ -58,7 +75,7 @@ export class EvolutionClient {
         headers: {
           apikey: this.apiKey
         },
-        timeout: 30_000
+        timeout: options.timeoutMs ?? 30_000
       });
       return response.data;
     } catch (error) {
@@ -116,6 +133,13 @@ export class EvolutionClient {
     );
   }
 
+  logoutInstance(instanceName: string) {
+    return this.request<Record<string, unknown>>(
+      "DELETE",
+      `/instance/logout/${encodeURIComponent(instanceName)}`
+    );
+  }
+
   setWebhook(params: {
     instanceName: string;
     webhookUrl: string;
@@ -170,6 +194,16 @@ export class EvolutionClient {
     );
   }
 
+  findContacts(instanceName: string, query: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown> | Array<Record<string, unknown>>>(
+      "POST",
+      `/chat/findContacts/${encodeURIComponent(instanceName)}`,
+      {
+        data: query
+      }
+    );
+  }
+
   fetchProfilePictureUrl(instanceName: string, number: string) {
     return this.request<Record<string, unknown>>(
       "POST",
@@ -180,5 +214,29 @@ export class EvolutionClient {
         }
       }
     );
+  }
+
+  getBase64FromMediaMessage(instanceName: string, payload: Record<string, unknown>, timeoutMs?: number) {
+    return this.request<Record<string, unknown>>(
+      "POST",
+      `/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`,
+      {
+        data: payload,
+        timeoutMs
+      }
+    );
+  }
+
+  sendReaction(params: {
+    instanceName: string;
+    pathTemplate: string;
+    payload: Record<string, unknown>;
+    timeoutMs?: number;
+  }) {
+    const path = resolvePathTemplate(params.pathTemplate, params.instanceName);
+    return this.request<Record<string, unknown>>("POST", path, {
+      data: params.payload,
+      timeoutMs: params.timeoutMs
+    });
   }
 }

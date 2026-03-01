@@ -10,16 +10,22 @@ import {
   USelect
 } from "#components";
 import { computed } from "vue";
-import type { Conversation } from "~/types";
+import type { Conversation, MessageType } from "~/types";
 import type { InboxSelectOption } from "./types";
 
 const props = defineProps<{
   collapsed: boolean;
   showFilters: boolean;
   loadingConversations: boolean;
+  loadingWhatsAppStatus: boolean;
+  whatsappBannerMessage: string;
+  isWhatsAppConnected: boolean;
+  currentUserName: string | null;
   conversations: Conversation[];
   activeConversationId: string | null;
   unreadConversationIds: string[];
+  mentionConversationIds: string[];
+  mentionConversationCounts: Record<string, number>;
   search: string;
   channel: string;
   status: string;
@@ -34,6 +40,7 @@ const emit = defineEmits<{
   (event: "update:channel", value: string): void;
   (event: "update:status", value: string): void;
   (event: "selectConversation", conversationId: string): void;
+  (event: "open-sandbox-test"): void;
   (event: "logout"): void;
 }>();
 
@@ -63,9 +70,90 @@ const statusModel = computed({
 });
 
 const unreadSet = computed(() => new Set(props.unreadConversationIds));
+const mentionSet = computed(() => new Set(props.mentionConversationIds));
+const mentionCountMap = computed(() => props.mentionConversationCounts ?? {});
+const MEDIA_PLACEHOLDER_VALUES = new Set(["[imagem]", "[audio]", "[video]", "[documento]", "."]);
+
+function normalizeNameForComparison(value: string | null | undefined) {
+  return (
+    value
+      ?.normalize("NFKD")
+      .replace(/[^\w\s]/g, "")
+      .trim()
+      .toLowerCase() ?? ""
+  );
+}
+
+function isWeakDisplayName(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return true;
+  }
+
+  if (
+    normalized.endsWith("@s.whatsapp.net") ||
+    normalized.endsWith("@g.us") ||
+    normalized.endsWith("@lid")
+  ) {
+    return true;
+  }
+
+  const digits = normalized.replace(/\D/g, "");
+  return digits.length >= 7;
+}
+
+function isLikelyOperatorName(value: string | null | undefined) {
+  const normalized = normalizeNameForComparison(value);
+  if (!normalized) {
+    return false;
+  }
+
+  const currentUser = normalizeNameForComparison(props.currentUserName);
+  if (currentUser && normalized === currentUser) {
+    return true;
+  }
+
+  return ["voce", "você", "atendente", "agent", "admin demo", "operador"].includes(normalized);
+}
+
+function isGroupConversation(conversationEntry: Conversation) {
+  return conversationEntry.externalId.endsWith("@g.us");
+}
+
+function extractExternalPhone(conversationEntry: Conversation) {
+  const fromContact = conversationEntry.contactPhone?.trim() ?? "";
+  if (fromContact) {
+    return fromContact;
+  }
+
+  const digits = conversationEntry.externalId.replace(/\D/g, "");
+  return digits || conversationEntry.externalId;
+}
+
+function buildFallbackGroupName(conversationEntry: Conversation) {
+  const digits = conversationEntry.externalId.replace(/\D/g, "");
+  if (!digits) {
+    return "Grupo";
+  }
+
+  return `Grupo ${digits.slice(-4)}`;
+}
 
 function getConversationName(conversationEntry: Conversation) {
-  return conversationEntry.contactName || conversationEntry.contactPhone || conversationEntry.externalId;
+  const contactName = conversationEntry.contactName?.trim() ?? "";
+  if (isGroupConversation(conversationEntry)) {
+    if (contactName && !isWeakDisplayName(contactName)) {
+      return contactName;
+    }
+
+    return buildFallbackGroupName(conversationEntry);
+  }
+
+  if (contactName && !isLikelyOperatorName(contactName)) {
+    return contactName;
+  }
+
+  return extractExternalPhone(conversationEntry);
 }
 
 function getInitials(value: string | null | undefined) {
@@ -135,6 +223,68 @@ function getStatusColor(statusValue: Conversation["status"]) {
 function isConversationUnread(conversationId: string) {
   return unreadSet.value.has(conversationId);
 }
+
+function hasMentionAlert(conversationId: string) {
+  return mentionSet.value.has(conversationId);
+}
+
+function getMentionCount(conversationId: string) {
+  const rawCount = mentionCountMap.value?.[conversationId] ?? 0;
+  if (!Number.isFinite(rawCount)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(rawCount));
+}
+
+function getMessageTypeLabel(type: MessageType | null | undefined) {
+  if (type === "IMAGE") {
+    return "Foto";
+  }
+
+  if (type === "AUDIO") {
+    return "Audio";
+  }
+
+  if (type === "VIDEO") {
+    return "Video";
+  }
+
+  if (type === "DOCUMENT") {
+    return "Documento";
+  }
+
+  return "Mensagem";
+}
+
+function isMediaPlaceholder(value: string | null | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return MEDIA_PLACEHOLDER_VALUES.has(normalized);
+}
+
+function getConversationPreview(conversationEntry: Conversation) {
+  const lastMessage = conversationEntry.lastMessage;
+  if (!lastMessage) {
+    return "Sem mensagens ainda.";
+  }
+
+  const type = lastMessage.messageType ?? "TEXT";
+  const content = lastMessage.content?.trim() ?? "";
+
+  if (type === "TEXT") {
+    return content || "Sem mensagens ainda.";
+  }
+
+  if (content && !isMediaPlaceholder(content)) {
+    return content;
+  }
+
+  return `[${getMessageTypeLabel(type)}]`;
+}
 </script>
 
 <template>
@@ -167,6 +317,12 @@ function isConversationUnread(conversationId: string) {
           >
             Filtros
           </UButton>
+          <UButton v-if="!collapsedModel" to="/docs" size="sm" color="neutral" variant="ghost">
+            Docs
+          </UButton>
+          <UButton v-if="!collapsedModel" size="sm" color="neutral" variant="ghost" @click="emit('open-sandbox-test')">
+            Teste
+          </UButton>
           <UButton v-if="!collapsedModel" size="sm" color="neutral" variant="outline" @click="emit('logout')">
             Sair
           </UButton>
@@ -176,6 +332,17 @@ function isConversationUnread(conversationId: string) {
     </template>
 
     <div class="chat-page__sidebar-content">
+      <div
+        v-if="!collapsedModel && !loadingWhatsAppStatus && whatsappBannerMessage"
+        class="chat-page__channel-banner"
+        :class="{
+          'chat-page__channel-banner--connected': isWhatsAppConnected,
+          'chat-page__channel-banner--disconnected': !isWhatsAppConnected
+        }"
+      >
+        {{ whatsappBannerMessage }}
+      </div>
+
       <div v-if="showFiltersModel && !collapsedModel" class="chat-page__filters">
         <UFormField label="Busca" name="search">
           <UInput v-model="searchModel" icon="i-lucide-search" placeholder="Buscar por nome, telefone ou mensagem" />
@@ -225,13 +392,16 @@ function isConversationUnread(conversationId: string) {
                   <UBadge v-if="isConversationUnread(conversationEntry.id)" color="warning" variant="soft" size="sm">
                     Novo
                   </UBadge>
+                  <UBadge v-if="hasMentionAlert(conversationEntry.id)" color="error" variant="soft" size="sm">
+                    @{{ getMentionCount(conversationEntry.id) || 1 }} Mencao
+                  </UBadge>
                 </div>
               </div>
 
               <time class="conversation-card__time">{{ formatTime(conversationEntry.lastMessageAt) }}</time>
             </div>
 
-            <p class="conversation-card__preview">{{ conversationEntry.lastMessage?.content || "Sem mensagens ainda." }}</p>
+            <p class="conversation-card__preview">{{ getConversationPreview(conversationEntry) }}</p>
           </button>
 
           <div v-if="!conversations.length" class="chat-page__empty">Nenhuma conversa encontrada.</div>
@@ -252,6 +422,7 @@ function isConversationUnread(conversationId: string) {
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  min-width: 0;
 }
 
 .chat-page__header-row {
@@ -276,7 +447,32 @@ function isConversationUnread(conversationId: string) {
 .chat-page__filters {
   display: grid;
   gap: 0.75rem;
-  padding: 0.5rem 0 0.75rem;
+  padding: 0 0 0.75rem;
+}
+
+.chat-page__channel-banner {
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.5rem 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-page__channel-banner--connected {
+  color: rgb(var(--success));
+  background: rgb(var(--success) / 0.14);
+  border-color: rgb(var(--success) / 0.35);
+}
+
+.chat-page__channel-banner--disconnected {
+  color: rgb(var(--warning));
+  background: rgb(var(--warning) / 0.14);
+  border-color: rgb(var(--warning) / 0.35);
 }
 
 .chat-page__filters-grid {
@@ -292,7 +488,7 @@ function isConversationUnread(conversationId: string) {
   display: grid;
   align-content: start;
   gap: 0.5rem;
-  padding: 0.5rem 0 0.25rem;
+  padding: 0.5rem;
 }
 
 .chat-page__empty {

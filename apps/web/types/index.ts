@@ -1,10 +1,12 @@
+export type UserRole = "ADMIN" | "SUPERVISOR" | "AGENT" | "VIEWER";
+
 export interface AuthUser {
   id: string;
   tenantId: string;
   tenantSlug: string;
   email: string;
   name: string;
-  role: "ADMIN" | "AGENT";
+  role: UserRole;
 }
 
 export interface TenantSettings {
@@ -12,6 +14,12 @@ export interface TenantSettings {
   slug: string;
   name: string;
   whatsappInstance: string | null;
+  maxChannels: number;
+  maxUsers: number;
+  retentionDays: number;
+  maxUploadMb: number;
+  currentChannels: number;
+  currentUsers: number;
   hasEvolutionApiKey: boolean;
   webhookUrl: string;
   createdAt: string;
@@ -25,27 +33,55 @@ export interface TenantUser {
   tenantId: string;
   email: string;
   name: string;
-  role: "ADMIN" | "AGENT";
+  role: UserRole;
   createdAt: string;
   updatedAt: string;
 }
 
 export type MessageDirection = "INBOUND" | "OUTBOUND";
 export type MessageStatus = "PENDING" | "SENT" | "FAILED";
+export type MessageType = "TEXT" | "IMAGE" | "AUDIO" | "VIDEO" | "DOCUMENT";
 export type ConversationStatus = "OPEN" | "PENDING" | "CLOSED";
 
 export interface Message {
   id: string;
   tenantId: string;
   conversationId: string;
+  senderUserId?: string | null;
   direction: MessageDirection;
+  messageType?: MessageType;
   senderName: string | null;
   senderAvatarUrl: string | null;
   content: string;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  mediaFileName?: string | null;
+  mediaFileSizeBytes?: number | null;
+  mediaCaption?: string | null;
+  mediaDurationSeconds?: number | null;
+  metadataJson?: Record<string, unknown> | null;
   status: MessageStatus;
   externalMessageId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GroupParticipant {
+  jid: string;
+  name: string;
+  phone: string;
+  avatarUrl: string | null;
+}
+
+export interface SavedSticker {
+  id: string;
+  name: string;
+  dataUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId?: string | null;
 }
 
 export interface Conversation {
@@ -63,6 +99,8 @@ export interface Conversation {
   lastMessage: {
     id: string;
     content: string;
+    messageType?: MessageType;
+    mediaUrl?: string | null;
     direction: MessageDirection;
     status: MessageStatus;
     createdAt: string;
@@ -98,4 +136,74 @@ export interface WhatsAppQrCodeResponse {
   pairingCode?: string | null;
   source?: string;
   connectionState?: Record<string, unknown>;
+}
+
+export type WhatsAppEndpointValidationStatus =
+  | "ok"
+  | "validation_error"
+  | "missing_route"
+  | "auth_error"
+  | "provider_error"
+  | "network_error"
+  | "unexpected_error";
+
+export interface WhatsAppEndpointValidationEntry {
+  key: "text" | "media" | "audio" | "contact" | "sticker" | "reaction";
+  label: string;
+  pathTemplate: string;
+  resolvedPath: string | null;
+  status: WhatsAppEndpointValidationStatus;
+  available: boolean;
+  httpStatus: number | null;
+  message: string;
+}
+
+export interface WhatsAppEndpointValidationSummary {
+  total: number;
+  available: number;
+  missingRoute: number;
+  authError: number;
+  providerError: number;
+  networkError: number;
+}
+
+export interface WhatsAppEndpointValidationResponse {
+  instanceName: string;
+  generatedAt: string;
+  baseUrl: string;
+  timeoutMs: number;
+  endpoints: WhatsAppEndpointValidationEntry[];
+  summary: WhatsAppEndpointValidationSummary;
+}
+
+export interface FailureByTypeEntry {
+  messageType: MessageType;
+  total: number;
+}
+
+export interface FailureDailySeriesEntry {
+  day: string;
+  total: number;
+  byType: Record<string, number>;
+}
+
+export interface RecentFailureEntry {
+  id: string;
+  conversationId: string;
+  messageType: MessageType;
+  status: MessageStatus;
+  createdAt: string;
+  content: string;
+  contactName: string | null;
+  externalId: string;
+}
+
+export interface TenantFailuresDashboardResponse {
+  generatedAt: string;
+  windowDays: number;
+  since: string;
+  failedTotal: number;
+  failedByType: FailureByTypeEntry[];
+  dailySeries: FailureDailySeriesEntry[];
+  recentFailures: RecentFailureEntry[];
 }

@@ -1,6 +1,7 @@
 import fastifyJwt from "@fastify/jwt";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import type { UserRole } from "@prisma/client";
 import { env } from "../config.js";
 
 export interface JwtUser {
@@ -9,7 +10,7 @@ export interface JwtUser {
   tenantSlug: string;
   email: string;
   name: string;
-  role: "ADMIN" | "AGENT";
+  role: UserRole;
 }
 
 declare module "@fastify/jwt" {
@@ -36,4 +37,3 @@ export default fp(async (app) => {
 
   app.decorate("authenticate", verifyAuth);
 });
-

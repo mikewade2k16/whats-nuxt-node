@@ -53,6 +53,13 @@ docker compose up --build
 - Agente: `agente@demo.local`
 - Senha: `123456`
 
+## Credenciais seed (tenant acme)
+
+- Tenant: `acme`
+- Admin: `admin@acme.local`
+- Agente: `agente@acme.local`
+- Senha: `123456`
+
 ## Fluxo MVP implementado
 
 - Login multi-tenant (`/auth/login`)
@@ -63,9 +70,10 @@ docker compose up --build
 - Lista de conversas por tenant (`/conversations`)
 - Criacao de conversa para testes (`POST /conversations`)
 - Visualizar mensagens (`GET /conversations/:id/messages`)
-- Responder pela plataforma (`POST /conversations/:id/messages`)
+- Responder pela plataforma (`POST /conversations/:id/messages`) com suporte a texto e midia
 - Atribuicao e status da conversa (`PATCH /conversations/:id/assign`, `PATCH /conversations/:id/status`)
 - Worker de envio outbound via fila Redis
+- Worker dedicado de retencao por tenant (expurgo diario por `retentionDays`)
 - Realtime por tenant com Socket.IO
 - Webhook inbound de WhatsApp (`POST /webhooks/evolution/:tenantSlug`)
 
@@ -74,18 +82,35 @@ docker compose up --build
 Para ativar envio real para WhatsApp via Evolution:
 
 - Defina no `.env`:
+  - `API_BODY_LIMIT_MB` (padrao `80`, aumenta limite de payload para webhook de midia base64)
   - `EVOLUTION_BASE_URL`
   - `EVOLUTION_API_KEY`
   - `EVOLUTION_IMAGE` (recomendado: `evoapicloud/evolution-api:v2.3.7`)
   - `EVOLUTION_CONFIG_SESSION_PHONE_VERSION`
   - `EVOLUTION_DATABASE_URL`
   - `EVOLUTION_SEND_PATH` (padrao: `/message/sendText/:instance`)
+  - `EVOLUTION_SEND_MEDIA_PATH` (padrao: `/message/sendMedia/:instance`)
+  - `EVOLUTION_SEND_AUDIO_PATH` (padrao: `/message/sendWhatsAppAudio/:instance`)
+  - `EVOLUTION_SEND_STICKER_PATH` (padrao: `/message/sendSticker/:instance`)
+  - `EVOLUTION_SEND_REACTION_PATH` (padrao: `/message/sendReaction/:instance`)
+  - `EVOLUTION_REQUEST_TIMEOUT_MS` (padrao `90000` para uploads midia/audio maiores)
   - `EVOLUTION_DEFAULT_INSTANCE`
   - `EVOLUTION_WEBHOOK_TOKEN`
   - `WEBHOOK_RECEIVER_BASE_URL` (ex.: `http://api:4000` no docker interno ou URL publica da API)
+  - `NUXT_GIF_PROVIDER` (padrao: `tenor`)
+  - `NUXT_TENOR_API_KEY` (obrigatorio para busca de GIF no composer)
+  - `NUXT_TENOR_BASE_URL` (padrao: `https://tenor.googleapis.com/v2`)
 - Opcional: salve `whatsappInstance` e `evolutionApiKey` por tenant no banco para multi-instancia.
 
 Se `EVOLUTION_BASE_URL` estiver vazio, o worker marca mensagens outbound como `SENT` em modo simulacao.
+
+## Retencao de historico por tenant
+
+- Variaveis no `.env`:
+  - `RETENTION_SWEEP_ON_BOOT` (default `true`)
+  - `RETENTION_SWEEP_INTERVAL_MINUTES` (default `1440`)
+- O servico `retention-worker` executa expurgo com base em `tenant.retentionDays`.
+- Expurgo remove mensagens antigas e conversas vazias antigas.
 
 ## Painel admin
 
@@ -106,6 +131,40 @@ Para subir com ele:
 ```bash
 docker compose --profile channels up --build
 ```
+
+## Testes automatizados
+
+### Front (composables)
+
+```bash
+cd apps/web
+npm run test:composables
+```
+
+### Bateria de midia (API/worker/fila)
+
+Comando:
+
+```bash
+cd apps/api
+npm run test:media:battery
+```
+
+Comportamento:
+
+1. Sem `BATTERY_DESTINATION_EXTERNAL_ID`, roda em destino invalido controlado para validar pipeline sem disparo real.
+2. Com `BATTERY_DESTINATION_EXTERNAL_ID`, valida entrega em destino de homologacao.
+
+### Auditoria de isolamento por tenant (seguranca)
+
+Comando:
+
+```bash
+cd apps/api
+npm run test:tenant:isolation
+```
+
+O script valida acesso cruzado entre os tenants `demo` e `acme` e falha com exit code quando detectar quebra de isolamento.
 
 ## Documentacao detalhada
 

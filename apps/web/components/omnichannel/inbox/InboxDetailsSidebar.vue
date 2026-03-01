@@ -24,6 +24,7 @@ const props = defineProps<{
   updatingAssignee: boolean;
   loadingUsers: boolean;
   internalNotes: string;
+  canManageConversation: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -184,7 +185,7 @@ function onAssigneeChange(value: string | undefined) {
               :model-value="activeConversation.status"
               :items="statusActionItems"
               value-key="value"
-              :disabled="updatingStatus"
+              :disabled="updatingStatus || !canManageConversation"
               @update:model-value="onStatusChange"
             />
           </UFormField>
@@ -194,7 +195,7 @@ function onAssigneeChange(value: string | undefined) {
               :model-value="assigneeModel"
               :items="assigneeItems"
               value-key="value"
-              :disabled="updatingAssignee || loadingUsers"
+              :disabled="updatingAssignee || loadingUsers || !canManageConversation"
               @update:model-value="onAssigneeChange"
             />
           </UFormField>

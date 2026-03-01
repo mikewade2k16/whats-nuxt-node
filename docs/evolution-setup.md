@@ -39,12 +39,19 @@ Voce define a chave no `.env` e ela vira a credencial do header `apikey`.
 Exemplo funcional para o seu compose atual:
 
 ```env
+API_BODY_LIMIT_MB=80
 EVOLUTION_BASE_URL=http://evolution:8080
 EVOLUTION_API_KEY=troque-por-chave-forte
 EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7
 EVOLUTION_CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472
 EVOLUTION_DATABASE_URL=postgresql://omnichannel:omnichannel@postgres:5432/omnichannel?schema=evolution
 EVOLUTION_SEND_PATH=/message/sendText/:instance
+EVOLUTION_SEND_MEDIA_PATH=/message/sendMedia/:instance
+EVOLUTION_SEND_AUDIO_PATH=/message/sendWhatsAppAudio/:instance
+EVOLUTION_SEND_CONTACT_PATH=/message/sendContact/:instance
+EVOLUTION_SEND_STICKER_PATH=/message/sendSticker/:instance
+EVOLUTION_SEND_REACTION_PATH=/message/sendReaction/:instance
+EVOLUTION_REQUEST_TIMEOUT_MS=90000
 EVOLUTION_DEFAULT_INSTANCE=demo-instance
 EVOLUTION_WEBHOOK_TOKEN=troque-token-webhook
 WEBHOOK_RECEIVER_BASE_URL=http://api:4000
@@ -57,19 +64,50 @@ Explicacao:
 2. `EVOLUTION_API_KEY`:
    chave usada tanto pela API quanto pela Evolution.
 3. `EVOLUTION_SEND_PATH`:
-   rota de envio usada no worker.
-4. `EVOLUTION_IMAGE`:
+   rota de envio de texto usada no worker.
+4. `EVOLUTION_SEND_MEDIA_PATH`:
+   rota de envio para imagem/video/documento.
+5. `EVOLUTION_SEND_AUDIO_PATH`:
+   rota de envio para audio.
+6. `EVOLUTION_SEND_CONTACT_PATH`:
+   rota dedicada obrigatoria para envio de contato nativo (sem fallback para texto).
+7. `EVOLUTION_SEND_STICKER_PATH`:
+   rota de envio para figurinha.
+8. `EVOLUTION_SEND_REACTION_PATH`:
+   rota de envio para reacao em mensagem.
+9. `EVOLUTION_IMAGE`:
    imagem recomendada da Evolution para evitar problemas de QR em builds antigas.
-5. `EVOLUTION_CONFIG_SESSION_PHONE_VERSION`:
+10. `EVOLUTION_CONFIG_SESSION_PHONE_VERSION`:
    versao de sessao do WhatsApp (ajuda quando aparece `statusReason: 405`).
-6. `EVOLUTION_DATABASE_URL`:
+11. `EVOLUTION_DATABASE_URL`:
    conexao da Evolution no Postgres (schema separado `evolution`).
-7. `EVOLUTION_DEFAULT_INSTANCE`:
+12. `EVOLUTION_DEFAULT_INSTANCE`:
    fallback se tenant nao tiver instancia definida.
-8. `EVOLUTION_WEBHOOK_TOKEN`:
+13. `EVOLUTION_WEBHOOK_TOKEN`:
    token validado na rota de webhook inbound.
-9. `WEBHOOK_RECEIVER_BASE_URL`:
+14. `WEBHOOK_RECEIVER_BASE_URL`:
    base usada para montar URL de webhook por tenant.
+15. `API_BODY_LIMIT_MB`:
+   limite maximo do body da API para aceitar webhook com midia base64 grande (evita HTTP 413).
+16. `EVOLUTION_REQUEST_TIMEOUT_MS`:
+   timeout do worker para chamadas na Evolution (ajuste para arquivos maiores/lentos).
+
+## Validacao endpoint-a-endpoint (Admin)
+
+Para confirmar rapidamente compatibilidade de rotas da Evolution (texto, midia, audio, contato, figurinha e reacao):
+
+1. Endpoint backend: `POST /tenant/whatsapp/validate-endpoints`.
+2. Tela Admin: card **Validacao de endpoints Evolution** com botao `Validar endpoints`.
+3. A validacao retorna status por rota:
+   - `Disponivel`
+   - `Disponivel (validacao)` (rota responde, mas payload de probe e invalido, o que confirma existencia da rota)
+   - `Rota ausente` / `Erro autenticacao` / `Erro provider` / `Erro rede`
+
+Uso recomendado:
+
+1. Rodar a validacao apos trocar versao da Evolution.
+2. Rodar apos alterar qualquer `EVOLUTION_SEND_*_PATH` no `.env`.
+3. Antes de homologar envio de contato nativo, garantir que `sendContact` esteja `Disponivel`.
 
 ## Passo a passo operacional
 

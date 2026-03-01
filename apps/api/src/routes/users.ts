@@ -56,17 +56,47 @@ export async function userRoutes(app: FastifyInstance) {
       }
 
       const { email, name, password, role } = parsed.data;
-      const existing = await prisma.user.findUnique({
-        where: {
-          tenantId_email: {
-            tenantId: request.authUser.tenantId,
-            email
+      const [tenant, existing, currentUsers] = await prisma.$transaction([
+        prisma.tenant.findUnique({
+          where: {
+            id: request.authUser.tenantId
+          },
+          select: {
+            id: true,
+            maxUsers: true
           }
-        }
-      });
+        }),
+        prisma.user.findUnique({
+          where: {
+            tenantId_email: {
+              tenantId: request.authUser.tenantId,
+              email
+            }
+          }
+        }),
+        prisma.user.count({
+          where: {
+            tenantId: request.authUser.tenantId
+          }
+        })
+      ]);
+
+      if (!tenant) {
+        return reply.code(404).send({ message: "Tenant nao encontrado" });
+      }
 
       if (existing) {
         return reply.code(409).send({ message: "Email ja cadastrado neste tenant" });
+      }
+
+      if (currentUsers >= tenant.maxUsers) {
+        return reply.code(409).send({
+          message: "Limite de usuarios do plano atingido para este tenant.",
+          details: {
+            maxUsers: tenant.maxUsers,
+            currentUsers
+          }
+        });
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
@@ -115,7 +145,7 @@ export async function userRoutes(app: FastifyInstance) {
         return reply.code(404).send({ message: "Usuario nao encontrado" });
       }
 
-      if (body.data.role === UserRole.AGENT && targetUser.role === UserRole.ADMIN) {
+      if (body.data.role !== undefined && body.data.role !== UserRole.ADMIN && targetUser.role === UserRole.ADMIN) {
         const adminCount = await prisma.user.count({
           where: {
             tenantId: request.authUser.tenantId,
@@ -157,4 +187,3 @@ export async function userRoutes(app: FastifyInstance) {
     });
   });
 }
-

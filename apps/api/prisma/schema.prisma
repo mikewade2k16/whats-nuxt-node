@@ -9,7 +9,9 @@ datasource db {
 
 enum UserRole {
   ADMIN
+  SUPERVISOR
   AGENT
+  VIEWER
 }
 
 enum ChannelType {
@@ -34,17 +36,39 @@ enum MessageStatus {
   FAILED
 }
 
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+}
+
+enum AuditEventType {
+  MESSAGE_OUTBOUND_QUEUED
+  MESSAGE_OUTBOUND_SENT
+  MESSAGE_OUTBOUND_FAILED
+  CONVERSATION_STATUS_CHANGED
+  CONVERSATION_ASSIGNED
+}
+
 model Tenant {
   id               String         @id @default(cuid())
   slug             String         @unique
   name             String
   whatsappInstance String?
   evolutionApiKey  String?
+  maxChannels      Int            @default(1)
+  maxUsers         Int            @default(2)
+  retentionDays    Int            @default(15)
+  maxUploadMb      Int            @default(500)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   users            User[]
   conversations    Conversation[]
   messages         Message[]
+  auditEvents      AuditEvent[]
+  savedStickers    SavedSticker[]
 }
 
 model User {
@@ -58,9 +82,29 @@ model User {
   updatedAt    DateTime       @updatedAt
   tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignments  Conversation[] @relation("ConversationAssignee")
+  outboundMessages Message[]  @relation("MessageSender")
+  auditEvents  AuditEvent[]
+  savedStickers SavedSticker[] @relation("SavedStickerAuthor")
 
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+model SavedSticker {
+  id              String   @id @default(cuid())
+  tenantId        String
+  createdByUserId String?
+  name            String
+  dataUrl         String   @db.Text
+  mimeType        String
+  sizeBytes       Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser   User?    @relation("SavedStickerAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([createdByUserId])
 }
 
 model Conversation {
@@ -79,6 +123,7 @@ model Conversation {
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages      Message[]
+  auditEvents   AuditEvent[]
 
   @@unique([tenantId, externalId, channel])
   @@index([tenantId, lastMessageAt(sort: Desc)])
@@ -89,17 +134,49 @@ model Message {
   id                String           @id @default(cuid())
   tenantId          String
   conversationId    String
+  senderUserId      String?
   direction         MessageDirection
+  messageType       MessageType      @default(TEXT)
   senderName        String?
   senderAvatarUrl   String?
   content           String
+  mediaUrl          String?
+  mediaMimeType     String?
+  mediaFileName     String?
+  mediaFileSizeBytes Int?
+  mediaCaption      String?
+  mediaDurationSeconds Int?
+  metadataJson      Json?
   externalMessageId String?
   status            MessageStatus    @default(PENDING)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser        User?            @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  auditEvents       AuditEvent[]
 
   @@index([tenantId, createdAt])
   @@index([conversationId, createdAt])
+  @@index([senderUserId])
+}
+
+model AuditEvent {
+  id             String         @id @default(cuid())
+  tenantId       String
+  actorUserId    String?
+  conversationId String?
+  messageId      String?
+  eventType      AuditEventType
+  payloadJson    Json?
+  createdAt      DateTime       @default(now())
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUser      User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message        Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([messageId, createdAt(sort: Desc)])
+  @@index([eventType, createdAt(sort: Desc)])
 }

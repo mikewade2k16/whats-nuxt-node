@@ -8,6 +8,15 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade"
 ]);
 
+const FORWARDED_BINARY_HEADERS = [
+  "content-type",
+  "content-disposition",
+  "content-length",
+  "cache-control",
+  "etag",
+  "last-modified"
+];
+
 function getTargetPath(pathParam: string | string[] | undefined) {
   if (!pathParam) {
     return "";
@@ -77,26 +86,43 @@ export default defineEventHandler(async (event) => {
   }
 
   setResponseStatus(event, upstreamResponse.status, upstreamResponse.statusText);
+  const contentType = upstreamResponse.headers.get("content-type")?.toLowerCase() ?? "";
+  const isJsonResponse = contentType.includes("json");
 
-  const contentType = upstreamResponse.headers.get("content-type");
-  if (contentType) {
-    setHeader(event, "content-type", contentType);
-  }
+  if (isJsonResponse) {
+    const rawContentType = upstreamResponse.headers.get("content-type");
+    if (rawContentType) {
+      setHeader(event, "content-type", rawContentType);
+    }
 
-  const payload = await upstreamResponse.text();
-  if (!payload.length) {
-    return null;
-  }
+    const payload = await upstreamResponse.text();
+    if (!payload.length) {
+      return null;
+    }
 
-  if (contentType?.includes("application/json")) {
     try {
       return JSON.parse(payload);
     } catch {
-      return {
-        message: "Resposta JSON invalida do backend",
-        raw: payload
-      };
+      throw createError({
+        statusCode: 502,
+        statusMessage: "Resposta invalida do backend",
+        data: {
+          message: "Resposta JSON invalida do backend"
+        }
+      });
     }
+  }
+
+  for (const headerName of FORWARDED_BINARY_HEADERS) {
+    const headerValue = upstreamResponse.headers.get(headerName);
+    if (headerValue) {
+      setHeader(event, headerName, headerValue);
+    }
+  }
+
+  const payload = Buffer.from(await upstreamResponse.arrayBuffer());
+  if (!payload.length) {
+    return null;
   }
 
   return payload;

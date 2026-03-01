@@ -13,8 +13,9 @@
     "test:composables": "vitest --run tests/composables"
   },
   "dependencies": {
-    "@pinia/nuxt": "^0.11.3",
     "@nuxt/ui": "^4.4.0",
+    "@pinia/nuxt": "^0.11.3",
+    "markdown-it": "^14.1.1",
     "nuxt": "^4.1.0",
     "socket.io-client": "^4.8.1"
   },

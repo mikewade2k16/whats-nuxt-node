@@ -4,10 +4,12 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { Server } from "socket.io";
 import { env } from "./config.js";
 import { closeSubscriber, subscribeEvents } from "./event-bus.js";
+import { resolveRequestCorrelationId } from "./lib/correlation.js";
 import authPlugin, { type JwtUser } from "./plugins/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { healthRoutes } from "./routes/health.js";
+import { stickerRoutes } from "./routes/stickers.js";
 import { tenantRoutes } from "./routes/tenant.js";
 import { userRoutes } from "./routes/users.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -22,7 +24,14 @@ function parseCorsOrigin(input: string) {
 
 async function start() {
   const app = Fastify({
-    logger: true
+    logger: true,
+    bodyLimit: env.API_BODY_LIMIT_MB * 1024 * 1024
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    const headerCorrelationId = request.headers["x-correlation-id"];
+    request.correlationId = resolveRequestCorrelationId(headerCorrelationId, request.id);
+    reply.header("x-correlation-id", request.correlationId);
   });
 
   await app.register(cors, {
@@ -35,6 +44,7 @@ async function start() {
   await app.register(authRoutes);
   await app.register(tenantRoutes);
   await app.register(userRoutes);
+  await app.register(stickerRoutes);
   await app.register(conversationRoutes);
   await app.register(webhookRoutes);
 

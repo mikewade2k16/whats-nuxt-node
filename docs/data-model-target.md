@@ -64,8 +64,8 @@ Campos:
 
 Adicionar:
 
-1. `message_type` (`TEXT`, `IMAGE`, `AUDIO`, `DOCUMENT`, `TEMPLATE`, `SYSTEM`)
-2. `metadata_json` (ids externos, ack, erro do provedor)
+1. `message_type` (`TEXT`, `IMAGE`, `AUDIO`, `VIDEO`, `DOCUMENT`, `TEMPLATE`, `SYSTEM`) - **ja iniciado no modelo atual**
+2. `metadata_json` (ids externos, ack, erro do provedor) - **ja iniciado no modelo atual**
 3. `reply_to_message_id` (self FK opcional)
 
 ## 5) `message_attachment`
@@ -156,6 +156,25 @@ Objetivo:
 
 Padrao outbox para consistencia entre transacao de banco e envio de evento.
 
+## 11) `saved_sticker` (biblioteca operacional)
+
+Objetivo:
+
+1. Persistir figurinhas reutilizaveis por tenant (e opcionalmente por autor).
+2. Permitir biblioteca compartilhada entre atendentes no composer.
+
+Campos sugeridos:
+
+1. `id`
+2. `tenant_id`
+3. `created_by_user_id` (opcional)
+4. `name`
+5. `mime_type`
+6. `data_url` ou `storage_url` (preferir `storage_url` em escala)
+7. `size_bytes`
+8. `created_at`
+9. `updated_at`
+
 ## Ajustes de seguranca recomendados
 
 1. Remover `evolutionApiKey` em texto puro de `Tenant`.
@@ -183,4 +202,3 @@ Padrao outbox para consistencia entre transacao de banco e envio de evento.
 3. Necessidade de auditoria formal.
 4. Necessidade de reprocessar webhooks.
 5. Volume alto de anexos/midias.
-

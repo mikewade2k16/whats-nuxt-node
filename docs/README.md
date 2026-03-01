@@ -7,7 +7,7 @@ Este diretorio centraliza a documentacao tecnica e operacional do MVP omnichanne
 Entregar uma plataforma multi-tenant de atendimento para:
 
 1. Receber mensagens de WhatsApp (via Evolution + Baileys, nao oficial).
-2. Responder mensagens pelo painel web.
+2. Responder mensagens pelo painel web (texto e midia).
 3. Garantir base pronta para evoluir para Instagram oficial da Meta.
 4. Comecar simples, mas com arquitetura que suporte escala horizontal.
 
@@ -21,7 +21,20 @@ Entregar uma plataforma multi-tenant de atendimento para:
 6. Se precisa planejar evolucao de banco/escala: leia `docs/data-model-target.md`.
 7. Se precisa ajustar UI/front: leia `docs/frontend-ui.md`.
 8. Se precisa acompanhar evolucao para paridade WhatsApp Web: leia `docs/roadmap-whatsapp-parity.md`.
-9. Se precisa rodar testes de composable/front: use scripts em `apps/web/package.json` e veja a secao de testes em `docs/frontend-ui.md`.
+9. Se precisa acompanhar backlog executavel por tarefa: leia `docs/backlog-execucao.md`.
+10. Se precisa acompanhar nota de arquitetura: leia `docs/scorecard-arquitetura.md`.
+11. Se precisa acompanhar metas por sprint: leia `docs/sprints-execucao.md`.
+12. Se precisa acompanhar docs pela interface web: acesse `/docs` no front.
+13. Se precisa rodar testes de composable/front: use scripts em `apps/web/package.json` e veja a secao de testes em `docs/frontend-ui.md`.
+14. Se precisa configurar pipeline CI no GitHub Actions: leia `docs/ci-github-actions.md`.
+15. Se precisa rodar bateria automatica de midia (pipeline/fila/worker): use `npm run test:media:battery` em `apps/api` e veja `docs/ci-github-actions.md`.
+16. Se precisa auditar isolamento entre tenants (seguranca): use `npm run test:tenant:isolation` em `apps/api` e veja `docs/ci-github-actions.md`.
+17. Se precisa consultar trilha de auditoria de eventos criticos: use `GET /tenant/audit-events` (`ADMIN`/`SUPERVISOR`) e veja `docs/api-reference.md`.
+18. Se precisa validar integracao de midia ponta a ponta: use `npm run test:media:integration` em `apps/api` e veja `docs/ci-github-actions.md`.
+19. Se precisa revisar planejamento do chat interno e suporte tenant->admin: leia `docs/planejamento-chat-interno-suporte.md`.
+20. Se precisa validar gate de release do MVP (texto + midia + dedupe): use `npm run test:gate:mvp` em `apps/api` e veja `docs/ci-github-actions.md`.
+21. Se precisa validar a jornada principal (login -> inbox -> envio -> recebimento): use `npm run test:journey:e2e` em `apps/api`.
+22. Se precisa ajustar limite de upload por cliente: use `PATCH /tenant` com `maxUploadMb` ou o campo `Limite upload por arquivo (MB)` em `/admin`.
 
 ## Mapa rapido de codigo
 
@@ -32,3 +45,13 @@ Entregar uma plataforma multi-tenant de atendimento para:
 - Modelo Prisma: `apps/api/prisma/schema.prisma`
 - Orquestracao local: `docker-compose.yml`
 - Variaveis: `.env` e `.env.example`
+
+## Portal de documentacao no front
+
+1. Rota: `/docs`.
+2. Funcao: listar todos os `.md` e abrir leitura com status de checklist.
+3. Status de checklist:
+- `Concluido`: itens `[x]`.
+- `Em andamento`: itens `[-]` ou `[~]`.
+- `Pendente`: itens `[ ]`.
+4. Em Docker, o `web` precisa montar a pasta `./docs` para leitura dinamica.

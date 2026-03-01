@@ -16,16 +16,17 @@ Montar um fluxo omnichannel com separacao clara entre:
 2. `web-bff` (rotas server do Nuxt para proxy HTTP `/api/bff/*`)
 3. `api` (Fastify + Prisma + JWT + Socket.IO)
 4. `worker` (BullMQ para envio outbound)
-5. `postgres` (dados transacionais)
-6. `redis` (fila e pub/sub realtime)
-7. `evolution` (conector WhatsApp nao oficial; profile opcional)
+5. `retention-worker` (expurgo diario por `retentionDays` de cada tenant)
+6. `postgres` (dados transacionais)
+7. `redis` (fila e pub/sub realtime)
+8. `evolution` (conector WhatsApp nao oficial; profile opcional)
 
 ## Fluxo de entrada (inbound)
 
 1. Usuario final envia mensagem no WhatsApp.
 2. Evolution recebe do WhatsApp Web e chama webhook da API.
 3. API processa webhook em `POST /webhooks/evolution/:tenantSlug`.
-4. API cria/atualiza conversa e grava mensagem inbound.
+4. API cria/atualiza conversa e grava mensagem inbound (texto e/ou midia).
 5. API publica evento no Redis.
 6. Socket.IO envia atualizacao em tempo real para agentes do tenant.
 
@@ -36,9 +37,22 @@ Montar um fluxo omnichannel com separacao clara entre:
 3. BFF encaminha request para API Node.
 4. API grava mensagem com status `PENDING`.
 5. API enfileira job no BullMQ.
-6. Worker consome fila, chama endpoint de envio da Evolution.
+6. Worker consome fila, chama endpoint de envio da Evolution conforme tipo (`sendText`, `sendMedia`, `sendWhatsAppAudio`).
+   - bloco `IMAGE`: `sendImageMessage`
+   - bloco `VIDEO`: `sendVideoMessage`
+   - bloco `DOCUMENT`: `sendDocumentMessage`
+   - bloco `AUDIO`: `sendAudioMessage` (com fallback para envio como documento)
 7. Worker atualiza status para `SENT` ou `FAILED`.
 8. Worker publica evento para atualizar UI em tempo real.
+9. Eventos realtime sanitizam `mediaUrl` em formato `data:` para evitar payload gigante no Redis/Socket.
+
+## Fluxo de retencao (expurgo)
+
+1. `retention-worker` inicia e executa sweep inicial (quando `RETENTION_SWEEP_ON_BOOT=true`).
+2. Para cada tenant, calcula cutoff com base em `tenant.retentionDays`.
+3. Remove mensagens antigas (`Message.createdAt < cutoff`).
+4. Remove conversas antigas sem mensagens.
+5. Agenda novo sweep no intervalo `RETENTION_SWEEP_INTERVAL_MINUTES`.
 
 ## Multi-tenant
 
@@ -55,6 +69,7 @@ Montar um fluxo omnichannel com separacao clara entre:
 4. Para escalar:
    - subir mais replicas de `api`
    - subir mais replicas de `worker`
+   - subir mais replicas de `retention-worker` apenas com coordenacao (ou manter 1 replica)
    - manter Redis/Postgres gerenciados e monitorados
 
 ## Onde cada responsabilidade vive
@@ -66,11 +81,14 @@ Montar um fluxo omnichannel com separacao clara entre:
 5. Webhook de entrada: `apps/api/src/routes/webhooks.ts`
 6. Cliente Evolution: `apps/api/src/services/evolution-client.ts`
 7. Worker outbound: `apps/api/src/workers/outbound-worker.ts`
-8. Modulo Inbox front: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-9. Estado e dominio da Inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
-10. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-11. Estado e dominio do Admin: `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
-12. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
-13. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
-14. Cliente HTTP front: `apps/web/composables/useApi.ts`
-15. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`
+   - senders por tipo: `apps/api/src/workers/senders/send-media.ts`
+8. Worker de retencao: `apps/api/src/workers/retention-worker.ts`
+9. Servico de retencao: `apps/api/src/services/retention-service.ts`
+10. Modulo Inbox front: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+11. Estado e dominio da Inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+12. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
+13. Estado e dominio do Admin: `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+14. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
+15. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
+16. Cliente HTTP front: `apps/web/composables/useApi.ts`
+17. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`

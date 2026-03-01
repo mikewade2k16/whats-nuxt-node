@@ -1,0 +1,260 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        run: npm run prisma:generate
+
+      - name: Build API
+        run: npm run build
+
+  web-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run composable tests
+        run: npm run test:composables
+
+      - name: Build web
+        run: npm run build
+
+  tenant-isolation-audit:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: omnichannel
+          POSTGRES_USER: omnichannel
+          POSTGRES_PASSWORD: omnichannel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omnichannel -d omnichannel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://omnichannel:omnichannel@localhost:5432/omnichannel?schema=public
+      REDIS_URL: redis://localhost:6379
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      JWT_SECRET: change-this-secret
+      EVOLUTION_BASE_URL: ""
+      EVOLUTION_API_KEY: ""
+      EVOLUTION_SEND_PATH: /message/sendText/:instance
+      EVOLUTION_SEND_MEDIA_PATH: /message/sendMedia/:instance
+      EVOLUTION_SEND_AUDIO_PATH: /message/sendWhatsAppAudio/:instance
+      EVOLUTION_DEFAULT_INSTANCE: demo-instance
+      EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
+      WEBHOOK_RECEIVER_BASE_URL: http://localhost:4000
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare database
+        run: |
+          npm run prisma:generate
+          npm run prisma:push
+          npm run prisma:seed
+
+      - name: Build API
+        run: npm run build
+
+      - name: Start API
+        run: |
+          npm run start > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: Wait for API health
+        run: |
+          for i in {1..40}; do
+            if curl -fsS http://localhost:4000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time"
+          cat /tmp/api.log || true
+          exit 1
+
+      - name: Run tenant isolation audit
+        run: npm run test:tenant:isolation
+
+      - name: Show API logs on failure
+        if: failure()
+        run: cat /tmp/api.log || true
+
+  media-integration-audit:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: omnichannel
+          POSTGRES_USER: omnichannel
+          POSTGRES_PASSWORD: omnichannel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omnichannel -d omnichannel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://omnichannel:omnichannel@localhost:5432/omnichannel?schema=public
+      REDIS_URL: redis://localhost:6379
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      JWT_SECRET: change-this-secret
+      EVOLUTION_BASE_URL: ""
+      EVOLUTION_API_KEY: ""
+      EVOLUTION_SEND_PATH: /message/sendText/:instance
+      EVOLUTION_SEND_MEDIA_PATH: /message/sendMedia/:instance
+      EVOLUTION_SEND_AUDIO_PATH: /message/sendWhatsAppAudio/:instance
+      EVOLUTION_DEFAULT_INSTANCE: demo-instance
+      EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
+      WEBHOOK_RECEIVER_BASE_URL: http://localhost:4000
+      SANDBOX_ENABLED: "false"
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare database
+        run: |
+          npm run prisma:generate
+          npm run prisma:push
+          npm run prisma:seed
+
+      - name: Build API
+        run: npm run build
+
+      - name: Start API
+        run: |
+          npm run start > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: Start worker
+        run: |
+          npm run worker:start > /tmp/worker.log 2>&1 &
+          echo $! > /tmp/worker.pid
+
+      - name: Wait for API health
+        run: |
+          for i in {1..40}; do
+            if curl -fsS http://localhost:4000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time"
+          cat /tmp/api.log || true
+          exit 1
+
+      - name: Run media integration audit
+        run: npm run test:media:integration
+
+      - name: Run MVP gate audit
+        run: npm run test:gate:mvp
+
+      - name: Run journey E2E audit
+        run: npm run test:journey:e2e
+
+      - name: Show API logs on failure
+        if: failure()
+        run: cat /tmp/api.log || true
+
+      - name: Show worker logs on failure
+        if: failure()
+        run: cat /tmp/worker.log || true

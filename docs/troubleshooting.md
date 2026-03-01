@@ -60,6 +60,27 @@ Correcao:
 3. Testar proxy direto:
    - `http://localhost:3000/api/bff/health`
 
+## 0.1) Erro na rota `/docs`: "Diretorio de docs nao encontrado..."
+
+Causa comum:
+
+1. Container `web` nao foi recriado apos alterar `docker-compose.yml`.
+2. `PROJECT_DOCS_DIR` nao esta no ambiente do `web`.
+3. Volume `./docs:/project-docs:ro` nao foi montado no `web`.
+
+Correcao:
+
+1. Recriar somente o `web`:
+   - `docker compose up -d --build --force-recreate web`
+2. Validar dentro do container:
+   - `docker compose exec web sh -lc 'echo $PROJECT_DOCS_DIR && ls -la /project-docs'`
+3. Se precisar, subir stack completa novamente:
+   - `docker compose --profile channels up -d --build`
+
+Observacao:
+
+1. A API de docs no Nuxt tenta fallback automatico para `/project-docs` e `/docs` mesmo se a env nao existir.
+
 ## 1) Login falha com "Credenciais invalidas"
 
 Causa comum:
@@ -84,6 +105,7 @@ Causa comum:
 1. Worker parado.
 2. Evolution nao acessivel.
 3. Instancia do tenant nao conectada.
+4. Falha de enfileiramento (Redis/fila indisponivel no momento do envio).
 
 Correcao:
 
@@ -96,6 +118,44 @@ Correcao:
    - `EVOLUTION_BASE_URL`
    - `EVOLUTION_API_KEY`
    - `EVOLUTION_SEND_PATH`
+   - `EVOLUTION_SEND_MEDIA_PATH`
+   - `EVOLUTION_SEND_AUDIO_PATH`
+   - `EVOLUTION_SEND_STICKER_PATH`
+   - `EVOLUTION_SEND_REACTION_PATH`
+5. A partir do ajuste de confiabilidade do Sprint 4, se o enfileiramento falhar a API marca a mensagem como `FAILED` imediatamente (nao fica `PENDING` infinito). Use reprocessamento apos restaurar fila/worker.
+
+## 2.2) Reprocessar mensagem outbound travada
+
+Quando usar:
+
+1. Mensagem outbound ficou em `FAILED`.
+2. Mensagem outbound ficou em `PENDING` apos erro transitorio.
+
+Rotas:
+
+1. Reprocessar uma mensagem:
+   - `POST /conversations/:conversationId/messages/:messageId/reprocess`
+   - body: `{ "force": true }` para reenviar inclusive mensagem ja `SENT`.
+2. Reprocessar lote de falhas:
+   - `POST /conversations/:conversationId/messages/reprocess-failed`
+   - body opcional: `{ "limit": 50 }`
+
+## 2.1) Worker cai logo apos restart (race Prisma)
+
+Causa comum:
+
+1. `api` e `worker` compartilhando o mesmo volume de `node_modules`.
+2. `prisma generate` rodando em paralelo nos dois servicos.
+
+Correcao:
+
+1. Usar volume dedicado para o worker (`worker_node_modules`).
+2. No `worker`, remover `prisma:push` do comando de bootstrap.
+3. Recriar containers:
+   - `docker compose down`
+   - `docker compose --profile channels up -d --build`
+4. Validar:
+   - `docker compose ps worker` deve permanecer `Up`.
 
 ## 3) Webhook inbound nao chega na plataforma
 
@@ -136,6 +196,46 @@ Correcao:
    - `EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7`
    - `EVOLUTION_CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472`
 6. Depois de atualizar imagem, recrie a instancia (`logout/delete`) e rode `Bootstrap` novamente.
+
+## 3.2) Busca de GIF retorna erro de provider nao configurado
+
+Causa comum:
+
+1. `NUXT_TENOR_API_KEY` nao definido no ambiente do `web`.
+2. `NUXT_GIF_PROVIDER` diferente de `tenor`.
+
+Comportamento esperado atual:
+
+1. A rota `/api/gif/search` nao retorna mais HTTP 500 nesse caso.
+2. A UI mostra aviso amigavel no painel de GIF.
+
+Correcao:
+
+1. Ajustar `.env`:
+   - `NUXT_GIF_PROVIDER=tenor`
+   - `NUXT_TENOR_API_KEY=<sua-chave-tenor>`
+2. Recriar apenas o `web`:
+   - `docker compose up -d --build --force-recreate web`
+3. Validar no navegador:
+   - abrir aba GIF no composer e buscar por termo simples (`amor`, `oi`, `feliz`).
+
+## 3.3) Figurinhas nao ficam salvas no composer
+
+Causa comum:
+
+1. API de figurinhas bloqueada por permissao (`VIEWER` nao pode salvar/remover).
+2. Falha no endpoint backend (`/stickers`).
+3. Data URL invalida ou acima do limite de figurinha.
+
+Correcao:
+
+1. Validar role do usuario (`ADMIN`, `SUPERVISOR` ou `AGENT` para salvar/remover).
+2. Testar endpoints:
+   - `GET /stickers?limit=36`
+   - `POST /stickers`
+   - `DELETE /stickers/:stickerId`
+3. Limite atual de figurinha no backend:
+   - `min(tenant.maxUploadMb, 20MB)` por item.
 
 ## 4) Erro de permissao `403`
 
@@ -215,6 +315,333 @@ Correcao:
    - `GET /conversations/:conversationId/messages?limit=...&beforeId=...`
    - retorno com `hasMore`
 
+## 9) Midia outbound falha (imagem/audio/video/documento)
+
+Causa comum:
+
+1. `mediaUrl` ausente na mensagem outbound.
+2. Endpoint de envio de midia/audio nao configurado.
+3. URL da midia inacessivel para Evolution.
+
+Correcao:
+
+1. Validar payload de envio:
+   - `type` em `IMAGE|AUDIO|VIDEO|DOCUMENT`
+   - `mediaUrl` obrigatorio
+2. Validar `.env`:
+   - `EVOLUTION_SEND_MEDIA_PATH=/message/sendMedia/:instance`
+   - `EVOLUTION_SEND_AUDIO_PATH=/message/sendWhatsAppAudio/:instance`
+   - `EVOLUTION_SEND_STICKER_PATH=/message/sendSticker/:instance`
+   - `EVOLUTION_SEND_REACTION_PATH=/message/sendReaction/:instance`
+3. Testar URL da midia de dentro do container Evolution (quando usar URL privada/restrita).
+4. Para teste local rapido, enviar `mediaUrl` em formato `data:` (base64) pelo front.
+5. O worker converte `data:*;base64,...` para base64 puro antes de chamar `sendMedia`.
+   - motivo: Evolution `v2.3.7` retorna `400` com `Owned media must be a url or base64` quando recebe `data:` URI crua.
+6. Se arquivo maior demora/falha por timeout, aumentar:
+   - `EVOLUTION_REQUEST_TIMEOUT_MS=90000` (ou mais, conforme rede/host).
+
+## 9.3) Audio gravado (`audio/webm;codecs=opus`) falha com `FAILED`
+
+Causa comum:
+
+1. `data:` URI com parametros extras (`;codecs=...`) nao estava sendo normalizada para base64 puro no worker.
+
+Correcao:
+
+1. Ajustar normalizacao de `data:` para aceitar parametros extras antes de `;base64,`.
+2. Reprocessar mensagem falhada:
+   - `POST /conversations/:conversationId/messages/:messageId/reprocess`
+
+## 9.1) `POST /conversations/:id/messages` retorna `400 Payload invalido` com anexo
+
+Causa comum:
+
+1. Backend sem suporte a `mediaUrl` longo (`data:` base64).
+2. API antiga ainda em memoria sem restart.
+
+Correcao:
+
+1. Atualizar backend com limite maior de `mediaUrl`.
+2. Reiniciar `api` e `worker`:
+   - `docker compose restart api worker`
+3. Repetir envio do anexo pelo composer.
+
+## 9.2) Botao de envio fica carregando indefinidamente com anexo
+
+Causa comum:
+
+1. `fetch` direto do browser para API ficou pendurado (rede/CORS).
+
+Correcao:
+
+1. Front da inbox usa timeout no envio direto.
+2. Em timeout/erro de rede, o envio cai automaticamente para o BFF (`/api/bff/*`).
+3. A UI mostra erro amigavel abaixo do composer quando ambas tentativas falham.
+4. O timeout agora e dinamico por tamanho do arquivo (ate 300s no envio direto), reduzindo falso timeout em anexos maiores.
+
+## 9.4) UI lenta/travando ao enviar midia maior
+
+Causa comum:
+
+1. Eventos realtime (`message.created`) transportando `mediaUrl` em `data:` base64 muito grande.
+2. Redis + Socket repassando payloads pesados para todos clientes.
+
+Correcao:
+
+1. Payload de realtime agora sanitiza `mediaUrl` quando for `data:`.
+2. O chat do remetente continua com preview local do anexo.
+3. Mensagens antigas podem manter `data:` no banco, mas nao sao mais difundidas no canal realtime.
+
+## 9.5) Anexo nao anexa e mostra erro no composer
+
+Causa comum:
+
+1. Arquivo acima do limite operacional definido para o MVP.
+
+Correcao:
+
+1. Limite atual do front: `20MB` por anexo.
+2. Reduzir/comprimir o arquivo antes do envio ou evoluir para upload binario/multipart no backend.
+
+## 9.6) Audio curto demora minutos para sair de `PENDING`
+
+Causa comum:
+
+1. Audio com codec nao aceito pela Evolution no endpoint de voice-note.
+2. Retry sem fallback claro no worker.
+
+Correcao:
+
+1. Worker tenta `sendWhatsAppAudio` primeiro e, em erro compativel, faz fallback para `sendMedia` como documento.
+2. Gravador no front prioriza codec `audio/ogg;codecs=opus` quando o navegador suporta.
+3. Se ainda ficar lento, validar `EVOLUTION_REQUEST_TIMEOUT_MS` e latencia da instancia Evolution.
+
+## 9.7) `FAILED` com `exists:false` no log do worker
+
+Causa comum:
+
+1. Conversa outbound aponta para numero sem conta WhatsApp ativa.
+2. Muito comum em conversas seed/demo (`5511999999999@s.whatsapp.net`).
+
+Correcao:
+
+1. Ver logs do worker no campo `responseErrors`.
+2. Se retornar algo como `{\"jid\":\"...\",\"exists\":false}`, trate como destino invalido (nao e bug de payload).
+3. O worker marca `FAILED` e encerra sem retries quando classifica como `unrecoverable`.
+4. Testar envio em conversa real conectada para validar regressao de codigo de envio.
+
+## 10) Midia nao aparece no preview do chat
+
+Causa comum:
+
+1. Mensagem recebida sem `mediaUrl` no payload do webhook.
+2. Mensagem antiga sem campos novos (`messageType`/`mediaUrl`).
+
+Correcao:
+
+1. Validar mensagem em `GET /conversations/:id/messages`:
+   - `messageType` deve vir como `IMAGE|AUDIO|VIDEO|DOCUMENT`.
+   - `mediaUrl` deve estar preenchido para renderizar preview.
+2. Reenviar a mensagem de teste apos update de backend/webhook.
+3. Para inbound WhatsApp, o parser agora prioriza `base64` do webhook para persistencia de `mediaUrl`.
+   - evita preview quebrado por URL temporaria/criptografada (`.enc`).
+
+## 10.2) Midia so aparece apos recarregar a pagina
+
+Causa comum:
+
+1. Evento realtime (`message.created`) chega com `mediaUrl` sanitizado (`null`) para evitar trafegar base64 gigante.
+2. Front nao hidratou a mensagem pelo `id` logo apos receber o evento.
+3. `message.updated` chegava apenas com status sem snapshot completo da mensagem, impedindo atualizar midia em tempo real.
+
+Correcao:
+
+1. Front passa a buscar `GET /conversations/:conversationId/messages/:messageId` quando detectar mensagem de midia sem `mediaUrl` no realtime.
+2. A bolha mostra estado "Carregando preview..." enquanto hidrata.
+3. Backend passa a emitir `message.updated` com payload completo (sanitizando somente `data:`), permitindo merge no front sem reload.
+4. Validar no navegador sem reload: imagem/audio/documento devem aparecer apos alguns milissegundos.
+
+## 10.1) Webhook de midia retorna `413 Request body is too large`
+
+Causa comum:
+
+1. Payload do webhook com base64 excede limite da API.
+
+Correcao:
+
+1. Ajustar `.env`:
+   - `API_BODY_LIMIT_MB=80` (ou maior conforme necessidade)
+2. Reiniciar API:
+   - `docker compose restart api`
+3. Repetir teste de envio/recebimento de midia.
+
+## 10.3) Imagem especifica aparece como enviada no painel, mas nao chega no WhatsApp
+
+Causa comum:
+
+1. Arquivo com MIME/extensao limitrofe para pipeline de conversao da Evolution.
+2. Resposta de API aceita upload, mas entrega final nao ocorre para aquele binario especifico.
+
+Correcao:
+
+1. Repetir envio da mesma imagem como `Documento (sem compressao)` para validar bypass da pipeline de imagem.
+2. Registrar no checklist da matriz de regressao:
+   - nome do arquivo
+   - tamanho
+   - MIME detectado no browser
+   - tipo selecionado no composer (IMAGE vs DOCUMENT)
+3. Se reproduzir somente em `IMAGE`, tratar como caso de codec/MIME e manter fallback de envio como `DOCUMENT`.
+4. Ver log do worker `Dispatch outbound media` para confirmar `messageType`, `mimeType`, `fileName` e `fileSizeBytes` do arquivo problematico.
+
+## 10.4) Arquivo inbound de grupo aparece como `file (x).enc`
+
+Causa comum:
+
+1. Provider retornou midia ainda criptografada (`.enc`) sem decrypt aplicado no pipeline inbound.
+2. URL temporaria expirada/indisponivel e fallback nao conseguiu hidratar midia decodificada.
+
+Status atual:
+
+1. Caso em andamento no backlog (`A2-011`).
+2. Parser inbound prioriza base64 antes de URL para reduzir chance de persistir `.enc` quando houver fonte decodificada.
+3. Nome de arquivo `.enc` e sanitizado (backend + front) para exibicao/download coerente com MIME.
+4. Metadata da mensagem registra `mediaSourceKind` e `requiresMediaDecrypt` para diagnostico.
+5. Download/abertura no painel usa proxy autenticado `GET /conversations/:conversationId/messages/:messageId/media`, forcando `Content-Disposition` coerente para mensagens antigas.
+6. O proxy tenta reidratacao automatica via Evolution (`chat/getBase64FromMediaMessage`) quando detectar `url_encrypted`, `.enc` ou URL de midia expiravel.
+7. Em sucesso, a API persiste base64 decodificado na mensagem e publica `message.updated` para o front reidratar sem reload.
+
+Mitigacao imediata:
+
+1. Exibir placeholder e manter a mensagem visivel no chat quando nao houver `mediaUrl` valido.
+2. Permitir `Abrir/Baixar` quando houver `mediaUrl` utilizavel.
+3. Validar no banco `metadataJson.mediaSourceKind` para identificar se o caso veio como `url_encrypted`.
+
+Proximo ajuste tecnico:
+
+1. Cobrir com teste de regressao de midia para nao quebrar texto/audio/video ja estaveis.
+2. Se ainda houver payload sem base64 e sem sucesso no endpoint de reidratacao, avaliar fallback dedicado de decrypt fora da Evolution.
+
+## 10.5) Bateria automatica de midia (encerrar loop de teste manual)
+
+Objetivo:
+
+1. Validar rapidamente pipeline de envio por tipo (`TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `DOCUMENT`) sem ficar em ciclo manual infinito.
+2. Detectar se existe regressao de `PENDING` infinito.
+
+Comando:
+
+1. `cd apps/api`
+2. `npm run test:media:battery`
+
+Parametros opcionais:
+
+1. `BATTERY_DESTINATION_EXTERNAL_ID`: destino de homologacao real (numero/JID de teste).
+2. `BATTERY_POLL_TIMEOUT_MS`: timeout maximo por mensagem (default `75000`).
+3. `BATTERY_POLL_INTERVAL_MS`: intervalo de polling de status (default `2000`).
+
+Interpretacao:
+
+1. Rodando sem `BATTERY_DESTINATION_EXTERNAL_ID`, o script usa destino invalido controlado e deve retornar `FAILED` rapido para todos os tipos (isso valida pipeline e elimina `PENDING` infinito sem disparo real).
+2. Com destino real de homologacao, o esperado e `SENT` para os tipos suportados.
+3. Se qualquer item ficar `PENDING` no final, tratar como regressao de fila/worker/realtime.
+
+## 11) Mensagem outbound aparece duplicada no chat
+
+Causa comum:
+
+1. Webhook processando eventos que nao representam nova mensagem (`SEND_MESSAGE`, `MESSAGES_UPDATE`).
+2. Dedupe outbound dependendo de `mediaUrl` identica (pode mudar entre upload local e retorno da Evolution).
+
+Correcao:
+
+1. Processar criacao apenas para evento `MESSAGES_UPSERT`.
+2. Ignorar demais eventos com resposta `202` (`status: ignored`).
+3. No fallback de dedupe outbound (`fromMe`), usar janela curta por `messageType` e conversa, sem exigir `mediaUrl` identica.
+
+## 12) Foto/video enviados como documento saem como midia normal
+
+Causa comum:
+
+1. Front inferindo tipo somente por MIME, ignorando o modo do picker.
+
+Correcao:
+
+1. Quando o picker e `Documento`, forcar `type = DOCUMENT` mesmo para `image/*` e `video/*`.
+2. Usar opcao `Documento (sem compressao)` no menu do composer para manter o comportamento tipo WhatsApp.
+
+## 13) Mencoes `@` em grupo nao funcionam
+
+Causa comum:
+
+1. Payload de outbound sem campos de mencao esperados pela Evolution (`mentionsEveryOne` e `mentioned[]`).
+2. Inbound com `@numero` sem mapeamento de nome para renderizacao.
+3. Grupo usando identificadores `@lid` e sem resolucao de contato.
+
+Correcao:
+
+1. Garantir que o `sendText` envie mencoes no root do payload (`mentionsEveryOne` e `mentioned`).
+2. Persistir `metadataJson.mentions` no webhook a partir de `contextInfo.mentionedJid`.
+3. Em conversa de grupo, validar endpoint `GET /conversations/:conversationId/group-participants`.
+4. A API agora cruza `group/findGroupInfos` + `chat/findContacts` para resolver `@lid` em:
+   - nome do participante (quando disponivel no provedor)
+   - avatar do participante
+5. Se a Evolution nao retornar nome para um `@lid` especifico, o fallback continua numerico ate haver dado de contato/historico.
+
+## 14) Retencao nao esta apagando historico antigo
+
+Causa comum:
+
+1. Servico `retention-worker` nao iniciado no compose.
+2. Variaveis de ambiente de retencao ausentes/invalidas.
+3. `retentionDays` muito alto para o tenant de teste.
+
+Correcao:
+
+1. Validar servico:
+   - `docker compose ps retention-worker`
+2. Ver logs:
+   - `docker compose logs -f retention-worker`
+3. Conferir variaveis:
+   - `RETENTION_SWEEP_ON_BOOT=true`
+   - `RETENTION_SWEEP_INTERVAL_MINUTES=1440`
+4. Conferir `retentionDays` do tenant no `/admin` e ajustar para um valor curto durante teste.
+
+## 15) Front quebra com `users.value.map/filter/sort is not a function`
+
+Causa comum:
+
+1. Resposta JSON do BFF truncada/fora de formato.
+2. Front recebendo string/objeto ao inves de array em `/users` ou `/conversations`.
+
+Correcao:
+
+1. No BFF (`apps/web/server/api/bff/[...path].ts`), nao repassar `content-length` de upstream para respostas JSON reserializadas.
+2. Repassar `content-length` apenas para payload binario (midia/download).
+3. No composable (`apps/web/composables/omnichannel/useOmnichannelInbox.ts`), validar resposta e aplicar fallback para array vazio.
+
+Validacao rapida:
+
+1. `curl -i http://localhost:3000/api/bff/users` deve retornar JSON completo parseavel.
+2. Se vier corpo truncado, rebuild do container `web`:
+   - `docker compose up -d --build web`
+
+## 16) Validar isolamento por tenant (seguranca)
+
+Objetivo:
+
+1. Garantir que usuario de um tenant nao consiga ler/alterar recursos de outro tenant.
+
+Comando:
+
+1. `cd apps/api`
+2. `npm run test:tenant:isolation`
+
+Resultado esperado:
+
+1. Saida JSON com `summary.failed = 0`.
+2. Checks de acesso cruzado retornando `404`.
+3. Check sem token retornando `401`.
+
 ## Testes manuais uteis
 
 ## Testar webhook inbound
@@ -240,8 +667,12 @@ Invoke-RestMethod -Method Post `
 ## Validar status da conexao do canal
 
 1. Entrar em `/admin`.
-2. Clicar `Status`.
-3. Ver `connectionState` no JSON de retorno.
+2. Verificar o alerta do card `Conexao WhatsApp`:
+   - `WhatsApp conectado`
+   - `WhatsApp desconectado (aguardando QR)`
+   - `WhatsApp desconectado (QR pronto para leitura)`
+3. Se necessario, clicar `Atualizar status` e depois `Atualizar QR`.
+4. Na `/` (Inbox), validar alerta operacional no topo quando o canal estiver desconectado/nao configurado.
 
 ## Ponto de depuracao por arquivo
 
@@ -249,6 +680,10 @@ Invoke-RestMethod -Method Post `
 2. Erro em tenant/admin: `apps/api/src/routes/tenant.ts`
 3. Erro em usuarios: `apps/api/src/routes/users.ts`
 4. Erro de envio outbound: `apps/api/src/workers/outbound-worker.ts`
+5. Envio outbound por tipo:
+   - `apps/api/src/workers/senders/send-text.ts`
+   - `apps/api/src/workers/senders/send-media.ts`
+   - `apps/api/src/workers/senders/common.ts`
 5. Erro webhook inbound: `apps/api/src/routes/webhooks.ts`
 6. Erro realtime: `apps/api/src/event-bus.ts` e `apps/api/src/main.ts`
 7. Erro de UI inbox (container): `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
@@ -259,3 +694,4 @@ Invoke-RestMethod -Method Post `
 12. Tipos inbox: `apps/web/components/omnichannel/inbox/types.ts`
 13. Erro de UI admin (container): `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
 14. Erro de dominio admin (estado/polling): `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+

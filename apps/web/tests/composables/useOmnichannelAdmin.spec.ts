@@ -53,6 +53,8 @@ function mountComposable() {
 
 describe("useOmnichannelAdmin", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+
     userRef.value = {
       id: "user-admin",
       tenantId: "tenant-1",
@@ -69,6 +71,12 @@ describe("useOmnichannelAdmin", () => {
           slug: "demo",
           name: String(options?.body?.name ?? "Tenant Demo"),
           whatsappInstance: String(options?.body?.whatsappInstance ?? "demo-instance"),
+          maxChannels: Number(options?.body?.maxChannels ?? 1),
+          maxUsers: Number(options?.body?.maxUsers ?? 5),
+          retentionDays: Number(options?.body?.retentionDays ?? 15),
+          maxUploadMb: Number(options?.body?.maxUploadMb ?? 500),
+          currentChannels: 1,
+          currentUsers: 1,
           hasEvolutionApiKey: true,
           webhookUrl: "http://api:4000/webhooks/evolution/demo",
           createdAt: "2026-02-24T00:00:00.000Z",
@@ -84,6 +92,12 @@ describe("useOmnichannelAdmin", () => {
           slug: "demo",
           name: "Tenant Demo",
           whatsappInstance: "demo-instance",
+          maxChannels: 1,
+          maxUsers: 5,
+          retentionDays: 15,
+          maxUploadMb: 500,
+          currentChannels: 1,
+          currentUsers: 1,
           hasEvolutionApiKey: true,
           webhookUrl: "http://api:4000/webhooks/evolution/demo",
           createdAt: "2026-02-24T00:00:00.000Z",
@@ -159,6 +173,47 @@ describe("useOmnichannelAdmin", () => {
         };
       }
 
+      if (path.startsWith("/tenant/metrics/failures")) {
+        return {
+          generatedAt: "2026-02-26T00:00:00.000Z",
+          windowDays: 7,
+          since: "2026-02-19T00:00:00.000Z",
+          failedTotal: 0,
+          failedByType: [],
+          dailySeries: [],
+          recentFailures: []
+        };
+      }
+
+      if (path === "/tenant/whatsapp/validate-endpoints") {
+        return {
+          instanceName: "demo-instance",
+          generatedAt: "2026-02-27T00:00:00.000Z",
+          baseUrl: "http://evolution:8080",
+          timeoutMs: 90000,
+          endpoints: [
+            {
+              key: "text",
+              label: "sendText",
+              pathTemplate: "/message/sendText/:instance",
+              resolvedPath: "/message/sendText/demo-instance",
+              status: "validation_error",
+              available: true,
+              httpStatus: 400,
+              message: "probe"
+            }
+          ],
+          summary: {
+            total: 1,
+            available: 1,
+            missingRoute: 0,
+            authError: 0,
+            providerError: 0,
+            networkError: 0
+          }
+        };
+      }
+
       throw new Error(`Unexpected call: ${path}`);
     });
   });
@@ -197,6 +252,41 @@ describe("useOmnichannelAdmin", () => {
     wrapper.unmount();
   });
 
+  it("carrega e salva limites de plano do tenant", async () => {
+    const { state, wrapper } = mountComposable();
+    await flushPromises();
+
+    expect(state.tenantForm.maxChannels).toBe(1);
+    expect(state.tenantForm.maxUsers).toBe(5);
+    expect(state.tenantForm.retentionDays).toBe(15);
+    expect(state.tenantForm.maxUploadMb).toBe(500);
+
+    state.tenantForm.maxChannels = 2;
+    state.tenantForm.maxUsers = 8;
+    state.tenantForm.retentionDays = 30;
+    state.tenantForm.maxUploadMb = 700;
+    await state.saveTenant();
+
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      "/tenant",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.objectContaining({
+          maxChannels: 2,
+          maxUsers: 8,
+          retentionDays: 30,
+          maxUploadMb: 700
+        })
+      })
+    );
+    expect(state.tenant.value?.maxChannels).toBe(2);
+    expect(state.tenant.value?.maxUsers).toBe(8);
+    expect(state.tenant.value?.retentionDays).toBe(30);
+    expect(state.tenant.value?.maxUploadMb).toBe(700);
+
+    wrapper.unmount();
+  });
+
   it("redireciona para inbox quando usuario nao e admin", async () => {
     userRef.value = {
       id: "user-agent",
@@ -211,6 +301,26 @@ describe("useOmnichannelAdmin", () => {
     await flushPromises();
 
     expect(navigateToMock).toHaveBeenCalledWith("/");
+
+    wrapper.unmount();
+  });
+
+  it("permite supervisor acessar admin em modo leitura", async () => {
+    userRef.value = {
+      id: "user-supervisor",
+      tenantId: "tenant-1",
+      tenantSlug: "demo",
+      email: "supervisor@demo.local",
+      name: "Supervisor Demo",
+      role: "SUPERVISOR"
+    };
+
+    const { state, wrapper } = mountComposable();
+    await flushPromises();
+
+    expect(state.canManageTenant.value).toBe(false);
+    expect(state.canViewOpsDashboard.value).toBe(true);
+    expect(navigateToMock).not.toHaveBeenCalledWith("/");
 
     wrapper.unmount();
   });
