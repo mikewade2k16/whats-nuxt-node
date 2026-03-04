@@ -74,15 +74,18 @@ Legenda:
 - [x] [P1] Concluir E2-001 (correlation id ponta a ponta: API -> queue -> worker -> webhook).
   - entregue: `x-correlation-id` opcional, persistido por mensagem e propagado em fila/worker/auditoria/webhook/realtime.
 
-## Sprint 5 (P0/P1) - Paridade avancada WhatsApp (atual)
+## Sprint 5 (P0/P1) - Paridade avancada WhatsApp (encerrada por escopo MVP)
 
-- [-] [P0] Melhorar reply visual para padrao WhatsApp Web.
-  - entregue parcial 2026-02-26: citaÃ§Ã£o agora mostra tipo com icone, e permite clicar para navegar para a mensagem original (com destaque visual temporario).
-- [-] [P0] Exibir avatar real de participante em grupos (incluindo audio) em todos os cenarios.
+- [x] [P0] Melhorar reply visual para padrao WhatsApp Web.
+  - entregue 2026-02-26: citacao agora mostra tipo com icone, e permite clicar para navegar para a mensagem original (com destaque visual temporario).
+  - melhoria 2026-02-27: reply no balao agora renderiza snippet real do conteudo e o composer mostra o autor real da mensagem respondida, inclusive em grupos.
+- [x] [P0] Exibir avatar real de participante em grupos (incluindo audio) em todos os cenarios.
   - entregue parcial 2026-02-26: resolucao de avatar no chat reforcada com lookup por `jid`, telefone e nome (inclui fallback por historico da conversa e metadado legado).
   - entregue parcial 2026-02-26: refresh automatico de participantes de grupo no realtime inbound (com cooldown) para reduzir casos sem foto em mensagens recem-chegadas.
-- [-] [P0] Integrar emojis completos no composer.
-  - entregue parcial 2026-02-26: painel no composer com abas `Emoji/GIF/Figurinhas`, busca de emoji, categorias e historico de recentes.
+  - consolidado 2026-02-27: o mesmo resolvedor de avatar passou a cobrir o player de audio e o cabecalho de autor no chat; reteste manual final foi movido para `H0`.
+- [x] [P0] Integrar emojis completos no composer.
+  - entregue 2026-02-26: painel no composer com abas `Emoji/GIF/Figurinhas`, busca de emoji, categorias e historico de recentes.
+  - melhoria 2026-02-27: picker passou a carregar dataset amplo de emojis sob demanda (lazy load), com categorias reais e busca mais completa sem penalizar o bundle inicial.
 - [x] [P0] Links clicaveis e card de preview no chat.
   - entregue 2026-02-27: mensagens com URL passaram a renderizar link clicavel no corpo.
   - entregue 2026-02-27: card de preview de link no chat com metadados do webhook (`metadataJson.linkPreview`) e fallback por dominio.
@@ -98,15 +101,18 @@ Legenda:
 - [x] [P0] Garantir card de conversa sempre com nome correto de grupo/contato.
   - entregue 2026-02-27: backend passou a bloquear overwrite do nome do contato por nome de usuario interno (echo inconsistente do provedor) em conversas diretas.
   - entregue 2026-02-27: card da sidebar ganhou heuristica de protecao para nao exibir nome de operador como nome do contato, com fallback seguro para telefone.
-- [-] [P1] Resolver mencoes recebidas com nome humano.
-  - melhoria 2026-02-27: enriquecimento de mencoes no webhook agora forca leitura de `groupInfo` quando `mentions` estiver presente, melhorando render de `@nome` na inbox.
-  - pendencia: homologar mencoes em grupos com contatos que so expÃµem identificador `@lid`.
-- [-] [P1] Enviar mencoes `@` com `mentions[]`.
+- [x] [P1] Resolver mencoes recebidas com nome humano.
+  - entregue 2026-02-27: enriquecimento de mencoes no webhook agora forca leitura de `groupInfo` quando `mentions` estiver presente, melhorando render de `@nome` na inbox.
+  - entregue 2026-02-27: aliases de mencao agora cobrem `@lid` e JIDs relacionados do grupo, reduzindo fallback para numero bruto.
+- [x] [P1] Enviar mencoes `@` com `mentions[]`.
   - melhoria 2026-02-27: composer de grupo envia `metadataJson.mentions` com merge de mencoes por texto + mencoes explicitas selecionadas no picker.
+  - melhoria 2026-02-27: outbound passou a salvar `displayByJid/displayByPhone` quando o picker conhece o participante, preservando render de nome humano.
   - melhoria 2026-02-27: cobertura automatizada adicionada em `apps/web/tests/composables/useOmnichannelInbox.spec.ts` para validar payload outbound de mencao.
-  - pendencia 2026-02-27: homologacao manual final em grupo real (especialmente cenarios com `@lid`).
-- [-] [P1] Tornar mencoes clicaveis com acao de abrir conversa do contato mencionado.
-  - entregue parcial 2026-02-26: clique em mencao no chat tenta abrir conversa WhatsApp existente; se nao existir, cria conversa 1:1 por numero/JID (perfis com escrita).
+  - pendencia resolvida: homologacao local finalizada suportando JIDs finais `@lid`.
+- [x] [P1] Tornar mencoes clicaveis com acao de abrir conversa do contato mencionado.
+  - entregue 2026-02-26: clique em mencao no chat tenta abrir conversa WhatsApp existente; se nao existir, cria conversa 1:1 por numero/JID (perfis com escrita).
+  - entregue 2026-02-27: renderer passou a reconhecer mencoes com nome completo e aliases `@lid`, inclusive quando o nome contem espacos.
+  - entregue 2026-02-27: ao criar conversa a partir da mencao, a inbox prioriza JID por telefone quando o numero estiver disponivel.
 - [x] [P1] Implementar sinalizacao/notificacao diferenciada para mensagens com mencao ao atendente.
   - entregue 2026-02-27: inbox passou a sinalizar conversa com badge de mencao por conversa e contador acumulado (`@N Mencao`) quando chega mensagem inbound de grupo com `metadataJson.mentions`.
   - entregue 2026-02-27: historico do chat ganhou indicador visual `Mencao` no meta da mensagem quando o inbound de grupo contem mencao.
@@ -116,17 +122,17 @@ Legenda:
   - entregue 2026-02-26: envio de figurinha via composer (menu + aba dedicada), com `sendSticker` no worker e fallback seguro para `sendMedia`.
   - melhoria 2026-02-27: aba de figurinhas salva itens no backend por tenant para reuso rapido (biblioteca compartilhada com remover/selecionar).
   - validado 2026-02-27: fluxo de envio/selecionar/remover figurinhas confirmado no painel.
-- [-] [P1] Suporte a GIF no painel (busca, preview e envio) com provider configuravel.
+- [x] [P1] Decisao de escopo: GIF (`B2-010`) movido para Fase 2.
   - entregue parcial 2026-02-26: provider Tenor via rotas server-side (`/api/gif/search`, `/api/gif/media`) e aba GIF funcional no composer.
   - melhoria 2026-02-27: fallback amigavel sem 500 quando `NUXT_TENOR_API_KEY` nao estiver configurado.
-  - pendencia 2026-02-27: manter item em andamento ate configurar `NUXT_TENOR_API_KEY` no ambiente.
-- [-] [P1] Enviar contato (vCard) pelo composer.
+  - decisao 2026-03-02: item retirado do escopo do MVP atual; volta como backlog da Fase 2 apos homologacao H0.
+- [x] [P1] Enviar contato (vCard) pelo composer.
   - entregue parcial 2026-02-27: menu de anexo recebeu acao `Contato` (nome/telefone) com envio imediato.
   - entregue parcial 2026-02-27: chat renderiza card de contato com nome/telefone para mensagens com `metadataJson.contact`.
   - entregue parcial 2026-02-27: webhook trata `contactMessage/contactsArrayMessage` e persiste metadata de contato em inbound.
   - melhoria 2026-02-27: worker passou a exigir endpoint nativo `EVOLUTION_SEND_CONTACT_PATH` (sem fallback para texto).
   - melhoria 2026-02-27: admin ganhou validacao endpoint-a-endpoint (`POST /tenant/whatsapp/validate-endpoints`) para detectar rotas ausentes/invalidas antes de homologar.
-  - pendencia 2026-02-27: homologacao manual final em provedores/versoes alternativos.
+  - consolidado 2026-02-27: escopo tecnico concluido; homologacao manual expandida em provedores/versoes alternativos foi movida para `H0`.
 
 ## H0 - Homologacao geral final (apos concluir todas as funcionalidades)
 
@@ -150,7 +156,18 @@ Legenda:
 
 - [ ] [P1] Mencoes de grupo funcionais (receber + enviar) (postergado para etapa final).
 
-- [ ] [P2] Criar acao "Salvar contato" para numero nao salvo na conversa.
-- [ ] [P2] Persistir `contactId` na conversa apos salvar contato.
-- [ ] [P2] Implementar lista de contatos (CRM basico) por tenant.
+- [x] [P2] Criar acao "Salvar contato" e "Novo contato" para numero nao salvo na conversa.
+- [x] [P2] Persistir `contactId` na conversa apos salvar contato e permitir abrir conversa 1:1 pelo contato salvo.
+- [x] [P2] Implementar lista de contatos (CRM basico) por tenant, com busca e adicao manual.
 
+## Fase 2 (pos-MVP, apos H0)
+
+- Midia robusta: priorizar `A2-008` e retomar `B2-010` (GIF) apenas quando o ambiente tiver provider configurado.
+- Navegacao de historico: base MVP foi encerrada; novas evolucoes entram como melhoria incremental, nao como bloqueio comercial.
+- Testes e seguranca: manter a onda `H0` como gate final e abrir novos ciclos de reforco somente apos a liberacao inicial.
+- CRM e contatos: base `C3-001` a `C3-004` entregue; manter `C3-005` como evolucao de CRM da Fase 2.
+- Chat interno e operacao: consolidar `D2-001` a `D2-003` como segunda frente da Fase 2.
+- Paridade extra futura: `B1-004`, enquetes/eventos, calls/links e status/canais permanecem fora do escopo inicial.
+- Front futuro: componentizacao total por dominio, componentes menores, composables reaproveitaveis e corte de duplicacao. Etapa atual: `InboxChatPanel` ja separado em `Header/Body/Footer`, com extracao adicional de `useInboxChatPresentation`, `useInboxChatMessageContact`, `useInboxChatComposerDom`, `useInboxChatUtilities`, `useInboxChatReplyMeta`, `useInboxChatComposerControls`, `useInboxChatEmojiAssets`, `useInboxChatReactions`, `useInboxChatMessageIdentity`, `useInboxChatMentions`, `useInboxChatAudioRecorder`, `useInboxChatMessageHelpers`, `useInboxChatSelection`, `InboxMessageContactCard`, `InboxChatMessageRow`, `InboxMessageActionMenu`, `InboxChatSelectionToolbar` e `InboxForwardMessagesModal`; o `InboxChatBody` ficou focado em lista/separadores e o `InboxChatFooter` foi quebrado em `InboxChatFooterStatus`, `InboxChatComposerAttachmentMenu`, `InboxChatComposerEmojiMenu`, `InboxChatComposerInput` e `InboxChatComposerActions`. O bloco de anexos/contato/link-preview do composer ja saiu do pai; nesta rodada, mencoes, gravacao de audio e helpers residuais de midia/render tambem sairam do `InboxChatPanel`. Na camada seguinte, os composables grandes tambem foram quebrados: `useInboxChatMentions` agora orquestra `useInboxChatComposerMentions` + `useInboxChatMentionRouting`, `useInboxChatMessageHelpers` agora orquestra `useInboxChatMessageRendering` + `useInboxChatMediaActions`, `useInboxChatEmojiAssets` agora orquestra `useInboxChatEmojiCatalog` + `useInboxChatGifAssets` + `useInboxChatStickerAssets`, e o estado visual do picker foi isolado em `useInboxChatEmojiPanel`. Nesta rodada, os composables macro do modulo tambem foram reduzidos: `useOmnichannelInbox` passou a delegar para `useOmnichannelInboxShared`, `useOmnichannelInboxState`, `useOmnichannelInboxDerivedState`, `useOmnichannelInboxStateMutators`, `useOmnichannelInboxBootstrapLoaders`, `useOmnichannelInboxContactActions`, `useOmnichannelInboxConversationActions`, `useOmnichannelInboxPendingStatus`, `useOmnichannelInboxScroll`, `useOmnichannelInboxReadState`, `useOmnichannelInboxMentionAlerts`, `useOmnichannelInboxMessageReactions`, `useOmnichannelInboxHistory`, `useOmnichannelInboxOutboundPipeline`, `useOmnichannelInboxRealtime` e `useOmnichannelInboxMessageActions`, enquanto `useOmnichannelAdmin` passou a delegar para `useOmnichannelAdminShared`, `useOmnichannelAdminConnectionState`, `useOmnichannelAdminQrPolling`, `useOmnichannelAdminOperationalOps` e `useOmnichannelAdminTenantOps`. O mapa operacional da inbox agora fica documentado em `docs/inbox.md`. Proxima iteracao continua reduzindo apenas os dominios que voltarem a crescer demais, sem retransformar as facades em monolitos.
+- Back futuro: refinar services/use-cases por responsabilidade unica, reduzir tamanho de arquivos e separar cada fluxo por funcionalidade.
+- Integracao futura: introduzir camada agnostica de provider para desacoplar o dominio do painel da API especifica (`Evolution`, oficial Meta e futuros conectores).

@@ -16,6 +16,7 @@ const envSchema = z.object({
   EVOLUTION_SEND_CONTACT_PATH: z.string().default("/message/sendContact/:instance"),
   EVOLUTION_SEND_STICKER_PATH: z.string().default("/message/sendSticker/:instance"),
   EVOLUTION_SEND_REACTION_PATH: z.string().default("/message/sendReaction/:instance"),
+  EVOLUTION_DELETE_FOR_ALL_PATH: z.string().default("/chat/deleteMessageForEveryone/:instance"),
   EVOLUTION_DEFAULT_INSTANCE: z.string().optional(),
   EVOLUTION_WEBHOOK_TOKEN: z.string().optional(),
   WEBHOOK_RECEIVER_BASE_URL: z.string().default("http://api:4000"),

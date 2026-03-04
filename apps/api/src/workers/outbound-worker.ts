@@ -10,7 +10,7 @@ import {
   normalizeCorrelationId,
   withCorrelationIdMetadata
 } from "../lib/correlation.js";
-import { outboundQueueName } from "../queue.js";
+import { outboundQueueMaxAttempts, outboundQueueName } from "../queue.js";
 import { redisOptions, redisPublisher } from "../redis.js";
 import { recordAuditEvent } from "../services/audit-log.js";
 import {
@@ -85,12 +85,89 @@ function isUnrecoverableEvolutionError(status: number | undefined, responseData:
       return true;
     }
 
-    if (normalized.includes("required") || normalized.includes("invalid")) {
+    if (
+      normalized.includes("required") ||
+      normalized.includes("invalid") ||
+      normalized.includes("is not of a type")
+    ) {
       return true;
     }
   }
 
   return false;
+}
+
+type RetryCategory =
+  | "unrecoverable"
+  | "rate_limit"
+  | "provider"
+  | "network"
+  | "internal";
+
+interface RetryDecision {
+  retryable: boolean;
+  maxAttempts: number;
+  category: RetryCategory;
+}
+
+function resolveRetryDecision(error: unknown): RetryDecision {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const responseData = error.response?.data;
+
+    if (isUnrecoverableEvolutionError(status, responseData)) {
+      return {
+        retryable: false,
+        maxAttempts: 1,
+        category: "unrecoverable"
+      };
+    }
+
+    if (status === 429) {
+      return {
+        retryable: true,
+        maxAttempts: 5,
+        category: "rate_limit"
+      };
+    }
+
+    if (typeof status === "number" && status >= 500) {
+      return {
+        retryable: true,
+        maxAttempts: 4,
+        category: "provider"
+      };
+    }
+
+    if (!status) {
+      return {
+        retryable: true,
+        maxAttempts: 4,
+        category: "network"
+      };
+    }
+
+    return {
+      retryable: true,
+      maxAttempts: 3,
+      category: "provider"
+    };
+  }
+
+  return {
+    retryable: true,
+    maxAttempts: 2,
+    category: "internal"
+  };
+}
+
+function canRetryCurrentAttempt(currentAttempt: number, decision: RetryDecision, configuredAttempts: number) {
+  if (!decision.retryable) {
+    return false;
+  }
+
+  const allowedAttempts = Math.max(1, Math.min(decision.maxAttempts, configuredAttempts));
+  return currentAttempt < allowedAttempts;
 }
 
 interface SetStatusAuditOptions {
@@ -271,6 +348,7 @@ const worker = new Worker(
           caption,
           fileName: message.mediaFileName,
           mimeType: message.mediaMimeType,
+          metadataJson: message.metadataJson,
           apiKey
         };
 
@@ -325,6 +403,14 @@ const worker = new Worker(
         }
       });
     } catch (error) {
+      const currentAttempt = job.attemptsMade + 1;
+      const configuredAttempts =
+        typeof job.opts.attempts === "number" && Number.isFinite(job.opts.attempts)
+          ? Math.max(1, Math.trunc(job.opts.attempts))
+          : outboundQueueMaxAttempts;
+      const retryDecision = resolveRetryDecision(error);
+      const willRetry = canRetryCurrentAttempt(currentAttempt, retryDecision, configuredAttempts);
+
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
         const unrecoverable = isUnrecoverableEvolutionError(error.response?.status, responseData);
@@ -336,8 +422,17 @@ const worker = new Worker(
           url: error.config?.url,
           response: responseData,
           responseErrors: extractEvolutionErrorMessages(responseData),
-          unrecoverable
+          unrecoverable,
+          retryCategory: retryDecision.category,
+          currentAttempt,
+          configuredAttempts,
+          maxAttemptsForError: retryDecision.maxAttempts,
+          willRetry
         });
+
+        if (willRetry) {
+          throw error;
+        }
 
         await setStatus({
           messageId: message.id,
@@ -355,20 +450,31 @@ const worker = new Worker(
               errorCode: error.code ?? null,
               responseErrors: extractEvolutionErrorMessages(responseData),
               unrecoverable,
+              retryCategory: retryDecision.category,
+              attemptsUsed: currentAttempt,
+              maxAttemptsForError: Math.min(retryDecision.maxAttempts, configuredAttempts),
               correlationId
             }
           }
         });
-        if (unrecoverable) {
-          return;
-        }
+
+        return;
       } else {
         console.error("Falha no envio outbound", {
           messageId: message.id,
           correlationId,
           conversationId: message.conversationId,
-          error
+          error,
+          retryCategory: retryDecision.category,
+          currentAttempt,
+          configuredAttempts,
+          maxAttemptsForError: retryDecision.maxAttempts,
+          willRetry
         });
+
+        if (willRetry) {
+          throw error;
+        }
 
         await setStatus({
           messageId: message.id,
@@ -383,14 +489,16 @@ const worker = new Worker(
               messageType: message.messageType,
               provider: "internal",
               errorMessage: error instanceof Error ? error.message : String(error),
+              retryCategory: retryDecision.category,
+              attemptsUsed: currentAttempt,
+              maxAttemptsForError: Math.min(retryDecision.maxAttempts, configuredAttempts),
               correlationId
             }
           }
         });
-        throw error;
-      }
 
-      throw error;
+        return;
+      }
     }
   },
   {

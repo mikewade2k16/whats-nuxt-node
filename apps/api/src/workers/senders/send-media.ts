@@ -13,6 +13,7 @@ type SendMediaMessageParams = {
   caption: string | null;
   fileName: string | null;
   mimeType: string | null;
+  metadataJson?: unknown;
   apiKey: string | null | undefined;
 };
 
@@ -29,6 +30,14 @@ function toEvolutionMediaTypeForMediaEndpoint(type: MessageType): EvolutionMedia
 
   // sendMedia endpoint expects image/video/document. Audio fallback is sent as document.
   return "document";
+}
+
+function asRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
 }
 
 function normalizeMimeType(mimeType: string | null, mediaType: MessageType, endpointMediaType: EvolutionMediaType) {
@@ -138,14 +147,32 @@ function buildMediaPayload(params: {
   };
 }
 
-function buildAudioPayload(recipient: string, mediaSource: string) {
-  const normalizedMedia = normalizeMediaForEvolution(mediaSource);
+function buildAudioPayload(params: {
+  recipient: string;
+  mediaSource: string;
+  fileName: string | null;
+  mimeType: string | null;
+  ptt: boolean;
+}) {
+  const normalizedMedia = normalizeMediaForEvolution(params.mediaSource);
+  const normalizedMimeType = params.mimeType?.trim().toLowerCase() || "audio/ogg";
+  const fallbackFileName = defaultFileName(MessageType.AUDIO, normalizedMimeType);
+  const normalizedFileName = sanitizeFileName(params.fileName?.trim() || fallbackFileName);
+
   return {
-    number: recipient,
+    number: params.recipient,
     audio: normalizedMedia,
     media: normalizedMedia,
-    ptt: false
+    ptt: params.ptt,
+    fileName: normalizedFileName,
+    mimetype: normalizedMimeType
   };
+}
+
+function resolveAudioPtt(metadataJson: unknown) {
+  const metadata = asRecord(metadataJson);
+  const media = metadata ? asRecord(metadata.media) : null;
+  return media?.sendAsVoiceNote === true;
 }
 
 function buildStickerPayload(recipient: string, mediaSource: string) {
@@ -166,9 +193,31 @@ function shouldRetryAudioWithGenericMedia(error: unknown) {
 }
 
 function shouldUseAudioEndpoint(mimeType: string | null, fileName: string | null) {
-  void mimeType;
-  void fileName;
-  return true;
+  const normalizedMime = mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
+  const normalizedFileName = fileName?.trim().toLowerCase() ?? "";
+
+  if (normalizedMime.startsWith("audio/")) {
+    return true;
+  }
+
+  const knownAudioExtensions = [
+    ".ogg",
+    ".oga",
+    ".opus",
+    ".webm",
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".aac",
+    ".flac",
+    ".wma"
+  ];
+
+  if (knownAudioExtensions.some((extension) => normalizedFileName.endsWith(extension))) {
+    return true;
+  }
+
+  return false;
 }
 
 export async function sendMediaMessage(params: SendMediaMessageParams) {
@@ -249,7 +298,13 @@ export async function sendAudioMessage(params: SendMediaMessageParams) {
   try {
     const response = await axios.post(
       params.audioUrl,
-      buildAudioPayload(params.recipient, params.mediaSource),
+      buildAudioPayload({
+        recipient: params.recipient,
+        mediaSource: params.mediaSource,
+        fileName: params.fileName,
+        mimeType: params.mimeType,
+        ptt: resolveAudioPtt(params.metadataJson)
+      }),
       buildRequestConfig(params.apiKey)
     );
     return response.data;

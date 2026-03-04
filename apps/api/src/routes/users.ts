@@ -14,6 +14,7 @@ const createUserSchema = z.object({
 
 const updateUserSchema = z.object({
   name: z.string().min(2).max(120).optional(),
+  email: z.string().email().optional(),
   role: z.nativeEnum(UserRole).optional(),
   password: z.string().min(6).max(128).optional()
 });
@@ -158,9 +159,30 @@ export async function userRoutes(app: FastifyInstance) {
         }
       }
 
+      if (body.data.email !== undefined && body.data.email !== targetUser.email) {
+        const existing = await prisma.user.findUnique({
+          where: {
+            tenantId_email: {
+              tenantId: request.authUser.tenantId,
+              email: body.data.email
+            }
+          },
+          select: {
+            id: true
+          }
+        });
+
+        if (existing && existing.id !== targetUser.id) {
+          return reply.code(409).send({ message: "Email ja cadastrado neste tenant" });
+        }
+      }
+
       const data: Record<string, unknown> = {};
       if (body.data.name !== undefined) {
         data.name = body.data.name;
+      }
+      if (body.data.email !== undefined) {
+        data.email = body.data.email;
       }
       if (body.data.role !== undefined) {
         data.role = body.data.role;
@@ -184,6 +206,55 @@ export async function userRoutes(app: FastifyInstance) {
       });
 
       return updated;
+    });
+
+    protectedApp.delete("/users/:userId", async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const params = z.object({ userId: z.string().min(1) }).safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send({ message: "Payload invalido" });
+      }
+
+      const targetUser = await prisma.user.findFirst({
+        where: {
+          id: params.data.userId,
+          tenantId: request.authUser.tenantId
+        },
+        select: {
+          id: true,
+          role: true
+        }
+      });
+
+      if (!targetUser) {
+        return reply.code(404).send({ message: "Usuario nao encontrado" });
+      }
+
+      if (targetUser.id === request.authUser.sub) {
+        return reply.code(400).send({ message: "Nao e permitido excluir o usuario autenticado." });
+      }
+
+      if (targetUser.role === UserRole.ADMIN) {
+        const adminCount = await prisma.user.count({
+          where: {
+            tenantId: request.authUser.tenantId,
+            role: UserRole.ADMIN
+          }
+        });
+
+        if (adminCount <= 1) {
+          return reply.code(400).send({ message: "Nao e permitido remover o ultimo admin do tenant" });
+        }
+      }
+
+      await prisma.user.delete({
+        where: { id: targetUser.id }
+      });
+
+      return reply.code(204).send();
     });
   });
 }

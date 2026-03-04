@@ -13,10 +13,17 @@ export type ProjectDocChecklistStats = {
   status: ProjectDocStatus;
 };
 
+export type ProjectDocChecklistItem = {
+  text: string;
+  status: Exclude<ProjectDocStatus, "none">;
+  priority: ProjectDocPriority | null;
+};
+
 export type ProjectDocSectionStats = {
   title: string;
   level: number;
   checklist: ProjectDocChecklistStats;
+  items: ProjectDocChecklistItem[];
 };
 
 export type ProjectDocPriorityStats = Record<ProjectDocPriority, ProjectDocChecklistStats>;

@@ -239,4 +239,17 @@ export class EvolutionClient {
       timeoutMs: params.timeoutMs
     });
   }
+
+  deleteMessageForEveryone(params: {
+    instanceName: string;
+    pathTemplate: string;
+    payload: Record<string, unknown>;
+    timeoutMs?: number;
+  }) {
+    const path = resolvePathTemplate(params.pathTemplate, params.instanceName);
+    return this.request<Record<string, unknown>>("DELETE", path, {
+      data: params.payload,
+      timeoutMs: params.timeoutMs
+    });
+  }
 }

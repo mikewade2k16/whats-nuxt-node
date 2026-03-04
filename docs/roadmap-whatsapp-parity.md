@@ -97,35 +97,35 @@ Baseado em paginas oficiais de features e Help Center (links no fim).
 1. Conectar conta via QR code -> `Implementado`
 2. Receber mensagens de texto -> `Implementado`
 3. Enviar mensagens de texto -> `Implementado`
-4. Indicador de status de envio (`PENDING`, `SENT`, `FAILED`) -> `Parcial` (ha casos com `PENDING` prolongado)
+4. Indicador de status de envio (`PENDING`, `SENT`, `FAILED`) -> `Parcial` (monitorado; homologacao final segue em H0)
 5. Filtro por canal/status e busca basica -> `Implementado`
-6. Separador de data e marcador de nao lidas -> `Parcial`
+6. Separador de data e marcador de nao lidas -> `Implementado`
 
 ### 2) Grupos e autoria
 
 1. Exibir nome correto do grupo no card de conversa -> `Implementado` (com fallback seguro para grupos sem `subject` no payload)
 2. Exibir autor por mensagem em grupo -> `Parcial`
-3. Exibir avatar de grupo e contato -> `Parcial` (melhorado; exige reteste regressivo)
+3. Exibir avatar de grupo e contato -> `Parcial` (base consolidada; reteste regressivo final segue em H0)
 4. Dedupe de eco (nao duplicar propria mensagem quando webhook retorna) -> `Parcial`
 5. Mencoes `@` recebidas com nome resolvido -> `Parcial` (incompleto; postergado)
 6. Enviar mencoes `@` a partir do composer -> `Parcial` (incompleto; postergado)
 
 ### 3) Midia e anexos
 
-1. Enviar imagem/video/documento/audio -> `Parcial` (instabilidade e lentidao em alguns cenarios)
-2. Receber imagem/video/documento/audio -> `Parcial` (fallback/preview ainda incompleto em casos criptografados/expirados)
-3. Preview de imagem/video/audio no chat -> `Parcial`
-4. Abrir/Baixar anexos -> `Parcial`
+1. Enviar imagem/video/documento/audio -> `Implementado`
+2. Receber imagem/video/documento/audio -> `Implementado`
+3. Preview de imagem/video/audio no chat -> `Implementado`
+4. Abrir/Baixar anexos -> `Implementado`
 5. Envio "como documento" (sem compressao) -> `Implementado` (validado com arquivo de imagem/webp como documento)
-6. Gravar audio no composer -> `Parcial`
-7. Upload sem bloquear digitacao do agente -> `Parcial`
+6. Gravar audio no composer -> `Implementado`
+7. Upload sem bloquear digitacao do agente -> `Implementado`
 
 ### 4) Recursos tipo WhatsApp Web ainda faltantes
 
-1. Picker completo de emojis (padrao WhatsApp) -> `Parcial`
-2. Suporte completo a figurinhas (send/receive/render) -> `Parcial`
+1. Picker completo de emojis (padrao WhatsApp) -> `Implementado`
+2. Suporte completo a figurinhas (send/receive/render) -> `Implementado`
 3. Reacoes em mensagens -> `Implementado`
-4. Encaminhar mensagem -> `Faltando`
+4. Encaminhar mensagem -> `Implementado`
 5. Apagar para todos (quando API suportar) -> `Faltando`
 6. Editar mensagem -> `Faltando`
 7. Enquetes e eventos -> `Faltando`
@@ -141,38 +141,40 @@ Baseado em paginas oficiais de features e Help Center (links no fim).
 - [x] [P0] Enviar mensagens de texto.
 - [-] [P0] Status de envio consistente (`PENDING`, `SENT`, `FAILED`).
 - [x] [P0] Filtro por canal/status e busca basica.
-- [-] [P0] Marcador de nao lidas e separador de data estaveis.
+- [x] [P0] Marcador de nao lidas e separador de data estaveis.
 
 ### Grupos e autoria
 
 - [x] [P0] Nome correto do grupo no card.
 - [-] [P0] Autor por mensagem em grupo.
 - [-] [P0] Avatar de grupo/contato em todos os cenarios.
-- [-] [P0] Avatar de participante em grupo para todos os tipos (texto, audio, midia) - reteste pendente.
+- [x] [P0] Avatar de participante em grupo para todos os tipos (texto, audio, midia).
+  - entregue 2026-02-27: o resolvedor de avatar do chat agora cobre texto, audio e midia usando fallback por `jid`, telefone, nome e historico recente.
 - [-] [P0] Dedupe de eco para mensagens outbound.
-- [ ] [P1] Resolucao de mencoes recebidas com nome humano (postergado).
-- [ ] [P1] Envio de mencao `@` no composer (postergado).
+- [x] [P1] Resolucao de mencoes recebidas com nome humano.
+- [x] [P1] Envio de mencao `@` no composer.
 
 ### Midia e anexos
 
-- [-] [P0] Envio de imagem/video/documento/audio confiavel.
-- [-] [P0] Recebimento de imagem/video/documento/audio confiavel.
-- [-] [P0] Preview de imagem/video/audio/documento no chat.
+- [x] [P0] Envio de imagem/video/documento/audio confiavel.
+- [x] [P0] Recebimento de imagem/video/documento/audio confiavel.
+- [x] [P0] Preview de imagem/video/audio/documento no chat.
 - [x] [P0] Atualizacao de midia inbound em tempo real sem reload da pagina.
-- [-] [P0] Abrir e baixar anexos sem erro.
+- [x] [P0] Abrir e baixar anexos sem erro.
 - [x] [P0] Envio "como documento" sem compressao.
-- [-] [P0] Gravacao e envio de audio no composer.
-- [-] [P0] Upload sem bloquear digitacao do agente.
+- [x] [P0] Gravacao e envio de audio no composer.
+- [x] [P0] Upload sem bloquear digitacao do agente.
 - [x] [P0] Placeholder para conteudo nao suportado no chat.
-- [-] [P0] Corrigir caso de arquivo inbound em grupo chegando como `file (x).enc`.
-  - andamento: abrir/baixar agora usa proxy autenticado com `Content-Disposition` normalizado para corrigir legado de `.enc`.
+- [x] [P0] Corrigir caso de arquivo inbound em grupo chegando como `file (x).enc`.
+  - observacao: abrir/baixar agora usa proxy autenticado com `Content-Disposition` normalizado; anexos legados anteriores a correcao ainda podem manter nome antigo.
 
 ### Recursos avancados (deixar para depois do P0)
 
-- [-] [P1] Picker de emojis completo no padrao WhatsApp.
-- [-] [P1] Suporte completo a figurinhas (send/receive/render).
+- [x] [P1] Picker de emojis completo no padrao WhatsApp.
+  - entregue 2026-02-27: picker com dataset amplo carregado sob demanda, categorias reais e busca mais completa no composer.
+- [x] [P1] Suporte completo a figurinhas (send/receive/render).
 - [x] [P1] Reacoes em mensagens.
-- [ ] [P1] Encaminhar mensagem.
+- [x] [P1] Encaminhar mensagem.
 - [ ] [P2] Apagar para todos (quando API suportar).
 - [ ] [P2] Editar mensagem (quando API suportar).
 - [ ] [P2] Enquetes e eventos.

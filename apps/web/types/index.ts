@@ -28,6 +28,8 @@ export interface TenantSettings {
   evolutionApiKey: string | null;
 }
 
+export interface ClientRecord extends TenantSettings {}
+
 export interface TenantUser {
   id: string;
   tenantId: string;
@@ -84,11 +86,27 @@ export interface SavedSticker {
   createdByUserId?: string | null;
 }
 
+export interface Contact {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  avatarUrl: string | null;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  lastConversationId: string | null;
+  lastConversationAt: string | null;
+  lastConversationChannel: "WHATSAPP" | "INSTAGRAM" | null;
+  lastConversationStatus: ConversationStatus | null;
+}
+
 export interface Conversation {
   id: string;
   channel: "WHATSAPP" | "INSTAGRAM";
   status: ConversationStatus;
   externalId: string;
+  contactId?: string | null;
   contactName: string | null;
   contactAvatarUrl: string | null;
   contactPhone: string | null;

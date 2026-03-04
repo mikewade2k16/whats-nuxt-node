@@ -345,6 +345,20 @@ describe("useOmnichannelInbox", () => {
         };
       }
 
+      if (path === "/conversations/g1/group-participants") {
+        return {
+          conversationId: "g1",
+          participants: [
+            {
+              jid: "5511912345678@s.whatsapp.net",
+              name: "Mike Wade",
+              phone: "5511912345678",
+              avatarUrl: null
+            }
+          ]
+        };
+      }
+
       if (path === "/conversations/g1/messages" && options?.method === "POST") {
         return {
           id: "gm-out-1",
@@ -382,10 +396,14 @@ describe("useOmnichannelInbox", () => {
     const metadata = body?.metadataJson as Record<string, unknown>;
     const mentions = metadata?.mentions as Record<string, unknown>;
     const mentioned = Array.isArray(mentions?.mentioned) ? mentions.mentioned : [];
+    const displayByJid = mentions?.displayByJid as Record<string, unknown>;
+    const displayByPhone = mentions?.displayByPhone as Record<string, unknown>;
 
     expect(mentions?.everyOne).toBe(false);
     expect(mentioned).toContain("1234567890@s.whatsapp.net");
     expect(mentioned).toContain("5511912345678@s.whatsapp.net");
+    expect(displayByJid?.["5511912345678@s.whatsapp.net"]).toBe("Mike Wade");
+    expect(displayByPhone?.["5511912345678"]).toBe("Mike Wade");
 
     wrapper.unmount();
   });
@@ -558,6 +576,90 @@ describe("useOmnichannelInbox", () => {
     });
 
     expect(state.mentionConversationCounts.value.g1).toBe(2);
+
+    wrapper.unmount();
+  });
+
+  it("abre conversa a partir de mencao preferindo JID por telefone quando o alvo veio como @lid", async () => {
+    apiFetchMock.mockImplementation(async (path: string, options?: { method?: string; body?: Record<string, unknown> }) => {
+      if (path === "/users") {
+        return [];
+      }
+
+      if (path === "/tenant") {
+        return {
+          id: "tenant-1",
+          slug: "demo",
+          name: "Tenant Demo",
+          whatsappInstance: "demo-instance",
+          maxChannels: 1,
+          maxUsers: 5,
+          retentionDays: 15,
+          maxUploadMb: 500,
+          currentChannels: 1,
+          currentUsers: 1,
+          hasEvolutionApiKey: true,
+          webhookUrl: "http://api:4000/webhooks/evolution/demo",
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:00.000Z",
+          canViewSensitive: true,
+          evolutionApiKey: "key"
+        };
+      }
+
+      if (path === "/conversations" && !options?.method) {
+        return [];
+      }
+
+      if (path === "/conversations" && options?.method === "POST") {
+        return {
+          id: "c-new",
+          channel: "WHATSAPP",
+          status: "OPEN",
+          externalId: String(options.body?.externalId ?? ""),
+          contactName: String(options.body?.contactName ?? "Contato LID"),
+          contactAvatarUrl: null,
+          contactPhone: String(options.body?.contactPhone ?? "5511987654321"),
+          assignedToId: null,
+          createdAt: "2026-02-24T10:20:00.000Z",
+          updatedAt: "2026-02-24T10:20:00.000Z",
+          lastMessageAt: "2026-02-24T10:20:00.000Z",
+          lastMessage: null
+        };
+      }
+
+      if (path.startsWith("/conversations/c-new/messages?")) {
+        return {
+          conversationId: "c-new",
+          messages: [],
+          hasMore: false
+        };
+      }
+
+      return {};
+    });
+
+    const { state, wrapper } = mountComposable();
+    await flushPromises();
+
+    await state.openMentionConversation({
+      jid: "120363025000000000:44@lid",
+      phone: "5511987654321",
+      label: "Contato LID"
+    });
+    await flushPromises();
+
+    const postCall = apiFetchMock.mock.calls.find(
+      (call) => call[0] === "/conversations" && call[1]?.method === "POST"
+    );
+
+    expect(postCall).toBeTruthy();
+    expect(postCall?.[1]?.body).toMatchObject({
+      externalId: "5511987654321@s.whatsapp.net",
+      contactName: "Contato LID",
+      contactPhone: "5511987654321"
+    });
+    expect(state.activeConversationId.value).toBe("c-new");
 
     wrapper.unmount();
   });

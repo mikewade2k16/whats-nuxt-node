@@ -2,9 +2,20 @@
 import { UAlert, UBadge, UButton, UCard, UInput, USelect } from "#components";
 import { computed, onMounted, ref, watch } from "vue";
 import { useProjectDocs } from "~/composables/docs/useProjectDocs";
-import type { ProjectDocChecklistStats, ProjectDocStatus, ProjectDocSummary } from "~/composables/docs/useProjectDocs";
+import type {
+  ProjectDocChecklistItem,
+  ProjectDocChecklistStats,
+  ProjectDocSectionStats,
+  ProjectDocStatus,
+  ProjectDocSummary
+} from "~/composables/docs/useProjectDocs";
 
 type StatusFilter = "all" | ProjectDocStatus;
+type ExecutionBlock = {
+  key: string;
+  title: string;
+  stats: ProjectDocChecklistStats;
+};
 
 const route = useRoute();
 const router = useRouter();
@@ -72,18 +83,6 @@ const roadmapDoc = computed(() =>
   docs.value.find((docItem) => docItem.fileName.toLowerCase() === "roadmap-whatsapp-parity.md") ?? null
 );
 
-const sprintsDoc = computed(() =>
-  docs.value.find((docItem) => docItem.fileName.toLowerCase() === "sprints-execucao.md") ?? null
-);
-
-const p0Progress = computed(() => backlogDoc.value?.priorities.P0 ?? null);
-const p1Progress = computed(() => backlogDoc.value?.priorities.P1 ?? null);
-const p2Progress = computed(() => backlogDoc.value?.priorities.P2 ?? null);
-const sprintSections = computed(() => {
-  const sections = sprintsDoc.value?.sections ?? [];
-  return sections.filter((sectionItem) => /^Sprint\s+\d+/i.test(sectionItem.title) || /Gate de liberacao/i.test(sectionItem.title));
-});
-
 const architectureScore = computed(() => {
   const percent = architectureDoc.value?.checklist.completionPercent;
   if (percent === null || percent === undefined) {
@@ -93,6 +92,98 @@ const architectureScore = computed(() => {
 });
 
 const selectedDocSections = computed(() => selectedDoc.value?.sections ?? []);
+
+function buildChecklistStatsFromItems(items: ProjectDocChecklistItem[]): ProjectDocChecklistStats {
+  const completed = items.filter((item) => item.status === "done").length;
+  const inProgress = items.filter((item) => item.status === "in_progress").length;
+  const pending = items.filter((item) => item.status === "todo").length;
+  const total = items.length;
+  const weightedDone = completed + inProgress * 0.5;
+  const completionPercent = total > 0 ? Math.round((weightedDone / total) * 100) : null;
+
+  let status: ProjectDocStatus = "none";
+  if (total > 0) {
+    if (pending === 0 && inProgress === 0) {
+      status = "done";
+    } else if (inProgress > 0 || completed > 0) {
+      status = "in_progress";
+    } else {
+      status = "todo";
+    }
+  }
+
+  return {
+    total,
+    completed,
+    inProgress,
+    pending,
+    completionPercent,
+    status
+  };
+}
+
+function isExecutionSection(sectionItem: ProjectDocSectionStats) {
+  return /^[A-E]\d+\./i.test(sectionItem.title);
+}
+
+function isDeferredDeliveryItem(item: ProjectDocChecklistItem) {
+  return /\bB2-010\b/i.test(item.text);
+}
+
+function toExecutionBlock(sectionItem: ProjectDocSectionStats): ExecutionBlock | null {
+  const filteredItems = sectionItem.items.filter((item) => !isDeferredDeliveryItem(item));
+  const stats = buildChecklistStatsFromItems(filteredItems);
+  if (stats.total === 0) {
+    return null;
+  }
+
+  return {
+    key: sectionItem.title,
+    title: sectionItem.title,
+    stats
+  };
+}
+
+const deliveryScopeBlocks = computed(() =>
+  (backlogDoc.value?.sections ?? [])
+    .filter(isExecutionSection)
+    .map(toExecutionBlock)
+    .filter((entry): entry is ExecutionBlock => Boolean(entry))
+);
+
+const deliveryScopeStats = computed(() =>
+  buildChecklistStatsFromItems(
+    deliveryScopeBlocks.value.flatMap((sectionItem) =>
+      (backlogDoc.value?.sections ?? [])
+        .find((entry) => entry.title === sectionItem.title)
+        ?.items.filter((item) => !isDeferredDeliveryItem(item)) ?? []
+    )
+  )
+);
+
+const releaseGateStats = computed(
+  () => (backlogDoc.value?.sections ?? []).find((sectionItem) => /^Entrega cliente/i.test(sectionItem.title))?.checklist ?? null
+);
+
+const finalHomologationStats = computed(
+  () => (backlogDoc.value?.sections ?? []).find((sectionItem) => /^Onda final de homologacao/i.test(sectionItem.title))?.checklist ?? null
+);
+
+const openDeliveryBlocks = computed(() =>
+  deliveryScopeBlocks.value
+    .filter((sectionItem) => sectionItem.stats.status !== "done")
+    .sort((left, right) => {
+      const leftOpen = left.stats.inProgress + left.stats.pending;
+      const rightOpen = right.stats.inProgress + right.stats.pending;
+      if (left.stats.inProgress !== right.stats.inProgress) {
+        return right.stats.inProgress - left.stats.inProgress;
+      }
+      return rightOpen - leftOpen;
+    })
+);
+
+const currentExecutionBlocks = computed(() => openDeliveryBlocks.value.slice(0, 4));
+const nextExecutionBlocks = computed(() => openDeliveryBlocks.value.slice(4, 8));
 
 function getStatusLabel(statusValue: ProjectDocStatus) {
   if (statusValue === "done") {
@@ -142,6 +233,14 @@ function formatPercent(value: number | null | undefined) {
     return "--";
   }
   return `${value}%`;
+}
+
+function getOpenItemsCount(stats: ProjectDocChecklistStats | null | undefined) {
+  if (!stats) {
+    return 0;
+  }
+
+  return stats.inProgress + stats.pending;
 }
 
 async function openDocAndSync(slug: string) {
@@ -213,27 +312,30 @@ onMounted(async () => {
       </UCard>
 
       <UCard class="docs-metric-card">
-        <p class="docs-metric-card__label">Total de tarefas</p>
-        <p class="docs-metric-card__value">{{ metrics.totalTasks }}</p>
+        <p class="docs-metric-card__label">Itens no escopo de entrega</p>
+        <p class="docs-metric-card__value">{{ deliveryScopeStats.total }}</p>
       </UCard>
 
       <UCard class="docs-metric-card">
-        <p class="docs-metric-card__label">Em andamento</p>
-        <p class="docs-metric-card__value">{{ metrics.inProgress }}</p>
+        <p class="docs-metric-card__label">Em andamento agora</p>
+        <p class="docs-metric-card__value">{{ deliveryScopeStats.inProgress }}</p>
       </UCard>
 
       <UCard class="docs-metric-card">
-        <p class="docs-metric-card__label">Percentual geral</p>
+        <p class="docs-metric-card__label">Percentual entrega</p>
         <p class="docs-metric-card__value">
-          {{ metrics.completionPercent === null ? "--" : `${metrics.completionPercent}%` }}
+          {{ deliveryScopeStats.completionPercent === null ? "--" : `${deliveryScopeStats.completionPercent}%` }}
         </p>
       </UCard>
     </section>
-    <p class="docs-page__percent-note">Percentuais: concluido = 100%, em andamento = 50%, pendente = 0%.</p>
+    <p class="docs-page__percent-note">
+      Escopo de entrega considera apenas os blocos executaveis do backlog. Resumos de sprint, H0 e `B2-010` (GIF/Tenor)
+      ficam fora deste percentual.
+    </p>
 
     <section class="docs-page__bi">
       <UCard class="docs-bi-card">
-        <p class="docs-bi-card__label">Andamento funcionalidades (Backlog)</p>
+        <p class="docs-bi-card__label">Backlog bruto</p>
         <p class="docs-bi-card__value">{{ formatPercent(backlogDoc?.checklist.completionPercent ?? null) }}</p>
         <p class="docs-bi-card__hint">
           {{ backlogDoc?.checklist.completed ?? 0 }}/{{ backlogDoc?.checklist.total ?? 0 }} tarefas concluidas
@@ -247,12 +349,10 @@ onMounted(async () => {
       </UCard>
 
       <UCard class="docs-bi-card">
-        <p class="docs-bi-card__label">MVP cliente (P0)</p>
-        <p class="docs-bi-card__value">{{ formatPercent(p0Progress?.completionPercent ?? null) }}</p>
+        <p class="docs-bi-card__label">Gate comercial</p>
+        <p class="docs-bi-card__value">{{ formatPercent(releaseGateStats?.completionPercent ?? null) }}</p>
         <p class="docs-bi-card__hint">
-          {{ p0Progress?.completed ?? 0 }}/{{ p0Progress?.total ?? 0 }} itens P0
-          <span v-if="(p0Progress?.inProgress ?? 0) > 0"> - {{ p0Progress?.inProgress ?? 0 }} em andamento</span>
-          <span v-if="(p0Progress?.pending ?? 0) > 0"> - {{ p0Progress?.pending ?? 0 }} pendentes</span>
+          {{ releaseGateStats?.completed ?? 0 }}/{{ releaseGateStats?.total ?? 0 }} criterios de liberacao
         </p>
       </UCard>
 
@@ -263,68 +363,82 @@ onMounted(async () => {
           {{ roadmapDoc?.checklist.completed ?? 0 }}/{{ roadmapDoc?.checklist.total ?? 0 }} itens
         </p>
       </UCard>
+    </section>
 
-      <UCard class="docs-bi-card">
-        <p class="docs-bi-card__label">Nota de arquitetura</p>
-        <p class="docs-bi-card__value">{{ architectureScore === null ? "--" : `${architectureScore}/10` }}</p>
-        <p class="docs-bi-card__hint">
-          Baseada no scorecard de arquitetura
+    <section class="docs-page__execution">
+      <UCard class="docs-execution-card docs-execution-card--summary">
+        <p class="docs-execution-card__eyebrow">Escopo MVP / entrega</p>
+        <p class="docs-execution-card__value">{{ formatPercent(deliveryScopeStats.completionPercent) }}</p>
+        <p class="docs-execution-card__hint">
+          {{ deliveryScopeStats.completed }}/{{ deliveryScopeStats.total }} concluidos
+          <span v-if="deliveryScopeStats.inProgress > 0"> - {{ deliveryScopeStats.inProgress }} em andamento</span>
+          <span v-if="deliveryScopeStats.pending > 0"> - {{ deliveryScopeStats.pending }} pendentes</span>
+        </p>
+        <p class="docs-execution-card__note">
+          `H0` e `B2-010` ficam fora do percentual principal para nao distorcer a entrega funcional.
         </p>
       </UCard>
-    </section>
 
-    <section class="docs-page__priorities">
-      <UCard class="docs-priority-card">
-        <div class="docs-priority-card__row">
-          <p class="docs-priority-card__label">Prioridade P0</p>
-          <span class="docs-priority-card__value">{{ formatPercent(p0Progress?.completionPercent ?? null) }}</span>
+      <UCard class="docs-execution-card">
+        <div class="docs-execution-card__head">
+          <p class="docs-execution-card__title">Em execucao agora</p>
+          <UBadge color="warning" variant="soft" size="sm">{{ currentExecutionBlocks.length }}</UBadge>
         </div>
-        <div class="docs-priority-card__track">
-          <div class="docs-priority-card__fill" :style="{ width: getChecklistProgressWidth(p0Progress) }" />
+        <div v-if="currentExecutionBlocks.length" class="docs-block-list">
+          <div v-for="blockItem in currentExecutionBlocks" :key="blockItem.key" class="docs-block-item">
+            <div class="docs-block-item__head">
+              <p class="docs-block-item__title">{{ blockItem.title }}</p>
+              <UBadge :color="getStatusColor(blockItem.stats.status)" variant="soft" size="sm">
+                {{ formatPercent(blockItem.stats.completionPercent) }}
+              </UBadge>
+            </div>
+            <p class="docs-block-item__meta">
+              {{ blockItem.stats.completed }}/{{ blockItem.stats.total }} concluidos
+              <span> - {{ getOpenItemsCount(blockItem.stats) }} abertos</span>
+            </p>
+          </div>
         </div>
+        <p v-else class="docs-execution-card__empty">Nenhum bloco funcional aberto no escopo atual.</p>
       </UCard>
 
-      <UCard class="docs-priority-card">
-        <div class="docs-priority-card__row">
-          <p class="docs-priority-card__label">Prioridade P1</p>
-          <span class="docs-priority-card__value">{{ formatPercent(p1Progress?.completionPercent ?? null) }}</span>
+      <UCard class="docs-execution-card">
+        <div class="docs-execution-card__head">
+          <p class="docs-execution-card__title">Depois desta onda</p>
+          <UBadge color="neutral" variant="soft" size="sm">{{ nextExecutionBlocks.length }}</UBadge>
         </div>
-        <div class="docs-priority-card__track">
-          <div class="docs-priority-card__fill" :style="{ width: getChecklistProgressWidth(p1Progress) }" />
+        <div v-if="nextExecutionBlocks.length" class="docs-block-list">
+          <div v-for="blockItem in nextExecutionBlocks" :key="blockItem.key" class="docs-block-item">
+            <div class="docs-block-item__head">
+              <p class="docs-block-item__title">{{ blockItem.title }}</p>
+              <UBadge :color="getStatusColor(blockItem.stats.status)" variant="soft" size="sm">
+                {{ formatPercent(blockItem.stats.completionPercent) }}
+              </UBadge>
+            </div>
+            <p class="docs-block-item__meta">
+              {{ blockItem.stats.completed }}/{{ blockItem.stats.total }} concluidos
+              <span> - {{ getOpenItemsCount(blockItem.stats) }} abertos</span>
+            </p>
+          </div>
         </div>
+        <p v-else class="docs-execution-card__empty">A proxima onda ja depende apenas de homologacao final ou backlog futuro.</p>
       </UCard>
 
-      <UCard class="docs-priority-card">
-        <div class="docs-priority-card__row">
-          <p class="docs-priority-card__label">Prioridade P2</p>
-          <span class="docs-priority-card__value">{{ formatPercent(p2Progress?.completionPercent ?? null) }}</span>
-        </div>
-        <div class="docs-priority-card__track">
-          <div class="docs-priority-card__fill" :style="{ width: getChecklistProgressWidth(p2Progress) }" />
-        </div>
-      </UCard>
-    </section>
-
-    <section class="docs-page__sprints">
-      <UCard v-for="sprintItem in sprintSections" :key="sprintItem.title" class="docs-sprint-card">
-        <div class="docs-sprint-card__head">
-          <p class="docs-sprint-card__title">{{ sprintItem.title }}</p>
-          <UBadge :color="getStatusColor(sprintItem.checklist.status)" variant="soft" size="sm">
-            {{ formatPercent(sprintItem.checklist.completionPercent) }}
+      <UCard class="docs-execution-card">
+        <div class="docs-execution-card__head">
+          <p class="docs-execution-card__title">H0 e arquitetura</p>
+          <UBadge :color="getStatusColor(finalHomologationStats?.status ?? 'none')" variant="soft" size="sm">
+            {{ formatPercent(finalHomologationStats?.completionPercent ?? null) }}
           </UBadge>
         </div>
-        <p class="docs-sprint-card__meta">
-          {{ sprintItem.checklist.completed }}/{{ sprintItem.checklist.total }} concluidos
-          <span v-if="sprintItem.checklist.inProgress > 0"> - {{ sprintItem.checklist.inProgress }} em andamento</span>
-          <span v-if="sprintItem.checklist.pending > 0"> - {{ sprintItem.checklist.pending }} pendentes</span>
+        <p class="docs-execution-card__hint">
+          Homologacao final: {{ finalHomologationStats?.completed ?? 0 }}/{{ finalHomologationStats?.total ?? 0 }}
         </p>
-        <div class="docs-sprint-card__track">
-          <div class="docs-sprint-card__fill" :style="{ width: getChecklistProgressWidth(sprintItem.checklist) }" />
-        </div>
-      </UCard>
-
-      <UCard v-if="!sprintSections.length" class="docs-sprint-card docs-sprint-card--empty">
-        <p class="docs-sprint-card__meta">Sem metas de sprint mapeadas.</p>
+        <p class="docs-execution-card__hint">
+          Nota arquitetura: {{ architectureScore === null ? "--" : `${architectureScore}/10` }}
+        </p>
+        <p class="docs-bi-card__hint">
+          H0 continua separado do percentual principal e entra so no fechamento da release.
+        </p>
       </UCard>
     </section>
 
@@ -432,8 +546,7 @@ onMounted(async () => {
 <style scoped>
 .docs-page {
   min-height: 100dvh;
-  max-height: 100dvh;
-  overflow: hidden;
+ 
   padding: 1rem;
   display: grid;
   grid-template-rows: auto auto auto auto auto auto 1fr;
@@ -497,31 +610,20 @@ onMounted(async () => {
 }
 
 .docs-page__content {
-  min-height: 0;
+  max-height: 500px;
   display: grid;
   grid-template-columns: minmax(20rem, 28rem) 1fr;
   gap: 0.75rem;
 }
 
 .docs-page__bi,
-.docs-page__priorities {
+.docs-page__execution {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
-.docs-page__priorities {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.docs-page__sprints {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.docs-bi-card__label,
-.docs-priority-card__label {
+.docs-bi-card__label {
   margin: 0;
   color: rgb(var(--muted));
   font-size: 0.76rem;
@@ -539,74 +641,80 @@ onMounted(async () => {
   font-size: 0.76rem;
 }
 
-.docs-priority-card__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.docs-priority-card__value {
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.docs-priority-card__track {
-  margin-top: 0.45rem;
-  width: 100%;
-  height: 0.38rem;
-  border-radius: 999px;
-  background: rgb(var(--border));
-  overflow: hidden;
-}
-
-.docs-priority-card__fill {
-  height: 100%;
-  border-radius: inherit;
-  background: rgb(var(--primary));
-}
-
-.docs-sprint-card {
+.docs-execution-card {
   display: grid;
   gap: 0.45rem;
 }
 
-.docs-sprint-card__head {
+.docs-execution-card--summary {
+  background:
+    linear-gradient(140deg, rgb(var(--surface-muted)) 0%, rgb(var(--surface)) 65%);
+}
+
+.docs-execution-card__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-.docs-sprint-card__title {
+.docs-execution-card__eyebrow {
+  margin: 0;
+  color: rgb(var(--muted));
+  font-size: 0.76rem;
+}
+
+.docs-execution-card__value {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.docs-execution-card__title {
   margin: 0;
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.25;
 }
 
-.docs-sprint-card__meta {
+.docs-execution-card__hint,
+.docs-execution-card__note,
+.docs-execution-card__empty {
   margin: 0;
   color: rgb(var(--muted));
   font-size: 0.75rem;
 }
 
-.docs-sprint-card__track {
-  width: 100%;
-  height: 0.35rem;
-  border-radius: 999px;
-  background: rgb(var(--border));
-  overflow: hidden;
+.docs-block-list {
+  display: grid;
+  gap: 0.5rem;
 }
 
-.docs-sprint-card__fill {
-  height: 100%;
-  border-radius: inherit;
-  background: rgb(var(--primary));
+.docs-block-item {
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-sm);
+  padding: 0.55rem;
+  background: rgb(var(--surface-muted));
 }
 
-.docs-sprint-card--empty {
-  grid-column: 1 / -1;
+.docs-block-item__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.docs-block-item__title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.docs-block-item__meta {
+  margin: 0.3rem 0 0;
+  color: rgb(var(--muted));
+  font-size: 0.74rem;
 }
 
 .docs-page__sidebar,
@@ -868,11 +976,7 @@ onMounted(async () => {
   }
 
   .docs-page__bi,
-  .docs-page__priorities {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .docs-page__sprints {
+  .docs-page__execution {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -889,8 +993,7 @@ onMounted(async () => {
 @media (max-width: 820px) {
   .docs-page__metrics,
   .docs-page__bi,
-  .docs-page__priorities,
-  .docs-page__sprints {
+  .docs-page__execution {
     grid-template-columns: 1fr;
   }
 }

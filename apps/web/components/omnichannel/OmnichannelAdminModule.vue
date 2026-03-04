@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import {
   UAlert,
   UBadge,
@@ -14,8 +15,10 @@ import { useOmnichannelAdmin } from "~/composables/omnichannel/useOmnichannelAdm
 const {
   user,
   loading,
+  loadingClients,
   savingTenant,
-  creatingUser,
+  savingUser,
+  savingClient,
   bootstrapping,
   connectingQr,
   connectingPairing,
@@ -25,6 +28,7 @@ const {
   loadingFailures,
   validatingEndpoints,
   tenant,
+  clients,
   users,
   statusResult,
   bootstrapResult,
@@ -36,7 +40,11 @@ const {
   pairingCode,
   failureWindowDays,
   tenantForm,
+  tenantFieldErrors,
+  clientForm,
+  clientFieldErrors,
   userForm,
+  userFieldErrors,
   whatsappForm,
   roleItems,
   canManageTenant,
@@ -50,7 +58,21 @@ const {
   hasQrCode,
   qrUnavailableMessage,
   saveTenant,
-  createUser,
+  deletingClientId,
+  editingClientId,
+  selectedClientId,
+  selectedClient,
+  deletingUserId,
+  editingUserId,
+  resetClientForm,
+  startEditClient,
+  saveClient,
+  deleteClient,
+  selectClient,
+  resetUserForm,
+  startEditUser,
+  saveUser,
+  deleteUser,
   refreshWhatsAppStatus,
   fetchQrCode,
   bootstrapWhatsApp,
@@ -60,6 +82,13 @@ const {
   loadFailuresDashboard,
   validateEvolutionEndpoints
 } = useOmnichannelAdmin();
+
+const clientItems = computed(() =>
+  clients.value.map((client) => ({
+    label: client.name,
+    value: client.id
+  }))
+);
 
 const failureWindowItems = [
   { label: "1 dia", value: 1 },
@@ -99,7 +128,7 @@ function endpointStatusColor(status: string) {
       <div class="admin-console__headline">
         <h1 class="admin-console__title">Admin de Operacao</h1>
         <p class="admin-console__subtitle">
-          Tenant <strong>{{ user?.tenantSlug }}</strong> | Fluxo de conexao WhatsApp por QR
+          Cliente <strong>{{ user?.tenantSlug }}</strong> | Fluxo de conexao WhatsApp por QR
         </p>
       </div>
       <div class="admin-console__header-actions">
@@ -137,7 +166,7 @@ function endpointStatusColor(status: string) {
       <UCard>
         <template #header>
           <div class="admin-card__header">
-            <h2 class="admin-card__title">Tenant</h2>
+            <h2 class="admin-card__title">Cliente atual</h2>
             <UBadge :color="connectionBadgeColor" variant="soft">
               {{ connectionStateLabel }}
             </UBadge>
@@ -147,30 +176,37 @@ function endpointStatusColor(status: string) {
         <form class="tenant-form" @submit.prevent="saveTenant">
           <UFormField label="Nome da empresa">
             <UInput v-model="tenantForm.name" :disabled="!canManageTenant" placeholder="Empresa X" />
+            <p v-if="tenantFieldErrors.name" class="admin-field-error">{{ tenantFieldErrors.name }}</p>
           </UFormField>
 
           <UFormField label="Instancia WhatsApp">
             <UInput v-model="tenantForm.whatsappInstance" :disabled="!canManageTenant" placeholder="demo-instance" />
+            <p v-if="tenantFieldErrors.whatsappInstance" class="admin-field-error">{{ tenantFieldErrors.whatsappInstance }}</p>
           </UFormField>
 
           <UFormField label="Evolution API Key (opcional por tenant)">
             <UInput v-model="tenantForm.evolutionApiKey" :disabled="!canManageTenant" placeholder="apikey-tenant" />
+            <p v-if="tenantFieldErrors.evolutionApiKey" class="admin-field-error">{{ tenantFieldErrors.evolutionApiKey }}</p>
           </UFormField>
 
           <UFormField label="Max canais">
             <UInput v-model.number="tenantForm.maxChannels" :disabled="!canManageTenant" type="number" min="0" max="50" />
+            <p v-if="tenantFieldErrors.maxChannels" class="admin-field-error">{{ tenantFieldErrors.maxChannels }}</p>
           </UFormField>
 
           <UFormField label="Max usuarios">
             <UInput v-model.number="tenantForm.maxUsers" :disabled="!canManageTenant" type="number" min="1" max="500" />
+            <p v-if="tenantFieldErrors.maxUsers" class="admin-field-error">{{ tenantFieldErrors.maxUsers }}</p>
           </UFormField>
 
           <UFormField label="Retencao (dias)">
             <UInput v-model.number="tenantForm.retentionDays" :disabled="!canManageTenant" type="number" min="1" max="3650" />
+            <p v-if="tenantFieldErrors.retentionDays" class="admin-field-error">{{ tenantFieldErrors.retentionDays }}</p>
           </UFormField>
 
           <UFormField label="Limite upload por arquivo (MB)">
             <UInput v-model.number="tenantForm.maxUploadMb" :disabled="!canManageTenant" type="number" min="1" max="2048" />
+            <p v-if="tenantFieldErrors.maxUploadMb" class="admin-field-error">{{ tenantFieldErrors.maxUploadMb }}</p>
           </UFormField>
 
           <div class="tenant-form__footer">
@@ -181,9 +217,137 @@ function endpointStatusColor(status: string) {
               <br>
               Webhook: <code>{{ tenant?.webhookUrl }}</code>
             </p>
-            <UButton type="submit" :loading="savingTenant" :disabled="!canManageTenant">Salvar tenant</UButton>
+            <UButton type="submit" :loading="savingTenant" :disabled="!canManageTenant">Salvar cliente</UButton>
           </div>
         </form>
+      </UCard>
+
+      <UCard v-if="canManageTenant">
+        <template #header>
+          <div class="admin-card__header">
+            <h2 class="admin-card__title">Clientes</h2>
+            <div class="admin-actions-row">
+              <UBadge color="neutral" variant="soft">
+                {{ clients.length }} clientes
+              </UBadge>
+              <UButton color="neutral" variant="soft" @click="resetClientForm">
+                Novo cliente
+              </UButton>
+            </div>
+          </div>
+        </template>
+
+        <form class="tenant-form" @submit.prevent="saveClient">
+          <UFormField label="Slug (opcional)">
+            <UInput v-model="clientForm.slug" placeholder="cliente-demo" />
+            <p v-if="clientFieldErrors.slug" class="admin-field-error">{{ clientFieldErrors.slug }}</p>
+          </UFormField>
+
+          <UFormField label="Nome do cliente">
+            <UInput v-model="clientForm.name" placeholder="Empresa Demo" />
+            <p v-if="clientFieldErrors.name" class="admin-field-error">{{ clientFieldErrors.name }}</p>
+          </UFormField>
+
+          <UFormField label="Evolution API Key (opcional)">
+            <UInput v-model="clientForm.evolutionApiKey" placeholder="apikey-cliente" />
+            <p v-if="clientFieldErrors.evolutionApiKey" class="admin-field-error">{{ clientFieldErrors.evolutionApiKey }}</p>
+          </UFormField>
+
+          <UFormField label="Max canais WhatsApp">
+            <UInput v-model.number="clientForm.maxChannels" type="number" min="1" max="50" />
+            <p v-if="clientFieldErrors.maxChannels" class="admin-field-error">{{ clientFieldErrors.maxChannels }}</p>
+          </UFormField>
+
+          <UFormField label="Max usuarios">
+            <UInput v-model.number="clientForm.maxUsers" type="number" min="1" max="500" />
+            <p v-if="clientFieldErrors.maxUsers" class="admin-field-error">{{ clientFieldErrors.maxUsers }}</p>
+          </UFormField>
+
+          <UFormField label="Retencao (dias)">
+            <UInput v-model.number="clientForm.retentionDays" type="number" min="1" max="3650" />
+            <p v-if="clientFieldErrors.retentionDays" class="admin-field-error">{{ clientFieldErrors.retentionDays }}</p>
+          </UFormField>
+
+          <UFormField label="Limite upload por arquivo (MB)">
+            <UInput v-model.number="clientForm.maxUploadMb" type="number" min="1" max="2048" />
+            <p v-if="clientFieldErrors.maxUploadMb" class="admin-field-error">{{ clientFieldErrors.maxUploadMb }}</p>
+          </UFormField>
+
+          <template v-if="!editingClientId">
+            <UFormField label="Nome do admin inicial">
+              <UInput v-model="clientForm.adminName" placeholder="Admin do cliente" />
+              <p v-if="clientFieldErrors.adminName" class="admin-field-error">{{ clientFieldErrors.adminName }}</p>
+            </UFormField>
+
+            <UFormField label="Email do admin inicial">
+              <UInput v-model="clientForm.adminEmail" type="email" placeholder="admin@cliente.com" />
+              <p v-if="clientFieldErrors.adminEmail" class="admin-field-error">{{ clientFieldErrors.adminEmail }}</p>
+            </UFormField>
+
+            <UFormField label="Senha do admin inicial">
+              <UInput v-model="clientForm.adminPassword" type="password" placeholder="******" />
+              <p v-if="clientFieldErrors.adminPassword" class="admin-field-error">{{ clientFieldErrors.adminPassword }}</p>
+            </UFormField>
+          </template>
+
+          <div class="tenant-form__footer">
+            <p class="tenant-form__hint">
+              Cada cliente pode ter um ou mais numeros de WhatsApp. Hoje o limite operacional usa
+              <strong>maxChannels</strong>; a modelagem de multiplos canais por cliente ainda e o proximo passo no banco.
+            </p>
+            <div class="admin-actions-row">
+              <UButton type="submit" :loading="savingClient">
+                {{ editingClientId ? "Salvar cliente" : "Criar cliente" }}
+              </UButton>
+              <UButton v-if="editingClientId" type="button" color="neutral" variant="soft" @click="resetClientForm">
+                Cancelar edicao
+              </UButton>
+            </div>
+          </div>
+        </form>
+
+        <div class="users-table-wrap">
+          <div v-if="loadingClients" class="admin-console__loading">
+            Carregando clientes...
+          </div>
+          <table v-else class="users-table">
+            <thead>
+              <tr class="users-table__row users-table__row--head">
+                <th class="users-table__cell users-table__cell--head">Cliente</th>
+                <th class="users-table__cell users-table__cell--head">Slug</th>
+                <th class="users-table__cell users-table__cell--head">Canais</th>
+                <th class="users-table__cell users-table__cell--head">Usuarios</th>
+                <th class="users-table__cell users-table__cell--head">Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="client in clients" :key="client.id" class="users-table__row">
+                <td class="users-table__cell">{{ client.name }}</td>
+                <td class="users-table__cell">{{ client.slug }}</td>
+                <td class="users-table__cell">{{ client.currentChannels }}/{{ client.maxChannels }}</td>
+                <td class="users-table__cell">{{ client.currentUsers }}/{{ client.maxUsers }}</td>
+                <td class="users-table__cell">
+                  <div class="admin-actions-row">
+                    <UButton color="neutral" variant="soft" @click="selectClient(client.id)">
+                      Gerenciar usuarios
+                    </UButton>
+                    <UButton color="neutral" variant="soft" @click="startEditClient(client)">
+                      Editar
+                    </UButton>
+                    <UButton
+                      color="error"
+                      variant="soft"
+                      :loading="deletingClientId === client.id"
+                      @click="deleteClient(client.id)"
+                    >
+                      Excluir
+                    </UButton>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </UCard>
 
       <UCard>
@@ -373,20 +537,43 @@ function endpointStatusColor(status: string) {
 
       <UCard>
         <template #header>
-          <h2 class="admin-card__title">Usuarios do Tenant</h2>
+          <div class="admin-card__header">
+            <h2 class="admin-card__title">Usuarios do cliente</h2>
+            <div class="admin-actions-row admin-actions-row--align-center">
+              <USelect
+                :model-value="selectedClientId"
+                :items="clientItems"
+                value-key="value"
+                class="failures-window-select"
+                :disabled="!canManageTenant || !clientItems.length"
+                @update:model-value="value => value && selectClient(String(value))"
+              />
+              <UBadge color="neutral" variant="soft">
+                {{ selectedClient?.name || tenant?.name || "Cliente atual" }}
+              </UBadge>
+            </div>
+          </div>
         </template>
 
-        <form class="users-form" @submit.prevent="createUser">
+        <form class="users-form" @submit.prevent="saveUser">
           <UFormField label="Nome">
             <UInput v-model="userForm.name" :disabled="!canManageTenant" placeholder="Novo agente" />
+            <p v-if="userFieldErrors.name" class="admin-field-error">{{ userFieldErrors.name }}</p>
           </UFormField>
 
           <UFormField label="Email">
             <UInput v-model="userForm.email" :disabled="!canManageTenant" type="email" placeholder="agente@empresa.com" />
+            <p v-if="userFieldErrors.email" class="admin-field-error">{{ userFieldErrors.email }}</p>
           </UFormField>
 
-          <UFormField label="Senha inicial">
-            <UInput v-model="userForm.password" :disabled="!canManageTenant" type="password" placeholder="******" />
+          <UFormField :label="editingUserId ? 'Nova senha (opcional)' : 'Senha inicial'">
+            <UInput
+              v-model="userForm.password"
+              :disabled="!canManageTenant"
+              type="password"
+              :placeholder="editingUserId ? 'Deixe vazio para manter' : '******'"
+            />
+            <p v-if="userFieldErrors.password" class="admin-field-error">{{ userFieldErrors.password }}</p>
           </UFormField>
 
           <UFormField label="Role">
@@ -396,10 +583,18 @@ function endpointStatusColor(status: string) {
               value-key="value"
               :disabled="!canManageTenant"
             />
+            <p v-if="userFieldErrors.role" class="admin-field-error">{{ userFieldErrors.role }}</p>
           </UFormField>
 
           <div class="users-form__footer">
-            <UButton type="submit" :loading="creatingUser" :disabled="!canManageTenant">Criar usuario</UButton>
+            <div class="admin-actions-row">
+              <UButton type="submit" :loading="savingUser" :disabled="!canManageTenant">
+                {{ editingUserId ? "Salvar usuario" : "Criar usuario" }}
+              </UButton>
+              <UButton v-if="editingUserId" type="button" color="neutral" variant="soft" @click="resetUserForm">
+                Cancelar edicao
+              </UButton>
+            </div>
           </div>
         </form>
 
@@ -411,6 +606,7 @@ function endpointStatusColor(status: string) {
                 <th class="users-table__cell users-table__cell--head">Email</th>
                 <th class="users-table__cell users-table__cell--head">Role</th>
                 <th class="users-table__cell users-table__cell--head">Criado em</th>
+                <th class="users-table__cell users-table__cell--head">Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -419,6 +615,22 @@ function endpointStatusColor(status: string) {
                 <td class="users-table__cell">{{ tenantUser.email }}</td>
                 <td class="users-table__cell">{{ tenantUser.role }}</td>
                 <td class="users-table__cell">{{ new Date(tenantUser.createdAt).toLocaleString() }}</td>
+                <td class="users-table__cell">
+                  <div class="admin-actions-row">
+                    <UButton color="neutral" variant="soft" :disabled="!canManageTenant" @click="startEditUser(tenantUser)">
+                      Editar
+                    </UButton>
+                    <UButton
+                      color="error"
+                      variant="soft"
+                      :disabled="!canManageTenant"
+                      :loading="deletingUserId === tenantUser.id"
+                      @click="deleteUser(tenantUser.id)"
+                    >
+                      Excluir
+                    </UButton>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -645,6 +857,13 @@ function endpointStatusColor(status: string) {
   margin: 0;
   font-size: 0.75rem;
   color: rgb(var(--muted));
+}
+
+.admin-field-error {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: rgb(var(--error));
 }
 
 .admin-grid-two {

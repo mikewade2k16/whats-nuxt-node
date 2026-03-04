@@ -9,20 +9,25 @@ import {
   UInput,
   USelect
 } from "#components";
-import { computed } from "vue";
-import type { Conversation, MessageType } from "~/types";
+import { computed, ref } from "vue";
+import type { Contact, Conversation, MessageType } from "~/types";
 import type { InboxSelectOption } from "./types";
 
 const props = defineProps<{
   collapsed: boolean;
   showFilters: boolean;
+  sidebarView: "conversations" | "contacts";
   loadingConversations: boolean;
+  loadingContacts: boolean;
   loadingWhatsAppStatus: boolean;
   whatsappBannerMessage: string;
   isWhatsAppConnected: boolean;
   currentUserName: string | null;
   conversations: Conversation[];
+  contacts: Contact[];
   activeConversationId: string | null;
+  creatingContact: boolean;
+  contactActionError: string;
   unreadConversationIds: string[];
   mentionConversationIds: string[];
   mentionConversationCounts: Record<string, number>;
@@ -36,10 +41,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "update:collapsed", value: boolean): void;
   (event: "update:showFilters", value: boolean): void;
+  (event: "update:sidebarView", value: "conversations" | "contacts"): void;
   (event: "update:search", value: string): void;
   (event: "update:channel", value: string): void;
   (event: "update:status", value: string): void;
   (event: "selectConversation", conversationId: string): void;
+  (event: "openContact", contactId: string): void;
+  (event: "createContact", payload: { name: string; phone: string; countryCode?: string | null }): void;
   (event: "open-sandbox-test"): void;
   (event: "logout"): void;
 }>();
@@ -52,6 +60,11 @@ const collapsedModel = computed({
 const showFiltersModel = computed({
   get: () => props.showFilters,
   set: (value: boolean) => emit("update:showFilters", value)
+});
+
+const sidebarViewModel = computed({
+  get: () => props.sidebarView,
+  set: (value: "conversations" | "contacts") => emit("update:sidebarView", value)
 });
 
 const searchModel = computed({
@@ -72,7 +85,12 @@ const statusModel = computed({
 const unreadSet = computed(() => new Set(props.unreadConversationIds));
 const mentionSet = computed(() => new Set(props.mentionConversationIds));
 const mentionCountMap = computed(() => props.mentionConversationCounts ?? {});
+const isContactsView = computed(() => sidebarViewModel.value === "contacts");
 const MEDIA_PLACEHOLDER_VALUES = new Set(["[imagem]", "[audio]", "[video]", "[documento]", "."]);
+const newContactName = ref("");
+const newContactPhone = ref("");
+const newContactInternational = ref(false);
+const newContactCountryCode = ref("");
 
 function normalizeNameForComparison(value: string | null | undefined) {
   return (
@@ -285,6 +303,82 @@ function getConversationPreview(conversationEntry: Conversation) {
 
   return `[${getMessageTypeLabel(type)}]`;
 }
+
+function getContactName(contactEntry: Contact) {
+  const trimmed = contactEntry.name?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  return formatContactDisplayPhone(contactEntry.phone);
+}
+
+function getContactPreview(contactEntry: Contact) {
+  if (contactEntry.lastConversationAt) {
+    return `Ultima atividade ${formatTime(contactEntry.lastConversationAt)}`;
+  }
+
+  return formatContactDisplayPhone(contactEntry.phone);
+}
+
+function formatContactDisplayPhone(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) {
+    return digits.slice(2);
+  }
+
+  return trimmed;
+}
+
+function getContactStatusLabel(contactEntry: Contact) {
+  if (contactEntry.lastConversationStatus === "OPEN") {
+    return "Aberto";
+  }
+
+  if (contactEntry.lastConversationStatus === "PENDING") {
+    return "Pendente";
+  }
+
+  if (contactEntry.lastConversationStatus === "CLOSED") {
+    return "Encerrado";
+  }
+
+  return "Sem conversa";
+}
+
+function getContactStatusColor(contactEntry: Contact) {
+  if (contactEntry.lastConversationStatus === "OPEN") {
+    return "success";
+  }
+
+  if (contactEntry.lastConversationStatus === "PENDING") {
+    return "warning";
+  }
+
+  if (contactEntry.lastConversationStatus === "CLOSED") {
+    return "neutral";
+  }
+
+  return "neutral";
+}
+
+function onCreateContact() {
+  const phone = newContactPhone.value.trim();
+  if (!phone) {
+    return;
+  }
+
+  emit("createContact", {
+    name: newContactName.value.trim(),
+    phone,
+    countryCode: newContactInternational.value ? newContactCountryCode.value.trim() : null
+  });
+}
 </script>
 
 <template>
@@ -306,21 +400,41 @@ function getConversationPreview(conversationEntry: Conversation) {
   >
     <template #header>
       <div class="chat-page__header-row">
-        <h1 v-if="!collapsedModel" class="chat-page__title">Conversas</h1>
-        <div class="chat-page__header-actions">
+        <div v-if="!collapsedModel" class="chat-page__header-tabs">
           <UButton
-            v-if="!collapsedModel"
             size="sm"
             color="neutral"
-            variant="ghost"
-            @click="showFiltersModel = !showFiltersModel"
+            :variant="!isContactsView ? 'soft' : 'ghost'"
+            @click="sidebarViewModel = 'conversations'"
           >
+            Conversas
+          </UButton>
+          <UButton
+            size="sm"
+            color="neutral"
+            :variant="isContactsView ? 'soft' : 'ghost'"
+            @click="sidebarViewModel = 'contacts'"
+          >
+            Contatos
+          </UButton>
+        </div>
+        <div class="chat-page__header-actions">
+          <UButton v-if="!collapsedModel && !isContactsView" size="sm" color="neutral" variant="ghost" @click="showFiltersModel = !showFiltersModel">
             Filtros
+          </UButton>
+          <UButton v-if="!collapsedModel && isContactsView" size="sm" color="neutral" variant="ghost" @click="showFiltersModel = !showFiltersModel">
+            Novo
           </UButton>
           <UButton v-if="!collapsedModel" to="/docs" size="sm" color="neutral" variant="ghost">
             Docs
           </UButton>
-          <UButton v-if="!collapsedModel" size="sm" color="neutral" variant="ghost" @click="emit('open-sandbox-test')">
+          <UButton
+            v-if="!collapsedModel && !isContactsView"
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            @click="emit('open-sandbox-test')"
+          >
             Teste
           </UButton>
           <UButton v-if="!collapsedModel" size="sm" color="neutral" variant="outline" @click="emit('logout')">
@@ -343,12 +457,12 @@ function getConversationPreview(conversationEntry: Conversation) {
         {{ whatsappBannerMessage }}
       </div>
 
-      <div v-if="showFiltersModel && !collapsedModel" class="chat-page__filters">
+      <div v-if="!collapsedModel" class="chat-page__filters">
         <UFormField label="Busca" name="search">
           <UInput v-model="searchModel" icon="i-lucide-search" placeholder="Buscar por nome, telefone ou mensagem" />
         </UFormField>
 
-        <div class="chat-page__filters-grid">
+        <div v-if="!isContactsView && showFiltersModel" class="chat-page__filters-grid">
           <UFormField label="Canal" name="channel">
             <USelect v-model="channelModel" :items="channelFilterItems" value-key="value" />
           </UFormField>
@@ -357,54 +471,144 @@ function getConversationPreview(conversationEntry: Conversation) {
             <USelect v-model="statusModel" :items="statusFilterItems" value-key="value" />
           </UFormField>
         </div>
+
+        <div v-else-if="isContactsView && showFiltersModel" class="chat-page__contact-form">
+          <UFormField label="Nome do contato" name="contactName">
+            <UInput v-model="newContactName" placeholder="Nome para exibir" />
+          </UFormField>
+
+          <div class="chat-page__contact-mode">
+            <UButton
+              size="xs"
+              color="neutral"
+              :variant="newContactInternational ? 'soft' : 'ghost'"
+              @click="newContactInternational = !newContactInternational"
+            >
+              {{ newContactInternational ? 'Numero internacional' : 'Brasil (sem 55)' }}
+            </UButton>
+          </div>
+
+          <UFormField v-if="newContactInternational" label="Codigo do pais (DDI)" name="contactCountryCode">
+            <UInput v-model="newContactCountryCode" placeholder="1" />
+          </UFormField>
+
+          <UFormField :label="newContactInternational ? 'Telefone' : 'Telefone (Brasil)'" name="contactPhone">
+            <UInput v-model="newContactPhone" :placeholder="newContactInternational ? '2025550182' : '11999999999'" />
+          </UFormField>
+
+          <p class="chat-page__contact-hint">
+            {{ newContactInternational ? 'Digite o DDI apenas quando o numero nao for do Brasil.' : 'Brasil e o padrao. Nao precisa informar o codigo 55.' }}
+          </p>
+
+          <UButton
+            size="sm"
+            color="primary"
+            variant="soft"
+            :loading="creatingContact"
+            :disabled="creatingContact"
+            @click="onCreateContact"
+          >
+            Salvar e abrir
+          </UButton>
+        </div>
+
+        <p v-if="isContactsView && contactActionError" class="chat-page__contact-error">
+          {{ contactActionError }}
+        </p>
       </div>
 
       <div class="chat-page__panel-body">
-        <div v-if="loadingConversations" class="chat-page__empty">Carregando conversas...</div>
+        <template v-if="!isContactsView">
+          <div v-if="loadingConversations" class="chat-page__empty">Carregando conversas...</div>
 
-        <template v-else>
-          <button
-            v-for="conversationEntry in conversations"
-            :key="conversationEntry.id"
-            type="button"
-            class="conversation-card"
-            :class="{ 'conversation-card--active': conversationEntry.id === activeConversationId }"
-            @click="emit('selectConversation', conversationEntry.id)"
-          >
-            <div class="conversation-card__top">
-              <UAvatar
-                :src="conversationEntry.contactAvatarUrl || undefined"
-                :alt="getConversationName(conversationEntry)"
-                :text="getInitials(getConversationName(conversationEntry))"
-                class="conversation-card__avatar"
-              />
+          <template v-else>
+            <button
+              v-for="conversationEntry in conversations"
+              :key="conversationEntry.id"
+              type="button"
+              class="conversation-card"
+              :class="{ 'conversation-card--active': conversationEntry.id === activeConversationId }"
+              @click="emit('selectConversation', conversationEntry.id)"
+            >
+              <div class="conversation-card__top">
+                <UAvatar
+                  :src="conversationEntry.contactAvatarUrl || undefined"
+                  :alt="getConversationName(conversationEntry)"
+                  :text="getInitials(getConversationName(conversationEntry))"
+                  class="conversation-card__avatar"
+                />
 
-              <div class="conversation-card__content">
-                <p class="conversation-card__name">{{ getConversationName(conversationEntry) }}</p>
+                <div class="conversation-card__content">
+                  <p class="conversation-card__name">{{ getConversationName(conversationEntry) }}</p>
 
-                <div class="conversation-card__tags">
-                  <UBadge color="neutral" variant="soft" size="sm">
-                    {{ getChannelLabel(conversationEntry.channel) }}
-                  </UBadge>
-                  <UBadge :color="getStatusColor(conversationEntry.status)" variant="soft" size="sm">
-                    {{ getStatusLabel(conversationEntry.status) }}
-                  </UBadge>
-                  <UBadge v-if="isConversationUnread(conversationEntry.id)" color="warning" variant="soft" size="sm">
-                    Novo
-                  </UBadge>
-                  <UBadge v-if="hasMentionAlert(conversationEntry.id)" color="error" variant="soft" size="sm">
-                    @{{ getMentionCount(conversationEntry.id) || 1 }} Mencao
-                  </UBadge>
+                  <div class="conversation-card__tags">
+                    <UBadge color="neutral" variant="soft" size="sm">
+                      {{ getChannelLabel(conversationEntry.channel) }}
+                    </UBadge>
+                    <UBadge :color="getStatusColor(conversationEntry.status)" variant="soft" size="sm">
+                      {{ getStatusLabel(conversationEntry.status) }}
+                    </UBadge>
+                    <UBadge v-if="isConversationUnread(conversationEntry.id)" color="warning" variant="soft" size="sm">
+                      Novo
+                    </UBadge>
+                    <UBadge v-if="hasMentionAlert(conversationEntry.id)" color="error" variant="soft" size="sm">
+                      @{{ getMentionCount(conversationEntry.id) || 1 }} Mencao
+                    </UBadge>
+                  </div>
                 </div>
+
+                <time class="conversation-card__time">{{ formatTime(conversationEntry.lastMessageAt) }}</time>
               </div>
 
-              <time class="conversation-card__time">{{ formatTime(conversationEntry.lastMessageAt) }}</time>
-            </div>
+              <p class="conversation-card__preview">{{ getConversationPreview(conversationEntry) }}</p>
+            </button>
 
-            <p class="conversation-card__preview">{{ getConversationPreview(conversationEntry) }}</p>
-          </button>
+            <div v-if="!conversations.length" class="chat-page__empty">Nenhuma conversa encontrada.</div>
+          </template>
+        </template>
 
-          <div v-if="!conversations.length" class="chat-page__empty">Nenhuma conversa encontrada.</div>
+        <template v-else>
+          <div v-if="loadingContacts" class="chat-page__empty">Carregando contatos...</div>
+
+          <template v-else>
+            <button
+              v-for="contactEntry in contacts"
+              :key="contactEntry.id"
+              type="button"
+              class="conversation-card conversation-card--contact"
+              @click="emit('openContact', contactEntry.id)"
+            >
+              <div class="conversation-card__top">
+                <UAvatar
+                  :src="contactEntry.avatarUrl || undefined"
+                  :alt="getContactName(contactEntry)"
+                  :text="getInitials(getContactName(contactEntry))"
+                  class="conversation-card__avatar"
+                />
+
+                <div class="conversation-card__content">
+                  <p class="conversation-card__name">{{ getContactName(contactEntry) }}</p>
+
+                  <div class="conversation-card__tags">
+                    <UBadge color="neutral" variant="soft" size="sm">
+                      Contato
+                    </UBadge>
+                    <UBadge :color="getContactStatusColor(contactEntry)" variant="soft" size="sm">
+                      {{ getContactStatusLabel(contactEntry) }}
+                    </UBadge>
+                  </div>
+                </div>
+
+                <time v-if="contactEntry.lastConversationAt" class="conversation-card__time">
+                  {{ formatTime(contactEntry.lastConversationAt) }}
+                </time>
+              </div>
+
+              <p class="conversation-card__preview">{{ getContactPreview(contactEntry) }}</p>
+            </button>
+
+            <div v-if="!contacts.length" class="chat-page__empty">Nenhum contato salvo ainda.</div>
+          </template>
         </template>
       </div>
     </div>
@@ -432,10 +636,10 @@ function getConversationPreview(conversationEntry: Conversation) {
   gap: 0.5rem;
 }
 
-.chat-page__title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
+.chat-page__header-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .chat-page__header-actions {
@@ -448,6 +652,30 @@ function getConversationPreview(conversationEntry: Conversation) {
   display: grid;
   gap: 0.75rem;
   padding: 0 0 0.75rem;
+}
+
+.chat-page__contact-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.chat-page__contact-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-page__contact-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgb(var(--muted));
+  line-height: 1.4;
+}
+
+.chat-page__contact-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgb(var(--error));
 }
 
 .chat-page__channel-banner {
@@ -512,6 +740,10 @@ function getConversationPreview(conversationEntry: Conversation) {
 .conversation-card--active {
   border-color: rgb(var(--primary));
   box-shadow: 0 0 0 1px rgb(var(--primary) / 0.35);
+}
+
+.conversation-card--contact {
+  border-style: dashed;
 }
 
 .conversation-card__top {

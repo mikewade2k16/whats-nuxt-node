@@ -69,6 +69,8 @@ model Tenant {
   messages         Message[]
   auditEvents      AuditEvent[]
   savedStickers    SavedSticker[]
+  contacts         Contact[]
+  hiddenMessages   HiddenMessageForUser[]
 }
 
 model User {
@@ -85,6 +87,7 @@ model User {
   outboundMessages Message[]  @relation("MessageSender")
   auditEvents  AuditEvent[]
   savedStickers SavedSticker[] @relation("SavedStickerAuthor")
+  hiddenMessages HiddenMessageForUser[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -111,6 +114,7 @@ model Conversation {
   id            String             @id @default(cuid())
   tenantId      String
   assignedToId  String?
+  contactId     String?
   channel       ChannelType
   externalId    String
   contactName   String?
@@ -122,12 +126,14 @@ model Conversation {
   updatedAt     DateTime           @updatedAt
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  contact       Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages      Message[]
   auditEvents   AuditEvent[]
 
   @@unique([tenantId, externalId, channel])
   @@index([tenantId, lastMessageAt(sort: Desc)])
   @@index([assignedToId])
+  @@index([contactId])
 }
 
 model Message {
@@ -155,6 +161,7 @@ model Message {
   conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderUser        User?            @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   auditEvents       AuditEvent[]
+  hiddenForUsers    HiddenMessageForUser[]
 
   @@index([tenantId, createdAt])
   @@index([conversationId, createdAt])
@@ -179,4 +186,36 @@ model AuditEvent {
   @@index([conversationId, createdAt(sort: Desc)])
   @@index([messageId, createdAt(sort: Desc)])
   @@index([eventType, createdAt(sort: Desc)])
+}
+
+model Contact {
+  id              String         @id @default(cuid())
+  tenantId        String
+  name            String
+  phone           String
+  avatarUrl       String?
+  source          String         @default("MANUAL")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations   Conversation[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, name])
+  @@index([tenantId, createdAt(sort: Desc)])
+}
+
+model HiddenMessageForUser {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([tenantId, userId, createdAt(sort: Desc)])
+  @@index([tenantId, messageId])
 }

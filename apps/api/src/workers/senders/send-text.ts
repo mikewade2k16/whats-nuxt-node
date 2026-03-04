@@ -193,12 +193,14 @@ function buildContactPayload(contact: OutboundContactCard, recipient: string) {
     contactEntry.vcard = contact.vcard;
   }
 
+  const contactEntries = [contactEntry];
+
   return {
     number: recipient,
     phone: phoneNumber,
     fullName,
-    contact: contactEntry,
-    contacts: [contactEntry]
+    contact: contactEntries,
+    contacts: contactEntries
   };
 }
 

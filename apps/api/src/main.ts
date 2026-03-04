@@ -7,6 +7,7 @@ import { closeSubscriber, subscribeEvents } from "./event-bus.js";
 import { resolveRequestCorrelationId } from "./lib/correlation.js";
 import authPlugin, { type JwtUser } from "./plugins/auth.js";
 import { authRoutes } from "./routes/auth.js";
+import { contactsRoutes } from "./routes/contacts.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { healthRoutes } from "./routes/health.js";
 import { stickerRoutes } from "./routes/stickers.js";
@@ -45,6 +46,7 @@ async function start() {
   await app.register(tenantRoutes);
   await app.register(userRoutes);
   await app.register(stickerRoutes);
+  await app.register(contactsRoutes);
   await app.register(conversationRoutes);
   await app.register(webhookRoutes);
 

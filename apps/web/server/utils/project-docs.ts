@@ -14,10 +14,17 @@ export type ProjectDocChecklistStats = {
   status: ProjectDocStatus;
 };
 
+export type ProjectDocChecklistItem = {
+  text: string;
+  status: Exclude<ProjectDocStatus, "none">;
+  priority: ProjectDocPriority | null;
+};
+
 export type ProjectDocSectionStats = {
   title: string;
   level: number;
   checklist: ProjectDocChecklistStats;
+  items: ProjectDocChecklistItem[];
 };
 
 export type ProjectDocPriorityStats = Record<ProjectDocPriority, ProjectDocChecklistStats>;
@@ -125,6 +132,18 @@ function applyChecklistMarker(counter: ChecklistCounter, marker: string) {
   counter.pending += 1;
 }
 
+function resolveChecklistItemStatus(marker: string): Exclude<ProjectDocStatus, "none"> {
+  if (marker === "x" || marker === "X") {
+    return "done";
+  }
+
+  if (marker === "~" || marker === "-") {
+    return "in_progress";
+  }
+
+  return "todo";
+}
+
 function detectPriority(text: string): ProjectDocPriority | null {
   const match = text.match(/(?:\[(P0|P1|P2)\]|\((P0|P1|P2)\)|\b(P0|P1|P2)\b)/i);
   const value = match?.[1] ?? match?.[2] ?? match?.[3];
@@ -155,7 +174,12 @@ function parseChecklistData(content: string): {
     P2: createEmptyChecklistCounter()
   };
 
-  const sectionCounters: Array<{ title: string; level: number; counter: ChecklistCounter }> = [];
+  const sectionCounters: Array<{
+    title: string;
+    level: number;
+    counter: ChecklistCounter;
+    items: ProjectDocChecklistItem[];
+  }> = [];
   let currentSectionIndex = -1;
 
   const lines = content.split(/\r?\n/);
@@ -166,7 +190,8 @@ function parseChecklistData(content: string): {
       sectionCounters.push({
         title: headingMatch[2].trim(),
         level: headingMatch[1].length,
-        counter: createEmptyChecklistCounter()
+        counter: createEmptyChecklistCounter(),
+        items: []
       });
       currentSectionIndex = sectionCounters.length - 1;
       continue;
@@ -190,6 +215,14 @@ function parseChecklistData(content: string): {
     if (priority) {
       applyChecklistMarker(priorityCounters[priority], marker);
     }
+
+    if (currentSectionIndex >= 0) {
+      sectionCounters[currentSectionIndex].items.push({
+        text: itemText.trim(),
+        status: resolveChecklistItemStatus(marker),
+        priority
+      });
+    }
   }
 
   return {
@@ -199,7 +232,8 @@ function parseChecklistData(content: string): {
       .map((sectionEntry) => ({
         title: sectionEntry.title,
         level: sectionEntry.level,
-        checklist: toChecklistStats(sectionEntry.counter)
+        checklist: toChecklistStats(sectionEntry.counter),
+        items: sectionEntry.items
       })),
     priorities: {
       P0: toChecklistStats(priorityCounters.P0),

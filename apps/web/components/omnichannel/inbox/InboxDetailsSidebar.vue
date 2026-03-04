@@ -2,6 +2,7 @@
 import {
   UAvatar,
   UBadge,
+  UButton,
   UCard,
   UDashboardSidebar,
   UDashboardSidebarCollapse,
@@ -17,6 +18,10 @@ const props = defineProps<{
   collapsed: boolean;
   activeConversation: Conversation | null;
   activeConversationLabel: string | null;
+  isGroupConversation: boolean;
+  savingContact: boolean;
+  contactActionError: string;
+  canSaveActiveContact: boolean;
   statusActionItems: InboxSelectOption[];
   assigneeItems: InboxSelectOption[];
   assigneeModel: string;
@@ -31,6 +36,7 @@ const emit = defineEmits<{
   (event: "update:collapsed", value: boolean): void;
   (event: "update:internalNotes", value: string): void;
   (event: "update:assigneeModel", value: string): void;
+  (event: "save-contact"): void;
   (event: "update-status", value: ConversationStatus): void;
   (event: "update-assignee", value: string): void;
 }>();
@@ -158,8 +164,30 @@ function onAssigneeChange(value: string | undefined) {
               :text="getInitials(activeConversationLabel || activeConversation.externalId)"
               class="details-card__avatar"
             />
-            <p class="details-card__text">{{ activeConversationLabel }}</p>
+            <div class="details-card__contact-copy">
+              <p class="details-card__text">{{ activeConversationLabel }}</p>
+              <p v-if="activeConversation.contactPhone" class="details-card__subtext">
+                {{ activeConversation.contactPhone }}
+              </p>
+            </div>
           </div>
+
+          <div v-if="!isGroupConversation && canSaveActiveContact" class="details-card__contact-actions">
+            <UButton
+              size="sm"
+              color="primary"
+              variant="soft"
+              :loading="savingContact"
+              :disabled="savingContact"
+              @click="emit('save-contact')"
+            >
+              Salvar contato
+            </UButton>
+          </div>
+
+          <p v-if="contactActionError" class="details-card__error">
+            {{ contactActionError }}
+          </p>
         </UCard>
 
         <UCard>
@@ -273,9 +301,29 @@ function onAssigneeChange(value: string | undefined) {
   gap: 0.55rem;
 }
 
+.details-card__contact-copy {
+  min-width: 0;
+}
+
 .details-card__text {
   margin: 0;
   font-weight: 500;
+}
+
+.details-card__subtext {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: rgb(var(--muted));
+}
+
+.details-card__contact-actions {
+  margin-top: 0.75rem;
+}
+
+.details-card__error {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: rgb(var(--error));
 }
 
 .details-card__tags {

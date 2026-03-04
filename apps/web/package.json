@@ -13,6 +13,7 @@
     "test:composables": "vitest --run tests/composables"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
     "@nuxt/ui": "^4.4.0",
     "@pinia/nuxt": "^0.11.3",
     "markdown-it": "^14.1.1",
