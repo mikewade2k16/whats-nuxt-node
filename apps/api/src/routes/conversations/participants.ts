@@ -6,8 +6,16 @@ import type {
 } from "./types.js";
 import { asRecord } from "./object-utils.js";
 
+function normalizeRawJid(value: string | null | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+(?=@)/g, "")
+    .replace(/@c\.us$/g, "@s.whatsapp.net");
+}
+
 export function normalizeParticipantJid(value: string | null | undefined) {
-  const trimmed = value?.trim().toLowerCase();
+  const trimmed = normalizeRawJid(value);
   if (!trimmed) {
     return null;
   }
@@ -39,7 +47,9 @@ export function extractPhone(value: string | null | undefined) {
     return "";
   }
 
-  return value.replace(/\D/g, "");
+  const normalized = normalizeRawJid(value);
+  const head = normalized.includes("@") ? normalized.split("@")[0] : normalized;
+  return head.replace(/\D/g, "");
 }
 
 export function normalizeAvatarUrl(value: string | null | undefined) {
@@ -57,7 +67,12 @@ export function normalizeAvatarUrl(value: string | null | undefined) {
 
 export function resolveParticipantName(rawName: string | null | undefined, fallbackPhone: string) {
   const normalized = rawName?.trim();
-  if (normalized && !normalized.endsWith("@s.whatsapp.net") && !normalized.endsWith("@g.us")) {
+  if (
+    normalized &&
+    !normalized.endsWith("@s.whatsapp.net") &&
+    !normalized.endsWith("@g.us") &&
+    !normalized.endsWith("@lid")
+  ) {
     const digitsOnly = normalized.replace(/\D/g, "");
     if (digitsOnly.length >= 7 && fallbackPhone && digitsOnly !== fallbackPhone) {
       return fallbackPhone;

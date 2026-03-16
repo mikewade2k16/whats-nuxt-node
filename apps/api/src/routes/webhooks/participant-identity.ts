@@ -1,19 +1,29 @@
+function normalizeRawJid(value: string | null | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+(?=@)/g, "")
+    .replace(/@c\.us$/g, "@s.whatsapp.net");
+}
+
 export function extractPhone(externalId: string) {
-  const digits = externalId.replace(/\D/g, "");
-  return digits.length > 0 ? digits : externalId;
+  const normalized = normalizeRawJid(externalId);
+  const head = normalized.includes("@") ? normalized.split("@")[0] : normalized;
+  const digits = head.replace(/\D/g, "");
+  return digits.length > 0 ? digits : normalized;
 }
 
 export function normalizeMentionJid(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
+  const normalized = normalizeRawJid(value);
+  if (!normalized) {
     return null;
   }
 
-  if (trimmed.includes("@")) {
-    return trimmed.toLowerCase();
+  if (normalized.includes("@")) {
+    return normalized;
   }
 
-  const digits = trimmed.replace(/\D/g, "");
+  const digits = normalized.replace(/\D/g, "");
   if (!digits) {
     return null;
   }
@@ -22,7 +32,7 @@ export function normalizeMentionJid(value: string) {
 }
 
 export function normalizeJidForCompare(jid: string | null | undefined) {
-  const value = jid?.trim().toLowerCase();
+  const value = normalizeRawJid(jid);
   if (!value) {
     return null;
   }

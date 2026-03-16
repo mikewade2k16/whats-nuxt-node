@@ -1,0 +1,470 @@
+<script setup lang="ts">
+import type { AvatarProps, DropdownMenuItem } from '@nuxt/ui'
+import AdminSessionSimulationBar from '~/components/admin/AdminSessionSimulationBar.vue'
+
+export interface AdminHeaderMenuItem {
+  label: string
+  to?: string
+  children?: DropdownMenuItem[][]
+}
+
+export interface AdminHeaderActionItem {
+  icon: string
+  label: string
+  to?: string
+  onClick?: () => void
+}
+
+const props = withDefaults(
+  defineProps<{
+    logoTitle?: string
+    logoSubtitle?: string
+    logoTo?: string
+    menuItems?: AdminHeaderMenuItem[]
+    actionItems?: AdminHeaderActionItem[]
+    profileName?: string
+    profileRole?: string
+    viewerUserType?: string
+    viewerLevel?: string
+    alwaysShowSessionSimulation?: boolean
+    profileItems?: DropdownMenuItem[][]
+    profileAvatar?: AvatarProps
+    slideoverTitle?: string
+    slideoverDescription?: string
+    showThemeToggle?: boolean
+  }>(),
+  {
+    logoTitle: 'crow',
+    logoSubtitle: 'visuais',
+    logoTo: '/',
+    menuItems: () => [],
+    actionItems: () => [],
+    profileName: 'User',
+    profileRole: '',
+    viewerUserType: '',
+    viewerLevel: '',
+    alwaysShowSessionSimulation: false,
+    profileItems: () => [],
+    profileAvatar: () => ({}),
+    slideoverTitle: 'Menu',
+    slideoverDescription: 'Navegacao rapida do admin.',
+    showThemeToggle: true
+  }
+)
+
+const route = useRoute()
+const sidebarOpen = ref(false)
+const menuOpenState = reactive<Record<string, boolean>>({})
+const menuTriggerHoverState = reactive<Record<string, boolean>>({})
+const menuContentHoverState = reactive<Record<string, boolean>>({})
+const menuCloseTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const MENU_CLOSE_DELAY_MS = 180
+const {
+  currentTheme,
+  hasCustomTheme,
+  initializeFromStorage,
+  applyTheme,
+  getThemeLabel
+} = useOmniTheme()
+
+const resolvedAvatar = computed<AvatarProps>(() => ({
+  alt: props.profileName,
+  ...props.profileAvatar
+}))
+
+const canShowSessionSimulation = computed(() => {
+  if (props.alwaysShowSessionSimulation) return true
+  return String(props.viewerUserType || '').trim().toLowerCase() === 'admin'
+    && String(props.viewerLevel || '').trim().toLowerCase() === 'admin'
+})
+
+const themeButton = computed(() => {
+  if (currentTheme.value === 'dark') {
+    return {
+      icon: 'i-lucide-moon',
+      label: getThemeLabel('dark')
+    }
+  }
+
+  if (currentTheme.value === 'apple') {
+    return {
+      icon: 'i-lucide-sparkles',
+      label: getThemeLabel('apple')
+    }
+  }
+
+  if (currentTheme.value === 'custom') {
+    return {
+      icon: 'i-lucide-palette',
+      label: getThemeLabel('custom')
+    }
+  }
+
+  return {
+    icon: 'i-lucide-sun',
+    label: getThemeLabel('light')
+  }
+})
+
+const themeMenuItems = computed<DropdownMenuItem[][]>(() => [
+  [
+    {
+      label: `Tema atual: ${themeButton.value.label}`,
+      type: 'label'
+    }
+  ],
+  [
+    {
+      label: getThemeLabel('light'),
+      icon: 'i-lucide-sun',
+      onSelect: () => applyTheme('light')
+    },
+    {
+      label: getThemeLabel('dark'),
+      icon: 'i-lucide-moon',
+      onSelect: () => applyTheme('dark')
+    },
+    {
+      label: getThemeLabel('apple'),
+      icon: 'i-lucide-sparkles',
+      onSelect: () => applyTheme('apple')
+    },
+    {
+      label: getThemeLabel('custom'),
+      icon: 'i-lucide-palette',
+      disabled: !hasCustomTheme.value,
+      onSelect: () => applyTheme('custom')
+    }
+  ]
+])
+
+function routeMatches(target?: string) {
+  if (!target) return false
+  return route.path === target || route.path.startsWith(`${target}/`)
+}
+
+function branchHasActiveRoute(children?: DropdownMenuItem[][]) {
+  if (!children?.length) return false
+
+  for (const group of children) {
+    for (const child of group) {
+      const childTo = typeof child?.to === 'string' ? child.to : ''
+      if (routeMatches(childTo)) {
+        return true
+      }
+
+      const nestedChildren = Array.isArray(child?.children) ? child.children : undefined
+      if (nestedChildren && branchHasActiveRoute([nestedChildren as DropdownMenuItem[]])) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+function isItemActive(item: AdminHeaderMenuItem) {
+  if (routeMatches(item.to)) {
+    return true
+  }
+
+  if (item.children?.length) {
+    return branchHasActiveRoute(item.children)
+  }
+
+  return false
+}
+
+function getMenuItemKey(item: AdminHeaderMenuItem) {
+  return `${item.label}::${item.to ?? ''}`
+}
+
+function isDesktopMenuMode() {
+  if (!import.meta.client) return false
+  return window.matchMedia('(min-width: 1024px)').matches
+}
+
+function clearMenuCloseTimer(key: string) {
+  const timer = menuCloseTimers.get(key)
+  if (!timer) return
+  clearTimeout(timer)
+  menuCloseTimers.delete(key)
+}
+
+function isMenuPointerInsideByKey(key: string) {
+  return Boolean(menuTriggerHoverState[key] || menuContentHoverState[key])
+}
+
+function scheduleMenuCloseByKey(key: string) {
+  clearMenuCloseTimer(key)
+  menuCloseTimers.set(
+    key,
+    setTimeout(() => {
+      if (isMenuPointerInsideByKey(key)) {
+        menuCloseTimers.delete(key)
+        return
+      }
+      menuOpenState[key] = false
+      menuCloseTimers.delete(key)
+    }, MENU_CLOSE_DELAY_MS)
+  )
+}
+
+function setMenuOpen(item: AdminHeaderMenuItem, open: boolean) {
+  const key = getMenuItemKey(item)
+  if (open) {
+    Object.keys(menuOpenState).forEach((menuKey) => {
+      if (menuKey === key) return
+      menuOpenState[menuKey] = false
+      menuTriggerHoverState[menuKey] = false
+      menuContentHoverState[menuKey] = false
+      clearMenuCloseTimer(menuKey)
+    })
+    clearMenuCloseTimer(key)
+  }
+  menuOpenState[key] = open
+}
+
+function onMenuMouseEnter(item: AdminHeaderMenuItem) {
+  if (!isDesktopMenuMode()) return
+  const key = getMenuItemKey(item)
+  menuTriggerHoverState[key] = true
+  setMenuOpen(item, true)
+}
+
+function onMenuMouseLeave(item: AdminHeaderMenuItem) {
+  if (!isDesktopMenuMode()) return
+  const key = getMenuItemKey(item)
+  menuTriggerHoverState[key] = false
+  scheduleMenuCloseByKey(key)
+}
+
+function onMenuContentEnter(item: AdminHeaderMenuItem) {
+  if (!isDesktopMenuMode()) return
+  const key = getMenuItemKey(item)
+  menuContentHoverState[key] = true
+  clearMenuCloseTimer(key)
+  setMenuOpen(item, true)
+}
+
+function onMenuContentLeave(item: AdminHeaderMenuItem) {
+  if (!isDesktopMenuMode()) return
+  const key = getMenuItemKey(item)
+  menuContentHoverState[key] = false
+  scheduleMenuCloseByKey(key)
+}
+
+function getMenuContentConfig(item: AdminHeaderMenuItem) {
+  return {
+    align: 'start',
+    sideOffset: 2,
+    collisionPadding: 8,
+    onPointerenter: () => onMenuContentEnter(item),
+    onPointerleave: () => onMenuContentLeave(item)
+  } as any
+}
+
+function onMenuOpenUpdate(item: AdminHeaderMenuItem, open: boolean) {
+  if (open) {
+    setMenuOpen(item, true)
+    return
+  }
+
+  if (isDesktopMenuMode()) {
+    const key = getMenuItemKey(item)
+    if (isMenuPointerInsideByKey(key)) {
+      menuOpenState[key] = true
+      return
+    }
+    scheduleMenuCloseByKey(key)
+    return
+  }
+
+  setMenuOpen(item, false)
+}
+
+function closeAllMenus() {
+  Object.keys(menuOpenState).forEach((key) => {
+    menuOpenState[key] = false
+    menuTriggerHoverState[key] = false
+    menuContentHoverState[key] = false
+    clearMenuCloseTimer(key)
+  })
+}
+
+watch(
+  () => route.path,
+  () => {
+    closeAllMenus()
+  }
+)
+
+onMounted(() => {
+  initializeFromStorage()
+})
+
+onBeforeUnmount(() => {
+  closeAllMenus()
+})
+</script>
+
+<template>
+  <header class="admin-header">
+    <div class="admin-header__row">
+      <div class="admin-header__brand">
+        <div class="admin-header__brand-inner">
+          <UButton
+            icon="i-lucide-panel-left-open"
+            color="neutral"
+            variant="ghost"
+            aria-label="Abrir menu lateral"
+            class="admin-header__icon-btn"
+            @click="sidebarOpen = true"
+          />
+
+          <NuxtLink :to="logoTo" class="admin-header__brand-link">
+            <p class="admin-header__brand-title">{{ logoTitle }}</p>
+            <p class="admin-header__brand-subtitle">{{ logoSubtitle }}</p>
+          </NuxtLink>
+        </div>
+      </div>
+
+      <div class="admin-header__panel">
+        <nav class="admin-header__nav h-full">
+          <template v-for="item in menuItems" :key="item.label">
+            <div
+              v-if="item.children?.length"
+              class="admin-header__menu-item h-full"
+              @mouseenter="onMenuMouseEnter(item)"
+              @mouseleave="onMenuMouseLeave(item)"
+            >
+              <UDropdownMenu
+                :items="item.children"
+                :open="Boolean(menuOpenState[getMenuItemKey(item)])"
+                :modal="false"
+                :portal="false"
+                :content="getMenuContentConfig(item)"
+                :ui="{ content: 'w-60 admin-header__menu-dropdown-content' }"
+                @update:open="onMenuOpenUpdate(item, $event)"
+              >
+                <template #default>
+                  <UButton
+                    :label="item.label"
+                    color="neutral"
+                    variant="ghost"
+                    trailing-icon="i-lucide-chevron-down"
+                    class="admin-header__menu-btn h-full"
+                    :class="[
+                      isItemActive(item) ? 'is-active' : '',
+                      Boolean(menuOpenState[getMenuItemKey(item)]) ? 'is-open' : ''
+                    ]"
+                  />
+                </template>
+              </UDropdownMenu>
+            </div>
+
+            <NuxtLink v-else-if="item.to" :to="item.to" class="h-full">
+              <UButton
+                :label="item.label"
+                color="neutral"
+                variant="ghost"
+                class="admin-header__menu-btn  h-full"
+                :class="isItemActive(item) ? 'is-active' : ''"
+              />
+            </NuxtLink>
+          </template>
+        </nav>
+
+        <div class="admin-header__spacer" />
+
+        <div class="admin-header__actions">
+          <UDropdownMenu
+            v-if="showThemeToggle"
+            :items="themeMenuItems"
+            :modal="false"
+            :content="{ align: 'end' }"
+            :ui="{ content: 'w-52' }"
+          >
+            <UButton
+              :icon="themeButton.icon"
+              label="Tema"
+              color="neutral"
+              variant="ghost"
+              :aria-label="`Selecionar tema. Tema atual: ${themeButton.label}`"
+              class="admin-header__icon-btn admin-header__theme-btn"
+            />
+          </UDropdownMenu>
+
+          <template v-for="action in actionItems" :key="action.label">
+            <NuxtLink v-if="action.to" :to="action.to">
+              <UButton
+                :icon="action.icon"
+                color="neutral"
+                variant="ghost"
+                :aria-label="action.label"
+                class="admin-header__icon-btn"
+              />
+            </NuxtLink>
+
+            <UButton
+              v-else
+              :icon="action.icon"
+              color="neutral"
+              variant="ghost"
+              :aria-label="action.label"
+              class="admin-header__icon-btn"
+              @click="action.onClick?.()"
+            />
+          </template>
+
+          <div class="admin-header__profile-wrap">
+            <UDropdownMenu :items="profileItems" :modal="false" :content="{ align: 'end' }" :ui="{ content: 'w-56' }">
+              <UButton color="neutral" variant="ghost" class="admin-header__profile-btn">
+                <template #default>
+                  <div class="admin-header__profile-content">
+                    <div class="admin-header__profile-text">
+                      <p class="admin-header__profile-name">{{ profileName }}</p>
+                      <p class="admin-header__profile-role">{{ profileRole }}</p>
+                    </div>
+                    <UAvatar v-bind="resolvedAvatar" size="md" class="admin-header__avatar" />
+                  </div>
+                </template>
+              </UButton>
+
+              <template v-if="canShowSessionSimulation" #content-bottom>
+                <div class="admin-header__profile-session">
+                  <AdminSessionSimulationBar compact :show-summary="false" :show-refresh="false" title="Sessao simulada" />
+                </div>
+              </template>
+            </UDropdownMenu>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <USlideover
+      v-model:open="sidebarOpen"
+      side="left"
+      :title="slideoverTitle"
+      :description="slideoverDescription"
+      :ui="{ content: 'max-w-xs' }"
+    >
+      <template #body>
+        <nav class="admin-header__mobile-nav">
+          <template v-for="item in menuItems" :key="`mobile-${item.label}`">
+            <NuxtLink v-if="item.to" :to="item.to" @click="sidebarOpen = false">
+              <UButton
+                :label="item.label"
+                color="neutral"
+                variant="ghost"
+                block
+                class="admin-header__mobile-btn"
+                :class="isItemActive(item) ? 'is-active' : ''"
+              />
+            </NuxtLink>
+          </template>
+        </nav>
+      </template>
+    </USlideover>
+  </header>
+</template>

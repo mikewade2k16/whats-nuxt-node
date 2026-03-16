@@ -13,6 +13,7 @@ import {
   stripTrailingSlash
 } from "./helpers.js";
 import { validateWhatsAppEndpointsSchema } from "./schemas.js";
+import { resolveTenantInstanceById } from "../../services/whatsapp-instances.js";
 
 export function registerTenantWhatsAppValidateRoute(protectedApp: FastifyInstance) {
   protectedApp.post("/tenant/whatsapp/validate-endpoints", async (request, reply) => {
@@ -29,9 +30,16 @@ export function registerTenantWhatsAppValidateRoute(protectedApp: FastifyInstanc
     }
 
     const tenant = await getTenantOrFail(request.authUser.tenantId);
+    const selectedInstance = parsed.data.instanceId
+      ? await resolveTenantInstanceById({
+          tenantId: tenant.id,
+          instanceId: parsed.data.instanceId,
+          includeInactive: true
+        })
+      : null;
     const instanceName = resolveInstanceName(
       parsed.data.instanceName,
-      tenant.whatsappInstance,
+      selectedInstance?.instanceName ?? tenant.whatsappInstance,
       tenant.slug
     );
 

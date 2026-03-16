@@ -74,10 +74,13 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { normalizeMessageSenderForConversationResponse } from "./message-display.js";
+import { mergeConversationScopeWhere, mergeMessageScopeWhere, resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationMessagesListRoute(protectedApp: FastifyInstance) {
     protectedApp.get("/conversations/:conversationId/messages", async (request, reply) => {
+      const accessScope = await resolveConversationAccessScope(request);
       const params = z
         .object({
           conversationId: z.string().min(1)
@@ -99,10 +102,9 @@ export function registerConversationMessagesListRoute(protectedApp: FastifyInsta
       const beforeId = query.success ? query.data.beforeId : undefined;
 
       const conversation = await prisma.conversation.findFirst({
-        where: {
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
           id: params.data.conversationId,
-          tenantId: request.authUser.tenantId
-        }
+        })
       });
 
       if (!conversation) {
@@ -112,11 +114,10 @@ export function registerConversationMessagesListRoute(protectedApp: FastifyInsta
       let beforeMessageCreatedAt: Date | null = null;
       if (beforeId) {
         const beforeMessage = await prisma.message.findFirst({
-          where: {
+          where: mergeMessageScopeWhere(accessScope.messageWhere, {
             id: beforeId,
-            tenantId: request.authUser.tenantId,
             conversationId: conversation.id
-          },
+          }),
           select: {
             createdAt: true
           }
@@ -125,8 +126,7 @@ export function registerConversationMessagesListRoute(protectedApp: FastifyInsta
       }
 
       const messagesDesc = await prisma.message.findMany({
-        where: {
-          tenantId: request.authUser.tenantId,
+        where: mergeMessageScopeWhere(accessScope.messageWhere, {
           conversationId: conversation.id,
           hiddenForUsers: {
             none: {
@@ -140,24 +140,31 @@ export function registerConversationMessagesListRoute(protectedApp: FastifyInsta
                 }
               }
             : {})
-        },
+        }),
         orderBy: { createdAt: "desc" },
         take: limit
       });
 
-      const messages = [...messagesDesc].reverse();
+      const messages = [...messagesDesc]
+        .reverse()
+        .map((messageEntry) =>
+          normalizeMessageSenderForConversationResponse(messageEntry, {
+            externalId: conversation.externalId,
+            contactName: conversation.contactName,
+            contactPhone: conversation.contactPhone
+          })
+        );
 
       let hasMore = false;
       if (messages.length > 0) {
         const oldest = messages[0];
         const older = await prisma.message.findFirst({
-          where: {
-            tenantId: request.authUser.tenantId,
+          where: mergeMessageScopeWhere(accessScope.messageWhere, {
             conversationId: conversation.id,
             createdAt: {
               lt: oldest.createdAt
             }
-          },
+          }),
           select: { id: true }
         });
         hasMore = Boolean(older);

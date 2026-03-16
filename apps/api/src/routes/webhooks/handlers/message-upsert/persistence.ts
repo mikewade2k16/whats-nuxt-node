@@ -9,6 +9,8 @@ import { toPrismaJsonValue } from "../../message-json.js";
 interface CreateWebhookMessageParams {
   tenantId: string;
   conversationId: string;
+  instanceId: string | null;
+  instanceScopeKey: string;
   direction: MessageDirection;
   messageType: MessageType;
   senderName: string | null;
@@ -22,6 +24,7 @@ interface CreateWebhookMessageParams {
   mediaDurationSeconds: number | null;
   metadataJson: unknown;
   externalMessageId: string | null;
+  createdAt?: Date | null;
 }
 
 export async function createWebhookMessage(params: CreateWebhookMessageParams) {
@@ -29,6 +32,8 @@ export async function createWebhookMessage(params: CreateWebhookMessageParams) {
     data: {
       tenantId: params.tenantId,
       conversationId: params.conversationId,
+      instanceId: params.instanceId,
+      instanceScopeKey: params.instanceScopeKey,
       direction: params.direction,
       messageType: params.messageType,
       senderName: params.senderName,
@@ -42,7 +47,8 @@ export async function createWebhookMessage(params: CreateWebhookMessageParams) {
       mediaDurationSeconds: params.mediaDurationSeconds,
       metadataJson: toPrismaJsonValue(params.metadataJson),
       status: MessageStatus.SENT,
-      externalMessageId: params.externalMessageId
+      externalMessageId: params.externalMessageId,
+      ...(params.createdAt ? { createdAt: params.createdAt } : {})
     }
   });
 }

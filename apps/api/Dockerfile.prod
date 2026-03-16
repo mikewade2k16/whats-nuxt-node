@@ -1,0 +1,106 @@
+# Multi-stage Dockerfile para API - Otimizado para Produção
+
+# ==================== BUILDER STAGE ====================
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+# Copiar dependências
+COPY package*.json ./
+
+# Install com otimizações
+RUN npm ci --no-audit --no-fund --omit=dev 
+
+# Copiar código
+COPY . .
+
+# Gerar Prisma client
+RUN npm run prisma:generate
+
+# ==================== API PRODUCTION ====================
+FROM node:22-alpine AS prod
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copiar dependências do builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copiar código
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/prisma ./prisma
+
+# Health check
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=20s \
+  CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
+
+# Port
+EXPOSE 4000
+
+# Start
+CMD ["npm", "run", "start"]
+
+# ==================== WORKER ====================
+FROM node:22-alpine AS worker
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copiar dependências do builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copiar código
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/prisma ./prisma
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=20s \
+  CMD ps aux | grep "node" | grep -v grep || exit 1
+
+# Start worker
+CMD ["npm", "run", "worker:start"]
+
+# ==================== RETENTION WORKER ====================
+FROM node:22-alpine AS retention
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copiar dependências do builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copiar código
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/prisma ./prisma
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=20s \
+  CMD ps aux | grep "node" | grep -v grep || exit 1
+
+# Start retention worker
+CMD ["npm", "run", "worker:retention:start"]
+
+# ==================== DEV ====================
+FROM node:22-alpine AS dev
+
+WORKDIR /app
+
+# Copiar dependências
+COPY package*.json ./
+RUN npm install --no-audit --no-fund
+
+# Copiar código
+COPY . .
+
+# Health check
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=20s \
+  CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
+
+# Port
+EXPOSE 4000
+
+# Dev mode
+CMD ["npm", "run", "dev"]
+

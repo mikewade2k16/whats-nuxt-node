@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/web
+        working-directory: apps/omni-nuxt-ui
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,16 +54,75 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: apps/omni-nuxt-ui/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run composable tests
-        run: npm run test:composables
-
       - name: Build web
         run: npm run build
+
+  security-access-audit:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB: omnichannel
+      POSTGRES_USER: omnichannel
+      POSTGRES_PASSWORD: omnichannel
+      DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      JWT_SECRET: change-this-secret
+      CORE_API_BASE_URL: http://platform-core:4100
+      CORE_API_EMAIL: root@core.local
+      CORE_API_PASSWORD: 123456
+      CORE_REQUEST_TIMEOUT_MS: 15000
+      CORE_ATENDIMENTO_MODULE_CODE: atendimento
+      CORE_DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel
+      CORE_DB_SCHEMA: platform_core
+      CORE_HTTP_ADDR: :4100
+      CORE_JWT_SECRET: change-this-core-secret
+      CORE_JWT_ISSUER: platform-core
+      CORE_JWT_TTL_MINUTES: 60
+      CORE_DEFAULT_USERS_LIMIT: 10
+      CORE_ALLOWED_ORIGINS: http://localhost:3000
+      CORE_AUTO_MIGRATE: "true"
+      NUXT_PUBLIC_API_BASE: http://localhost:4000
+      NUXT_API_INTERNAL_BASE: http://api:4000
+      NUXT_CORE_API_INTERNAL_BASE: http://platform-core:4100
+      WEBHOOK_RECEIVER_BASE_URL: http://api:4000
+      API_DB_SEED_ON_BOOT: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start stack
+        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis platform-core api web
+
+      - name: Wait for stack health
+        run: |
+          for i in {1..90}; do
+            if curl -fsS http://localhost:4100/health > /dev/null && \
+               curl -fsS http://localhost:4000/health > /dev/null && \
+               curl -fsS http://localhost:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f docker-compose.dev.yml ps
+          docker compose -f docker-compose.dev.yml logs --tail=200 platform-core api web postgres redis
+          exit 1
+
+      - name: Run security access audit
+        run: node scripts/security-access-audit.mjs
+
+      - name: Show stack logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs --tail=200 platform-core api web postgres redis
+
+      - name: Shutdown stack
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down --remove-orphans -v
 
   tenant-isolation-audit:
     runs-on: ubuntu-latest

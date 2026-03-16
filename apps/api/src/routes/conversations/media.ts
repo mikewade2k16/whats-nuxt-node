@@ -203,6 +203,90 @@ export function normalizeMimeType(value: unknown) {
   return normalized;
 }
 
+function normalizeMimeTypeWithParameters(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/;\s+/g, ";");
+  if (!normalized) {
+    return null;
+  }
+
+  const mimeBase = normalized.split(";")[0]?.trim() ?? "";
+  if (!mimeBase || !mimeBase.includes("/") || mimeBase.includes(" ")) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function resolveMimeTypeFromFileName(fileName: string | null | undefined) {
+  const normalized = fileName?.trim().toLowerCase() ?? "";
+  if (!normalized) {
+    return null;
+  }
+
+  const sanitized = normalized.replace(/[?#].*$/, "");
+  const extension = sanitized.match(/\.([a-z0-9]{2,8})$/i)?.[1]?.toLowerCase() ?? "";
+  if (!extension) {
+    return null;
+  }
+
+  const extensionMimeMap: Record<string, string> = {
+    aac: "audio/aac",
+    m4a: "audio/mp4",
+    mp3: "audio/mpeg",
+    mpga: "audio/mpeg",
+    oga: "audio/ogg",
+    ogg: "audio/ogg",
+    opus: "audio/ogg",
+    wav: "audio/wav",
+    weba: "audio/webm",
+    webm: "audio/webm"
+  };
+
+  return extensionMimeMap[extension] ?? null;
+}
+
+export function resolveEffectiveMediaMimeType(params: {
+  messageType: MessageType;
+  mediaMimeType: string | null | undefined;
+  mediaFileName?: string | null | undefined;
+  metadataJson?: unknown;
+  fallbackMimeType?: string | null | undefined;
+}) {
+  const explicitMimeType = normalizeMimeTypeWithParameters(params.mediaMimeType);
+  const explicitMimeBase = normalizeMimeType(params.mediaMimeType);
+  if (explicitMimeType && explicitMimeBase !== "application/octet-stream") {
+    return explicitMimeType;
+  }
+
+  const fallbackMimeType = normalizeMimeTypeWithParameters(params.fallbackMimeType);
+  const fallbackMimeBase = normalizeMimeType(params.fallbackMimeType);
+  if (fallbackMimeType && fallbackMimeBase !== "application/octet-stream") {
+    return fallbackMimeType;
+  }
+
+  const fileNameMimeType = resolveMimeTypeFromFileName(params.mediaFileName);
+  if (fileNameMimeType) {
+    return fileNameMimeType;
+  }
+
+  const metadata = asRecord(params.metadataJson);
+  const audioMetadata = metadata ? asRecord(metadata.audio) : null;
+  const mediaKind = typeof metadata?.mediaKind === "string" ? metadata.mediaKind.trim().toLowerCase() : "";
+  if (params.messageType === MessageType.AUDIO) {
+    if (audioMetadata?.voiceNote === true || mediaKind === "voice_note") {
+      return "audio/ogg";
+    }
+
+    return "audio/ogg";
+  }
+
+  return explicitMimeType || fallbackMimeType || "application/octet-stream";
+}
+
 export function normalizeDataUrlCandidate(value: string, fallbackMimeType: string | null) {
   const trimmed = value.trim();
   if (!trimmed) {

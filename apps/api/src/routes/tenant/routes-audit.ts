@@ -2,8 +2,13 @@
 import { MessageStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../db.js";
 import { requireAdminOrSupervisor } from "../../lib/guards.js";
+import { getHttpEndpointMetricsSnapshot } from "../../services/http-metrics.js";
 import { toUtcDayKey } from "./helpers.js";
-import { failuresDashboardQuerySchema, listAuditEventsQuerySchema } from "./schemas.js";
+import {
+  failuresDashboardQuerySchema,
+  httpEndpointMetricsQuerySchema,
+  listAuditEventsQuerySchema
+} from "./schemas.js";
 
 export function registerTenantAuditRoutes(protectedApp: FastifyInstance) {
   protectedApp.get("/tenant/audit-events", async (request, reply) => {
@@ -244,5 +249,26 @@ export function registerTenantAuditRoutes(protectedApp: FastifyInstance) {
         externalId: entry.conversation.externalId
       }))
     };
+  });
+
+  protectedApp.get("/tenant/metrics/http-endpoints", async (request, reply) => {
+    if (!requireAdminOrSupervisor(request, reply)) {
+      return;
+    }
+
+    const query = httpEndpointMetricsQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({
+        message: "Query invalida",
+        errors: query.error.flatten()
+      });
+    }
+
+    return getHttpEndpointMetricsSnapshot({
+      limit: query.data.limit,
+      sortBy: query.data.sortBy,
+      order: query.data.order,
+      routeContains: query.data.routeContains
+    });
   });
 }

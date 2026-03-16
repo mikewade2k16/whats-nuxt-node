@@ -1,0 +1,514 @@
+{
+  "generatedAt": "2026-03-06T01:47:02.503Z",
+  "baseUrl": "http://host.docker.internal:3000",
+  "metricsLabel": "after-dashboard",
+  "runs": 7,
+  "timeoutMs": 30000,
+  "login": {
+    "tenantSlug": "demo",
+    "email": "admin@demo.local"
+  },
+  "firstConversationId": "cmlzv89mf00jrmn8qmfcdrphf",
+  "metrics": [
+    {
+      "name": "PAGE /admin/omnichannel/docs",
+      "url": "http://host.docker.internal:3000/admin/omnichannel/docs",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 565.26,
+      "maxMs": 1319.39,
+      "avgMs": 987.99,
+      "p95Ms": 1319.39,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 998.51
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1255.99
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 856.03
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1275.79
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 644.96
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1319.39
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 565.26
+        }
+      ]
+    },
+    {
+      "name": "PAGE /admin/omnichannel/inbox",
+      "url": "http://host.docker.internal:3000/admin/omnichannel/inbox",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 291.51,
+      "maxMs": 23322.09,
+      "avgMs": 3611.62,
+      "p95Ms": 23322.09,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 23322.09
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 304.77
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 390.65
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 300.3
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 352.62
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 319.38
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 291.51
+        }
+      ]
+    },
+    {
+      "name": "PAGE /admin/omnichannel/operacao",
+      "url": "http://host.docker.internal:3000/admin/omnichannel/operacao",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 299.69,
+      "maxMs": 3673.67,
+      "avgMs": 891.81,
+      "p95Ms": 3673.67,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 3673.67
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 307.37
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 299.69
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 659.02
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 334.41
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 658.08
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 310.4
+        }
+      ]
+    },
+    {
+      "name": "API /api/docs",
+      "url": "http://host.docker.internal:3000/api/docs",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 60.86,
+      "maxMs": 664.12,
+      "avgMs": 415.71,
+      "p95Ms": 664.12,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 349.26
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 585.04
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 60.86
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 592.23
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 341.91
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 664.12
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 316.52
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/conversations",
+      "url": "http://host.docker.internal:3000/api/bff/conversations",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 69.95,
+      "maxMs": 365.27,
+      "avgMs": 238.45,
+      "p95Ms": 365.27,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 365.27
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 254.67
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 69.95
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 263.56
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 355.09
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 275.29
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 85.31
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/tenant/whatsapp/status",
+      "url": "http://host.docker.internal:3000/api/bff/tenant/whatsapp/status",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 32.64,
+      "maxMs": 308.8,
+      "avgMs": 167.19,
+      "p95Ms": 308.8,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 239.1
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 308.8
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 32.64
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 257.72
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 36.61
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 35.37
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 260.08
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/users",
+      "url": "http://host.docker.internal:3000/api/bff/users",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 26.27,
+      "maxMs": 278.94,
+      "avgMs": 95.84,
+      "p95Ms": 278.94,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 31.29
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 30.37
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 278.94
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 28.09
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 247.67
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 28.24
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 26.27
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/contacts",
+      "url": "http://host.docker.internal:3000/api/bff/contacts",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 28.15,
+      "maxMs": 268.75,
+      "avgMs": 97.23,
+      "p95Ms": 268.75,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 38.01
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 268.75
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 28.93
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 28.15
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 248.99
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 35.88
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 31.93
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/tenant/metrics/failures?days=7",
+      "url": "http://host.docker.internal:3000/api/bff/tenant/metrics/failures?days=7",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 35.04,
+      "maxMs": 316.72,
+      "avgMs": 183.07,
+      "p95Ms": 316.72,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 307.46
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 316.72
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 43.2
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 274.86
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 35.96
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 268.24
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 35.04
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/conversations/:id/messages?limit=50",
+      "url": "http://host.docker.internal:3000/api/bff/conversations/cmlzv89mf00jrmn8qmfcdrphf/messages?limit=50",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 125.74,
+      "maxMs": 641.56,
+      "avgMs": 360.18,
+      "p95Ms": 641.56,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 425.41
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 250.06
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 641.56
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 260.92
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 125.74
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 313.7
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 503.85
+        }
+      ]
+    }
+  ]
+}

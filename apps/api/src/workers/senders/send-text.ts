@@ -1,5 +1,6 @@
 import axios from "axios";
 import { env } from "../../config.js";
+import { extractQuoted } from "./quoted.js";
 
 type SendTextMessageParams = {
   textUrl: string;
@@ -25,15 +26,7 @@ function asRecord(value: unknown) {
   return value as Record<string, unknown>;
 }
 
-function normalizeComparableText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeJid(value: string) {
+function normalizeMentionJid(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
@@ -93,7 +86,7 @@ function extractMentions(metadataJson: unknown) {
     ...new Set(
       values
         .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => normalizeJid(entry))
+        .map((entry) => normalizeMentionJid(entry))
         .filter((entry): entry is string => Boolean(entry))
     )
   ];
@@ -105,41 +98,6 @@ function extractMentions(metadataJson: unknown) {
   return {
     everyOne,
     mentioned: normalized
-  };
-}
-
-function extractQuoted(metadataJson: unknown, remoteJid: string | null) {
-  const metadata = asRecord(metadataJson);
-  const reply = metadata ? asRecord(metadata.reply) : null;
-  if (!reply) {
-    return null;
-  }
-
-  const stanzaId = typeof reply.messageId === "string" ? reply.messageId.trim() : "";
-  if (!stanzaId) {
-    return null;
-  }
-
-  const replyContent = typeof reply.content === "string" ? reply.content.trim() : "";
-  const authorJidRaw = typeof reply.authorJid === "string" ? reply.authorJid : "";
-  const participant = normalizeJid(authorJidRaw) ?? undefined;
-  const author = typeof reply.author === "string" ? normalizeComparableText(reply.author) : "";
-  const fromMe = author === "voce" || author === "you";
-
-  if (!remoteJid) {
-    return null;
-  }
-
-  return {
-    key: {
-      remoteJid,
-      fromMe,
-      id: stanzaId,
-      participant
-    },
-    message: {
-      conversation: replyContent || "Mensagem anterior"
-    }
   };
 }
 
@@ -178,7 +136,7 @@ function extractOutboundContactCard(metadataJson: unknown): OutboundContactCard 
   };
 }
 
-function buildContactPayload(contact: OutboundContactCard, recipient: string) {
+function buildContactPayload(contact: OutboundContactCard, recipient: string): Record<string, unknown> {
   const phoneNumber = contact.phone ?? "";
   const fullName = contact.name || phoneNumber || "Contato";
 
@@ -225,9 +183,14 @@ export async function sendTextMessage(params: SendTextMessageParams) {
       throw new Error("EVOLUTION_SEND_CONTACT_PATH nao configurado para envio nativo de contato");
     }
 
+    const contactPayload = buildContactPayload(contactCard, params.recipient);
+    if (quoted) {
+      contactPayload.quoted = quoted;
+    }
+
     const contactResponse = await axios.post(
       params.contactUrl,
-      buildContactPayload(contactCard, params.recipient),
+      contactPayload,
       requestConfig
     );
     return contactResponse.data;

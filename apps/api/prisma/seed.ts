@@ -10,7 +10,7 @@ async function seed() {
       name: "Empresa Demo",
       whatsappInstance: "demo-instance",
       maxChannels: 1,
-      maxUsers: 5,
+      maxUsers: 3,
       retentionDays: 15,
       maxUploadMb: 500
     },
@@ -19,9 +19,32 @@ async function seed() {
       name: "Empresa Demo",
       whatsappInstance: "demo-instance",
       maxChannels: 1,
-      maxUsers: 5,
+      maxUsers: 3,
       retentionDays: 15,
       maxUploadMb: 500
+    }
+  });
+
+  const demoInstance = await prisma.whatsAppInstance.upsert({
+    where: {
+      tenantId_instanceName: {
+        tenantId: tenant.id,
+        instanceName: "demo-instance"
+      }
+    },
+    update: {
+      displayName: "WhatsApp Demo",
+      isDefault: true,
+      isActive: true,
+      evolutionApiKey: tenant.evolutionApiKey
+    },
+    create: {
+      tenantId: tenant.id,
+      instanceName: "demo-instance",
+      displayName: "WhatsApp Demo",
+      isDefault: true,
+      isActive: true,
+      evolutionApiKey: tenant.evolutionApiKey
     }
   });
 
@@ -116,19 +139,24 @@ async function seed() {
 
   const conversation = await prisma.conversation.upsert({
     where: {
-      tenantId_externalId_channel: {
+      tenantId_externalId_channel_instanceScopeKey: {
         tenantId: tenant.id,
         externalId: "5511999999999@s.whatsapp.net",
-        channel: ChannelType.WHATSAPP
+        channel: ChannelType.WHATSAPP,
+        instanceScopeKey: demoInstance.instanceName
       }
     },
     update: {
+      instanceId: demoInstance.id,
+      instanceScopeKey: demoInstance.instanceName,
       contactName: "Cliente Demo",
       contactPhone: "5511999999999",
       lastMessageAt: new Date()
     },
     create: {
       tenantId: tenant.id,
+      instanceId: demoInstance.id,
+      instanceScopeKey: demoInstance.instanceName,
       channel: ChannelType.WHATSAPP,
       externalId: "5511999999999@s.whatsapp.net",
       contactName: "Cliente Demo",
@@ -146,6 +174,8 @@ async function seed() {
         {
           tenantId: tenant.id,
           conversationId: conversation.id,
+          instanceId: demoInstance.id,
+          instanceScopeKey: demoInstance.instanceName,
           direction: MessageDirection.INBOUND,
           content: "Oi, tudo bem? Quero saber mais sobre o plano.",
           senderName: "Cliente Demo",
@@ -154,6 +184,8 @@ async function seed() {
         {
           tenantId: tenant.id,
           conversationId: conversation.id,
+          instanceId: demoInstance.id,
+          instanceScopeKey: demoInstance.instanceName,
           direction: MessageDirection.OUTBOUND,
           content: "Claro! Posso te explicar as opcoes disponiveis.",
           senderName: "Admin Demo",
@@ -169,7 +201,7 @@ async function seed() {
       name: "Empresa ACME",
       whatsappInstance: "acme-instance",
       maxChannels: 1,
-      maxUsers: 5,
+      maxUsers: 3,
       retentionDays: 15,
       maxUploadMb: 500
     },
@@ -178,9 +210,32 @@ async function seed() {
       name: "Empresa ACME",
       whatsappInstance: "acme-instance",
       maxChannels: 1,
-      maxUsers: 5,
+      maxUsers: 3,
       retentionDays: 15,
       maxUploadMb: 500
+    }
+  });
+
+  const acmeInstance = await prisma.whatsAppInstance.upsert({
+    where: {
+      tenantId_instanceName: {
+        tenantId: tenantAcme.id,
+        instanceName: "acme-instance"
+      }
+    },
+    update: {
+      displayName: "WhatsApp ACME",
+      isDefault: true,
+      isActive: true,
+      evolutionApiKey: tenantAcme.evolutionApiKey
+    },
+    create: {
+      tenantId: tenantAcme.id,
+      instanceName: "acme-instance",
+      displayName: "WhatsApp ACME",
+      isDefault: true,
+      isActive: true,
+      evolutionApiKey: tenantAcme.evolutionApiKey
     }
   });
 
@@ -275,19 +330,24 @@ async function seed() {
 
   const acmeConversation = await prisma.conversation.upsert({
     where: {
-      tenantId_externalId_channel: {
+      tenantId_externalId_channel_instanceScopeKey: {
         tenantId: tenantAcme.id,
         externalId: "5511888888888@s.whatsapp.net",
-        channel: ChannelType.WHATSAPP
+        channel: ChannelType.WHATSAPP,
+        instanceScopeKey: acmeInstance.instanceName
       }
     },
     update: {
+      instanceId: acmeInstance.id,
+      instanceScopeKey: acmeInstance.instanceName,
       contactName: "Cliente ACME",
       contactPhone: "5511888888888",
       lastMessageAt: new Date()
     },
     create: {
       tenantId: tenantAcme.id,
+      instanceId: acmeInstance.id,
+      instanceScopeKey: acmeInstance.instanceName,
       channel: ChannelType.WHATSAPP,
       externalId: "5511888888888@s.whatsapp.net",
       contactName: "Cliente ACME",
@@ -305,6 +365,8 @@ async function seed() {
         {
           tenantId: tenantAcme.id,
           conversationId: acmeConversation.id,
+          instanceId: acmeInstance.id,
+          instanceScopeKey: acmeInstance.instanceName,
           direction: MessageDirection.INBOUND,
           content: "Oi, sou cliente ACME.",
           senderName: "Cliente ACME",
@@ -313,6 +375,8 @@ async function seed() {
         {
           tenantId: tenantAcme.id,
           conversationId: acmeConversation.id,
+          instanceId: acmeInstance.id,
+          instanceScopeKey: acmeInstance.instanceName,
           direction: MessageDirection.OUTBOUND,
           content: "Recebido, suporte ACME aqui.",
           senderName: "Admin ACME",

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireConversationWrite } from "../lib/guards.js";
+import { requireAtendimentoModuleAccess, requireConversationWrite } from "../lib/guards.js";
 
 const MAX_STICKERS_PER_TENANT = 200;
 const MAX_STICKER_MB_HARD_CAP = 20;
@@ -80,6 +80,12 @@ function resolveStickerUploadLimitBytes(tenantMaxUploadMb: number) {
 export async function stickerRoutes(app: FastifyInstance) {
   app.register(async (protectedApp) => {
     protectedApp.addHook("preHandler", protectedApp.authenticate);
+    protectedApp.addHook("preHandler", async (request, reply) => {
+      const allowed = await requireAtendimentoModuleAccess(request, reply);
+      if (!allowed) {
+        return reply;
+      }
+    });
 
     protectedApp.get("/stickers", async (request, reply) => {
       const query = listStickersQuerySchema.safeParse(request.query);
@@ -263,4 +269,3 @@ export async function stickerRoutes(app: FastifyInstance) {
     });
   });
 }
-

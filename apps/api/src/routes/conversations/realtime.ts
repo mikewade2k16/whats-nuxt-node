@@ -8,6 +8,12 @@ import {
 
 export function mapConversation(conversation: {
   id: string;
+  instanceId?: string | null;
+  instanceScopeKey?: string | null;
+  instance?: {
+    instanceName: string;
+    displayName: string | null;
+  } | null;
   channel: ChannelType;
   status: ConversationStatus;
   externalId: string;
@@ -23,15 +29,19 @@ export function mapConversation(conversation: {
     id: string;
     content: string;
     messageType: MessageType;
+    mediaUrl?: string | null;
     direction: MessageDirection;
     createdAt: Date;
     status: MessageStatus;
-    mediaUrl: string | null;
   }>;
 }) {
   const lastMessage = conversation.messages[0];
   return {
     id: conversation.id,
+    instanceId: conversation.instanceId ?? null,
+    instanceScopeKey: conversation.instanceScopeKey ?? null,
+    instanceName: conversation.instance?.instanceName ?? conversation.instanceScopeKey ?? null,
+    instanceDisplayName: conversation.instance?.displayName ?? null,
     channel: conversation.channel,
     status: conversation.status,
     externalId: conversation.externalId,
@@ -48,7 +58,7 @@ export function mapConversation(conversation: {
           id: lastMessage.id,
           content: lastMessage.content,
           messageType: lastMessage.messageType,
-          mediaUrl: sanitizeMediaUrlForRealtime(lastMessage.mediaUrl),
+          mediaUrl: sanitizeMediaUrlForRealtime(lastMessage.mediaUrl ?? null),
           direction: lastMessage.direction,
           status: lastMessage.status,
           createdAt: lastMessage.createdAt
@@ -90,6 +100,10 @@ export function toRealtimeMessagePayload<
 export function buildConversationPreviewPayload(params: {
   conversation: {
     id: string;
+    instanceId?: string | null;
+    instanceScopeKey?: string | null;
+    instanceName?: string | null;
+    instanceDisplayName?: string | null;
     channel: ChannelType;
     status: ConversationStatus;
     externalId: string;
@@ -116,6 +130,10 @@ export function buildConversationPreviewPayload(params: {
 }) {
   return {
     id: params.conversation.id,
+    instanceId: params.conversation.instanceId ?? null,
+    instanceScopeKey: params.conversation.instanceScopeKey ?? null,
+    instanceName: params.conversation.instanceName ?? params.conversation.instanceScopeKey ?? null,
+    instanceDisplayName: params.conversation.instanceDisplayName ?? null,
     channel: params.conversation.channel,
     status: params.conversation.status,
     externalId: params.conversation.externalId,

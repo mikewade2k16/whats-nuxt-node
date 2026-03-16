@@ -21,6 +21,23 @@ Montar um fluxo omnichannel com separacao clara entre:
 7. `redis` (fila e pub/sub realtime)
 8. `evolution` (conector WhatsApp nao oficial; profile opcional)
 
+## Separacao de dominios (alvo pos-MVP)
+
+1. `omnichannel-api` fica responsavel apenas por:
+   - conversas, mensagens, webhooks, outbound queue, websocket de atendimento.
+2. `platform-core` (separado) fica responsavel por:
+   - autenticacao, RBAC global do painel, clientes (tenant), usuarios do painel, planos e billing.
+3. `crm` (separado) fica responsavel por:
+   - cadastro comercial (lead/cliente), pipeline e dados de relacionamento.
+4. `automation` e `ai-assistant` (separados) ficam responsaveis por:
+   - bots, workflows, copiloto e inteligencia aplicada no atendimento.
+5. Integracao entre os dominios:
+   - via JWT/claims do core e contratos HTTP/eventos entre modulos.
+6. Objetivo:
+   - evitar acoplamento entre atendimento e identidade/plataforma, reduzindo regressao e melhorando escala por modulo.
+7. Matriz funcional por ownership:
+   - `docs/modular-feature-matrix.md`.
+
 ## Fluxo de entrada (inbound)
 
 1. Usuario final envia mensagem no WhatsApp.
@@ -77,6 +94,7 @@ Montar um fluxo omnichannel com separacao clara entre:
 1. Autenticacao JWT: `apps/api/src/plugins/auth.ts`
 2. Endpoints de tenant e canal: `apps/api/src/routes/tenant.ts`
 3. Endpoints de usuarios: `apps/api/src/routes/users.ts`
+   - leitura/criacao usa `platform-core` como fonte de verdade e sincroniza shadow local para compatibilidade de conversas/atribuicao
 4. Endpoints de conversa/mensagem: `apps/api/src/routes/conversations.ts`
 5. Webhook de entrada: `apps/api/src/routes/webhooks.ts`
 6. Cliente Evolution: `apps/api/src/services/evolution-client.ts`
@@ -84,11 +102,11 @@ Montar um fluxo omnichannel com separacao clara entre:
    - senders por tipo: `apps/api/src/workers/senders/send-media.ts`
 8. Worker de retencao: `apps/api/src/workers/retention-worker.ts`
 9. Servico de retencao: `apps/api/src/services/retention-service.ts`
-10. Modulo Inbox front: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-11. Estado e dominio da Inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
-12. Modulo admin front: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-13. Estado e dominio do Admin: `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
-14. Wrappers de rota do modulo: `apps/web/pages/index.vue` e `apps/web/pages/admin.vue`
-15. Estado de sessao front (Pinia): `apps/web/stores/auth.ts`
-16. Cliente HTTP front: `apps/web/composables/useApi.ts`
-17. BFF Nuxt (proxy HTTP): `apps/web/server/api/bff/[...path].ts`
+10. Modulo Inbox front: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+11. Estado e dominio da Inbox: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
+12. Modulo admin front: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue`
+13. Estado e dominio do Admin: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts`
+14. Wrappers de rota do modulo: `apps/omni-nuxt-ui/app/pages/index.vue` e `apps/omni-nuxt-ui/app/pages/admin.vue`
+15. Estado de sessao front (Pinia): `apps/omni-nuxt-ui/app/stores/auth.ts`
+16. Cliente HTTP front: `apps/omni-nuxt-ui/app/composables/useApi.ts`
+17. BFF Nuxt (proxy HTTP): `apps/omni-nuxt-ui/server/api/bff/[...path].ts`

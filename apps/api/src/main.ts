@@ -14,6 +14,9 @@ import { stickerRoutes } from "./routes/stickers.js";
 import { tenantRoutes } from "./routes/tenant.js";
 import { userRoutes } from "./routes/users.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { registerAdminRoutes } from "./routes/admin.js";
+import { recordHttpMetric } from "./services/http-metrics.js";
+import { resolveCoreAtendimentoAccessByEmail } from "./services/core-atendimento-access.js";
 import { createRedisConnection, redisPublisher } from "./redis.js";
 
 function parseCorsOrigin(input: string) {
@@ -29,10 +32,53 @@ async function start() {
     bodyLimit: env.API_BODY_LIMIT_MB * 1024 * 1024
   });
 
+  app.setErrorHandler(async (error, request, reply) => {
+    request.log.error({ error }, "Unhandled API error");
+
+    if (reply.sent) {
+      return;
+    }
+
+    const statusCode = typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number" &&
+      error.statusCode >= 400
+      ? error.statusCode
+      : 500;
+
+    const isProduction = env.NODE_ENV === "production";
+    const isServerError = statusCode >= 500;
+    const message = isServerError && isProduction
+      ? "Erro interno do servidor"
+      : (error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : "Erro interno do servidor");
+
+    return reply.status(statusCode).send({
+      message
+    });
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     const headerCorrelationId = request.headers["x-correlation-id"];
     request.correlationId = resolveRequestCorrelationId(headerCorrelationId, request.id);
     reply.header("x-correlation-id", request.correlationId);
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const routeFromFastify = request.routeOptions?.url;
+    const routeFromRaw = request.raw.url?.split("?")[0];
+    const route = routeFromFastify || routeFromRaw || "unknown";
+    const elapsedTime = typeof reply.elapsedTime === "number" ? reply.elapsedTime : 0;
+
+    recordHttpMetric({
+      method: request.method,
+      route,
+      statusCode: reply.statusCode,
+      durationMs: elapsedTime,
+      observedAt: new Date()
+    });
   });
 
   await app.register(cors, {
@@ -42,6 +88,7 @@ async function start() {
 
   await app.register(authPlugin);
   await app.register(healthRoutes);
+  await app.register(registerAdminRoutes);
   await app.register(authRoutes);
   await app.register(tenantRoutes);
   await app.register(userRoutes);
@@ -62,17 +109,28 @@ async function start() {
   io.adapter(createAdapter(adapterPub, adapterSub));
 
   io.use((socket, next) => {
-    try {
+    (async () => {
+      try {
       const token = socket.handshake.auth?.token as string | undefined;
       if (!token) {
         return next(new Error("Unauthorized"));
       }
       const user = app.jwt.verify<JwtUser>(token);
+      const access = await resolveCoreAtendimentoAccessByEmail(user.email);
+      const isSuperRoot = access.isPlatformAdmin
+        && access.userType === "admin"
+        && access.level === "admin";
+
+      if (!isSuperRoot && !access.atendimentoAccess) {
+        return next(new Error("ModuleAccessDenied"));
+      }
+
       socket.data.user = user;
       return next();
-    } catch (_error) {
-      return next(new Error("Unauthorized"));
-    }
+      } catch (_error) {
+        return next(new Error("Unauthorized"));
+      }
+    })().catch(() => next(new Error("Unauthorized")));
   });
 
   io.on("connection", (socket) => {

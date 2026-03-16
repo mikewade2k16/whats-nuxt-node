@@ -1,4 +1,4 @@
-﻿# Backlog Tecnico Executavel (Omnichannel WhatsApp)
+# Backlog Tecnico Executavel (Omnichannel WhatsApp)
 
 Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridade, dependencia e status rastreavel.
 
@@ -108,7 +108,7 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 - [x] [P1] B2-006 Enviar mensagem com `@` mention (payload com `mentions[]`).
   - melhoria 2026-02-27: composer passou a montar `metadataJson.mentions` combinando mencoes detectadas no texto + mencoes explicitas selecionadas no picker.
   - melhoria 2026-02-27: outbound agora persiste `displayByJid/displayByPhone` quando o picker conhece o participante, preservando o nome humano no render posterior.
-  - melhoria 2026-02-27: teste automatizado no composable (`apps/web/tests/composables/useOmnichannelInbox.spec.ts`) valida envio de `mentioned[]` para grupo.
+  - melhoria 2026-02-27: teste automatizado no composable (`apps/omni-nuxt-ui/tests/composables/useOmnichannelInbox.spec.ts`) valida envio de `mentioned[]` para grupo.
   - pendencia resolvida: suporte integral ao JID final via picker (`@lid` e `@s.whatsapp.net`).
 - [x] [P0] B2-007 Exibir avatar real do participante em grupos (incluindo mensagem de audio).
   - melhoria 2026-02-26: front passou a resolver avatar por indice de `jid`/telefone/nome e fallback por historico de mensagens (cobrindo cenarios sem `participantJid` no payload atual).
@@ -178,6 +178,10 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
   - entregue: cards de contato nas mensagens agora exibem acoes de `Conversar` e `Salvar contato`, inclusive em grupos.
   - melhoria 2026-03-03: `Salvar contato` a partir de card agora abre modal em Nuxt UI com validacao de duplicidade por telefone e opcao de abrir a conversa do contato ja existente.
 - [ ] [P2] C3-005 Preparar conversao de contato para lead/cliente (base CRM).
+- [x] [P2] C3-006 Importar contatos salvos no WhatsApp para `Contact` do tenant com dedupe por telefone/JID e opcao de revisao antes do merge.
+  - entregue 2026-03-06: endpoint `POST /contacts/import-whatsapp` com modo `dryRun` para preview (acao `create/update/skip`) e aplicacao por lote.
+  - entregue 2026-03-06: importacao vincula conversas diretas ao `contactId` e sincroniza `contactName/contactPhone/contactAvatarUrl`.
+  - entregue 2026-03-06: inbox ganhou acao de `Importar WA` na aba de contatos, com preview antes de aplicar merge.
 
 ## EPIC-D: Colaboracao interna e operacao
 
@@ -276,6 +280,7 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 - Paridade extra futura: B1-004 e G2-001 permanecem fora do MVP inicial.
 - Arquitetura de front (futuro): componentizacao total por dominio, componentes semanticos menores, composables reutilizaveis e eliminacao de logica duplicada. Etapa atual concluida: `InboxChatPanel` quebrado em `InboxChatHeader`, `InboxChatBody` e `InboxChatFooter`; nesta iteracao tambem foram extraidos os composables `useInboxChatPresentation`, `useInboxChatMessageContact`, `useInboxChatComposerDom`, `useInboxChatUtilities`, `useInboxChatReplyMeta`, `useInboxChatComposerControls`, `useInboxChatEmojiAssets`, `useInboxChatReactions`, `useInboxChatMessageIdentity`, `useInboxChatMentions`, `useInboxChatAudioRecorder`, `useInboxChatMessageHelpers` e `useInboxChatSelection`, alem dos subcomponentes `InboxMessageContactCard`, `InboxChatMessageRow`, `InboxMessageActionMenu`, `InboxChatSelectionToolbar` e `InboxForwardMessagesModal`. `InboxChatBody` agora ficou focado em lista/separadores, a mensagem individual foi isolada, e o `InboxChatFooter` foi subdividido em `InboxChatFooterStatus`, `InboxChatComposerAttachmentMenu`, `InboxChatComposerEmojiMenu`, `InboxChatComposerInput` e `InboxChatComposerActions`. O bloco de anexos/contato/link-preview do composer tambem saiu do pai; nesta rodada tambem sairam do painel as regras de mencao, a gravacao de audio e os helpers residuais de midia/render. A camada seguinte tambem foi quebrada por subdominio: `useInboxChatMentions` agora virou facade sobre `useInboxChatComposerMentions` e `useInboxChatMentionRouting`, enquanto `useInboxChatMessageHelpers` virou facade sobre `useInboxChatMessageRendering` e `useInboxChatMediaActions`. Agora `useInboxChatEmojiAssets` tambem virou facade sobre `useInboxChatEmojiCatalog`, `useInboxChatGifAssets` e `useInboxChatStickerAssets`, e o estado visual do picker saiu do pai para `useInboxChatEmojiPanel`. Nesta rodada, os composables macro tambem foram quebrados: `useOmnichannelInbox` passou a delegar para `useOmnichannelInboxShared`, `useOmnichannelInboxState`, `useOmnichannelInboxDerivedState`, `useOmnichannelInboxStateMutators`, `useOmnichannelInboxBootstrapLoaders`, `useOmnichannelInboxContactActions`, `useOmnichannelInboxConversationActions`, `useOmnichannelInboxPendingStatus`, `useOmnichannelInboxScroll`, `useOmnichannelInboxReadState`, `useOmnichannelInboxMentionAlerts`, `useOmnichannelInboxMessageReactions`, `useOmnichannelInboxHistory`, `useOmnichannelInboxOutboundPipeline`, `useOmnichannelInboxRealtime` e `useOmnichannelInboxMessageActions`; `useOmnichannelAdmin` passou a delegar para `useOmnichannelAdminShared`, `useOmnichannelAdminConnectionState`, `useOmnichannelAdminQrPolling`, `useOmnichannelAdminOperationalOps` e `useOmnichannelAdminTenantOps`. A referencia operacional detalhada desses arquivos agora fica em `docs/inbox.md`. Proximo corte: manter `InboxChatPanel` em orquestracao e continuar quebrando apenas os dominios que voltarem a crescer demais.
 - Arquitetura de back (futuro): rotas finas, services/use-cases por responsabilidade unica, classes/arquivos menores e isolamento por funcionalidade.
+- Plataforma modular (futuro): o modulo Omnichannel mantera apenas API/WebSocket/webhooks de atendimento; auth, clientes, usuarios e billing ficarao no core/plataforma principal (BFF de composicao + contratos entre modulos).
 - Abstracao de provider WhatsApp (futuro): criar camada agnostica no front e no back para operacoes canonicas (contato, conversa, mensagem, midia, grupo), deixando implementacoes especificas por provider (`Evolution`, oficial Meta, futuros conectores) em adapters separados.
 
 ## Definicao de pronto (DoD)

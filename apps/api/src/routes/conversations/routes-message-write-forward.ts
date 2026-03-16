@@ -74,6 +74,7 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationForwardMessagesRoute(protectedApp: FastifyInstance) {
@@ -81,6 +82,7 @@ export function registerConversationForwardMessagesRoute(protectedApp: FastifyIn
       if (!requireConversationWrite(request, reply)) {
         return;
       }
+      const accessScope = await resolveConversationAccessScope(request);
 
       const params = z
         .object({
@@ -95,16 +97,14 @@ export function registerConversationForwardMessagesRoute(protectedApp: FastifyIn
 
       const [sourceConversation, targetConversation] = await prisma.$transaction([
         prisma.conversation.findFirst({
-          where: {
+          where: mergeConversationScopeWhere(accessScope.conversationWhere, {
             id: params.data.conversationId,
-            tenantId: request.authUser.tenantId
-          }
+          })
         }),
         prisma.conversation.findFirst({
-          where: {
+          where: mergeConversationScopeWhere(accessScope.conversationWhere, {
             id: body.data.targetConversationId,
-            tenantId: request.authUser.tenantId
-          }
+          })
         })
       ]);
 
@@ -157,6 +157,15 @@ export function registerConversationForwardMessagesRoute(protectedApp: FastifyIn
                 id: request.authUser.tenantId
               }
             },
+            ...(targetConversation.instanceId
+              ? {
+                  instance: {
+                    connect: {
+                      id: targetConversation.instanceId
+                    }
+                  }
+                }
+              : {}),
             conversation: {
               connect: {
                 id: targetConversation.id
@@ -169,6 +178,7 @@ export function registerConversationForwardMessagesRoute(protectedApp: FastifyIn
             },
             direction: MessageDirection.OUTBOUND,
             messageType: sourceMessage.messageType,
+            instanceScopeKey: targetConversation.instanceScopeKey,
             senderName: request.authUser.name,
             senderAvatarUrl: null,
             content: sourceMessage.content,

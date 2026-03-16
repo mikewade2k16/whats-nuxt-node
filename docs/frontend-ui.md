@@ -4,6 +4,19 @@
 
 Padronizar a interface do MVP com Nuxt UI e classes semanticas, mantendo evolucao rapida sem perder organizacao.
 
+## Atualizacao de caminho (2026-03-04)
+
+1. Front principal consolidado em `apps/omni-nuxt-ui`.
+2. O modulo Whats/omnichannel agora roda em `apps/omni-nuxt-ui/app/components/omnichannel`.
+3. O front legado permanece em `apps/web` apenas como referencia ate desativacao completa.
+4. Rotas do modulo no front principal:
+- `/admin/login` (auth unico do painel)
+- `/admin/omnichannel/inbox`
+- `/admin/omnichannel/operacao`
+- `/admin/omnichannel/docs`
+5. Rotas legadas de login do atendimento (`/admin/omnichannel/login`, `/auth/*`) foram removidas fisicamente.
+6. Para detalhes da fusao, consultar `docs/omni-nuxt-ui-merge.md`.
+
 ## Stack de UI
 
 1. Nuxt 4
@@ -16,11 +29,11 @@ Padronizar a interface do MVP com Nuxt UI e classes semanticas, mantendo evoluca
 ## Testes de composable
 
 1. Configuracao de testes:
-- `apps/web/vitest.config.ts`
-- `apps/web/tests/setup.ts`
+- `apps/omni-nuxt-ui/vitest.config.ts`
+- `apps/omni-nuxt-ui/tests/setup.ts`
 2. Testes atuais:
-- `apps/web/tests/composables/useOmnichannelInbox.spec.ts`
-- `apps/web/tests/composables/useOmnichannelAdmin.spec.ts`
+- `apps/omni-nuxt-ui/tests/composables/useOmnichannelInbox.spec.ts`
+- `apps/omni-nuxt-ui/tests/composables/useOmnichannelAdmin.spec.ts`
 3. Scripts:
 - `npm run test` (suite completa em modo run)
 - `npm run test:watch` (modo observacao durante desenvolvimento)
@@ -38,34 +51,36 @@ Observacao:
 
 ## Arquivos chave
 
-1. Entrada de estilos globais: `apps/web/assets/css/main.css`
-2. Tokens e estilos globais: `apps/web/assets/css/tokens.css`
-3. Tema Nuxt UI global: `apps/web/app.config.ts`
-4. Orquestrador da Inbox: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-5. Sidebar de conversas da Inbox: `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
-6. Painel central de chat da Inbox: `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
-7. Sidebar de detalhes da Inbox: `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
-8. Tipos compartilhados da Inbox: `apps/web/components/omnichannel/inbox/types.ts`
-9. Composable da Inbox (estado/socket/paginacao): `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
-10. Modulo Admin canal WhatsApp: `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-11. Composable Admin (estado/polling/acoes): `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+1. Entrada de estilos globais: `apps/omni-nuxt-ui/app/assets/css/main.css`
+2. Tokens e estilos globais: `apps/omni-nuxt-ui/app/assets/css/tokens.css`
+3. Configuracao global Nuxt UI: `apps/omni-nuxt-ui/nuxt.config.ts`
+4. Orquestrador da Inbox: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+5. Sidebar de conversas da Inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+6. Painel central de chat da Inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxChatPanel.vue`
+7. Sidebar de detalhes da Inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+8. Tipos compartilhados da Inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/types.ts`
+9. Composable da Inbox (estado/socket/paginacao): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
+10. Modulo Admin canal WhatsApp: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue`
+11. Composable Admin (estado/polling/acoes): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts`
 12. Wrappers de rota:
-- `apps/web/pages/index.vue`
-- `apps/web/pages/admin.vue`
- - `apps/web/pages/docs.vue`
-13. Login: `apps/web/pages/login.vue`
-14. Store de autenticacao: `apps/web/stores/auth.ts`
-15. Composable de auth: `apps/web/composables/useAuth.ts`
-16. Cliente HTTP do front: `apps/web/composables/useApi.ts`
-17. Proxy BFF: `apps/web/server/api/bff/[...path].ts`
-18. Portal de docs (API Nuxt server):
-- `apps/web/server/api/docs/index.get.ts`
-- `apps/web/server/api/docs/[slug].get.ts`
-- `apps/web/server/utils/project-docs.ts`
-19. Composable do portal de docs:
-- `apps/web/composables/docs/useProjectDocs.ts`
-20. Modulo visual do portal de docs:
-- `apps/web/components/docs/ProjectDocsModule.vue`
+- `apps/omni-nuxt-ui/app/pages/admin/omnichannel/index.vue`
+- `apps/omni-nuxt-ui/app/pages/admin/omnichannel/inbox.vue`
+- `apps/omni-nuxt-ui/app/pages/admin/omnichannel/operacao.vue`
+- `apps/omni-nuxt-ui/app/pages/admin/omnichannel/docs.vue`
+13. Login do painel: `apps/omni-nuxt-ui/app/pages/admin/login.vue`
+14. Store de autenticacao: `apps/omni-nuxt-ui/app/stores/auth.ts`
+15. Composable de auth: `apps/omni-nuxt-ui/app/composables/useAuth.ts`
+16. Guard global de painel: `apps/omni-nuxt-ui/app/middleware/admin-auth.global.ts`
+17. Cliente HTTP do front: `apps/omni-nuxt-ui/app/composables/useApi.ts`
+18. Proxy BFF: `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
+19. Portal de docs (API Nuxt server):
+- `apps/omni-nuxt-ui/server/api/docs/index.get.ts`
+- `apps/omni-nuxt-ui/server/api/docs/[slug].get.ts`
+- `apps/omni-nuxt-ui/server/utils/project-docs.ts`
+20. Composable do portal de docs:
+- `apps/omni-nuxt-ui/app/composables/docs/useProjectDocs.ts`
+21. Modulo visual do portal de docs:
+- `apps/omni-nuxt-ui/app/components/docs/ProjectDocsModule.vue`
 
 ## Convencao de classes
 
@@ -81,12 +96,13 @@ Observacao:
 
 ## Estado e seguranca no front
 
-1. Estado de sessao (token/user/hydration) deve viver em Pinia: `apps/web/stores/auth.ts`.
+1. Estado de sessao (token/user/hydration) deve viver em Pinia: `apps/omni-nuxt-ui/app/stores/auth.ts`.
 2. O composable `useAuth` e a unica API de acesso ao estado de sessao para componentes/paginas.
 3. Chamadas HTTP do front devem passar por `useApi`.
 4. `useApi` chama somente o BFF local (`/api/bff/*`) e nao chama backend externo diretamente.
 5. O BFF encaminha para `NUXT_API_INTERNAL_BASE` e preserva cabecalho `Authorization`.
 6. `NUXT_PUBLIC_API_BASE` fica reservado para WebSocket/realtime no browser.
+7. `admin-auth.global` protege todo namespace `/admin/**` (exceto `/admin/login`).
 
 ## Componentes Nuxt UI usados
 
@@ -185,9 +201,9 @@ Observacao:
 ## Comportamento de chat implementado no modulo inbox
 
 Arquivos:
-1. `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-2. `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
-3. `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
+1. `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+2. `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
+3. `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxChatPanel.vue`
 
 1. Carregamento inicial traz sempre bloco mais recente de mensagens.
 2. Scroll para cima carrega historico com paginacao (`beforeId`) sem perder posicao de scroll.
@@ -273,38 +289,38 @@ Arquivos:
 ## Ajustes rapidos comuns
 
 1. Trocar visual global:
-- edite variaveis em `apps/web/assets/css/tokens.css`
-- edite overrides do Nuxt UI em `apps/web/app.config.ts`
+- edite variaveis em `apps/omni-nuxt-ui/app/assets/css/tokens.css`
+- edite overrides do Nuxt UI em `apps/omni-nuxt-ui/app.config.ts`
 
 2. Alterar layout da inbox:
-- estrutura e fluxo: `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-- coluna esquerda: `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
-- coluna central: `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
-- coluna direita: `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+- estrutura e fluxo: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+- coluna esquerda: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+- coluna central: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxChatPanel.vue`
+- coluna direita: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxDetailsSidebar.vue`
 
 3. Alterar regras de estado/socket/paginacao da inbox:
-- `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+- `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
 
 4. Alterar fluxo de conexao WhatsApp no admin:
-- edite `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-- regras/estado/polling em `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+- edite `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue`
+- regras/estado/polling em `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts`
 
 5. Alterar endpoint consumido no front:
-- `apps/web/composables/useApi.ts`
-- proxy server em `apps/web/server/api/bff/[...path].ts`
+- `apps/omni-nuxt-ui/app/composables/useApi.ts`
+- proxy server em `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
 - backend interno em `NUXT_API_INTERNAL_BASE`
 - realtime/browser em `NUXT_PUBLIC_API_BASE`
 
 6. Alterar limite de upload por cliente (tenant):
-- UI: `apps/web/components/omnichannel/OmnichannelAdminModule.vue` (campo `Limite upload por arquivo (MB)`).
-- estado/submit: `apps/web/composables/omnichannel/useOmnichannelAdmin.ts` (`tenantForm.maxUploadMb`).
-- consumo no composer da inbox: `apps/web/composables/omnichannel/useOmnichannelInbox.ts` (`GET /tenant`, fallback `500MB`).
+- UI: `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue` (campo `Limite upload por arquivo (MB)`).
+- estado/submit: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts` (`tenantForm.maxUploadMb`).
+- consumo no composer da inbox: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts` (`GET /tenant`, fallback `500MB`).
 
 ## Diretriz para modulo plugavel
 
 Para plugar este front em outro projeto no futuro:
 
-1. Isolar a inbox e admin em componentes de dominio dentro de `apps/web/components/omnichannel/`.
-2. Manter contratos HTTP no `useApi.ts` e tipos em `apps/web/types/index.ts`.
+1. Isolar a inbox e admin em componentes de dominio dentro de `apps/omni-nuxt-ui/app/components/omnichannel/`.
+2. Manter contratos HTTP no `useApi.ts` e tipos em `apps/omni-nuxt-ui/app/types/index.ts`.
 3. Exportar configuracao por variaveis (`NUXT_PUBLIC_API_BASE`, `NUXT_API_INTERNAL_BASE`, tema via tokens).
 4. Evitar dependencia de estado global fora de stores Pinia e composables de dominio.

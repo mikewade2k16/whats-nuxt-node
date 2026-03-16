@@ -1,41 +1,23 @@
-import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { env } from "../../config.js";
 import { prisma } from "../../db.js";
 import { requireAdmin } from "../../lib/guards.js";
+import { CoreApiError, type CoreTenant, platformCoreClient } from "../../services/core-client.js";
+import { invalidateCoreAtendimentoAccessCacheByEmail } from "../../services/core-atendimento-access.js";
+import {
+  listCoreTenantUsersWithLegacyRoles,
+  mapCoreUsersToLegacyFallback,
+  mapLegacyRoleToCoreRoleCodes,
+  syncLocalUsersFromCoreTenant,
+  type LegacyTenantUser
+} from "../../services/core-identity.js";
+import { findBestCoreTenantMatch } from "../../services/core-tenant-mapping.js";
 import { mapTenantResponse } from "./tenant-response.js";
-import { normalizeEvolutionApiKey } from "./tenant-evolution.js";
-
-const createClientSchema = z.object({
-  slug: z.string().min(2).max(80).regex(/^[a-z0-9-]+$/).optional(),
-  name: z.string().min(2).max(120),
-  evolutionApiKey: z.string().max(255).optional(),
-  maxChannels: z.coerce.number().int().min(1).max(50).default(1),
-  maxUsers: z.coerce.number().int().min(1).max(500).default(2),
-  retentionDays: z.coerce.number().int().min(1).max(3650).default(15),
-  maxUploadMb: z.coerce.number().int().min(1).max(2048).default(500),
-  adminName: z.string().min(2).max(120),
-  adminEmail: z.string().email(),
-  adminPassword: z.string().min(6).max(128)
-});
-
-const updateClientSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  evolutionApiKey: z.string().max(255).optional(),
-  maxChannels: z.coerce.number().int().min(1).max(50).optional(),
-  maxUsers: z.coerce.number().int().min(1).max(500).optional(),
-  retentionDays: z.coerce.number().int().min(1).max(3650).optional(),
-  maxUploadMb: z.coerce.number().int().min(1).max(2048).optional()
-});
 
 const clientParamsSchema = z.object({
   clientId: z.string().min(1)
-});
-
-const clientUserParamsSchema = z.object({
-  clientId: z.string().min(1),
-  userId: z.string().min(1)
 });
 
 const createClientUserSchema = z.object({
@@ -45,33 +27,270 @@ const createClientUserSchema = z.object({
   role: z.nativeEnum(UserRole).default(UserRole.AGENT)
 });
 
-const updateClientUserSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  email: z.string().email().optional(),
-  role: z.nativeEnum(UserRole).optional(),
-  password: z.string().min(6).max(128).optional()
-});
+type LocalTenantSummary = {
+  id: string;
+  slug: string;
+  name: string;
+  whatsappInstance: string | null;
+  whatsappInstances: Array<{
+    id: string;
+    instanceName: string;
+    displayName: string | null;
+    phoneNumber: string | null;
+    isDefault: boolean;
+    isActive: boolean;
+    userAccesses: Array<{
+      userId: string;
+    }>;
+  }>;
+  evolutionApiKey: string | null;
+  maxChannels: number;
+  maxUsers: number;
+  retentionDays: number;
+  maxUploadMb: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-function slugifyClientName(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+type TenantContext = {
+  coreTenant: CoreTenant;
+  localTenant: LocalTenantSummary | null;
+};
+
+function toCoreErrorPayload(error: CoreApiError, fallbackMessage: string) {
+  return {
+    message: error.message?.trim() || fallbackMessage,
+    details: error.details ?? null
+  };
 }
 
-async function listTenantUserCounts() {
-  const grouped = await prisma.user.groupBy({
-    by: ["tenantId"],
-    _count: {
-      _all: true
+function isCoreApiError(error: unknown): error is CoreApiError {
+  return error instanceof CoreApiError;
+}
+
+function disabledMutationMessage(resourceLabel: string) {
+  return `${resourceLabel} no modulo de atendimento foi desativado para evitar duplicidade. Use /admin/core.`;
+}
+
+async function listLocalTenantSummaries() {
+  return prisma.tenant.findMany({
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      whatsappInstance: true,
+      whatsappInstances: {
+        select: {
+          id: true,
+          instanceName: true,
+          displayName: true,
+          phoneNumber: true,
+          isDefault: true,
+          isActive: true,
+          userAccesses: {
+            select: {
+              userId: true
+            }
+          }
+        }
+      },
+      evolutionApiKey: true,
+      maxChannels: true,
+      maxUsers: true,
+      retentionDays: true,
+      maxUploadMb: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  });
+}
+
+async function resolveTenantContext(clientId: string): Promise<TenantContext | null> {
+  const [coreTenants, localById] = await Promise.all([
+    platformCoreClient.listTenants(),
+    prisma.tenant.findUnique({
+      where: { id: clientId },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        whatsappInstance: true,
+        whatsappInstances: {
+          select: {
+            id: true,
+            instanceName: true,
+            displayName: true,
+            phoneNumber: true,
+            isDefault: true,
+            isActive: true,
+            userAccesses: {
+              select: {
+                userId: true
+              }
+            }
+          }
+        },
+        evolutionApiKey: true,
+        maxChannels: true,
+        maxUsers: true,
+        retentionDays: true,
+        maxUploadMb: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+  ]);
+
+  if (localById) {
+    const coreBySlug = findBestCoreTenantMatch({
+      localSlug: localById.slug,
+      localName: localById.name,
+      coreTenants
+    });
+    if (!coreBySlug) {
+      return null;
+    }
+
+    return {
+      coreTenant: coreBySlug,
+      localTenant: localById
+    };
+  }
+
+  const coreById = coreTenants.find((entry) => entry.id === clientId) ?? null;
+  if (!coreById) {
+    return null;
+  }
+
+  const localBySlug = await prisma.tenant.findUnique({
+    where: { slug: coreById.slug },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      whatsappInstance: true,
+      whatsappInstances: {
+        select: {
+          id: true,
+          instanceName: true,
+          displayName: true,
+          phoneNumber: true,
+          isDefault: true,
+          isActive: true,
+          userAccesses: {
+            select: {
+              userId: true
+            }
+          }
+        }
+      },
+      evolutionApiKey: true,
+      maxChannels: true,
+      maxUsers: true,
+      retentionDays: true,
+      maxUploadMb: true,
+      createdAt: true,
+      updatedAt: true
     }
   });
 
-  return new Map(grouped.map((entry) => [entry.tenantId, entry._count._all]));
+  return {
+    coreTenant: coreById,
+    localTenant: localBySlug
+  };
+}
+
+async function listUsersForContext(context: TenantContext): Promise<LegacyTenantUser[]> {
+  const coreUsers = await listCoreTenantUsersWithLegacyRoles(context.coreTenant.id);
+  if (!context.localTenant) {
+    return mapCoreUsersToLegacyFallback(context.coreTenant.id, coreUsers);
+  }
+
+  return syncLocalUsersFromCoreTenant(context.localTenant.id, coreUsers);
+}
+
+async function createCoreUserForContext(
+  context: TenantContext,
+  input: z.infer<typeof createClientUserSchema>
+): Promise<LegacyTenantUser | null> {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedName = input.name.trim();
+  const roleCodes = mapLegacyRoleToCoreRoleCodes(input.role);
+
+  const invited = await platformCoreClient.inviteTenantUser(context.coreTenant.id, {
+    email: normalizedEmail,
+    name: normalizedName,
+    password: input.password,
+    isOwner: input.role === UserRole.ADMIN,
+    roleCodes
+  });
+
+  if (input.role === UserRole.ADMIN) {
+    try {
+      await platformCoreClient.assignTenantUserToModule(
+        context.coreTenant.id,
+        env.CORE_ATENDIMENTO_MODULE_CODE,
+        invited.tenantUserId
+      );
+      await invalidateCoreAtendimentoAccessCacheByEmail(normalizedEmail);
+    } catch {
+      // Best effort: user can still exist in core even if module assignment fails.
+    }
+  }
+
+  const coreUsers = await listCoreTenantUsersWithLegacyRoles(context.coreTenant.id);
+  const createdCoreEntry =
+    coreUsers.find((entry) => entry.tenantUserId === invited.tenantUserId) ??
+    coreUsers.find((entry) => entry.email.trim().toLowerCase() === normalizedEmail) ??
+    null;
+
+  if (!createdCoreEntry) {
+    return null;
+  }
+
+  if (!context.localTenant) {
+    return mapCoreUsersToLegacyFallback(context.coreTenant.id, [createdCoreEntry])[0] ?? null;
+  }
+
+  const synced = await syncLocalUsersFromCoreTenant(context.localTenant.id, coreUsers);
+  return synced.find((entry) => entry.email.trim().toLowerCase() === normalizedEmail) ?? null;
+}
+
+function mapTenantSummaryFromCore(
+  coreTenant: CoreTenant,
+  localTenant: LocalTenantSummary | undefined,
+  currentUsers: number,
+  role: UserRole
+) {
+  const fallbackCreatedAt = new Date(coreTenant.createdAt);
+  const fallbackUpdatedAt = new Date(coreTenant.updatedAt);
+
+  return mapTenantResponse(
+    {
+      id: localTenant?.id ?? coreTenant.id,
+      slug: coreTenant.slug,
+      name: coreTenant.name,
+      whatsappInstance: localTenant?.whatsappInstance ?? null,
+      whatsappInstances: localTenant?.whatsappInstances?.map((entry) => ({
+        id: entry.id,
+        instanceName: entry.instanceName,
+        displayName: entry.displayName,
+        phoneNumber: entry.phoneNumber,
+        isDefault: entry.isDefault,
+        isActive: entry.isActive,
+        userIds: entry.userAccesses.map((access) => access.userId)
+      })) ?? [],
+      evolutionApiKey: localTenant?.evolutionApiKey ?? null,
+      maxChannels: localTenant?.maxChannels ?? 1,
+      maxUsers: localTenant?.maxUsers ?? Math.max(currentUsers, 1),
+      retentionDays: localTenant?.retentionDays ?? 15,
+      maxUploadMb: localTenant?.maxUploadMb ?? 500,
+      createdAt: localTenant?.createdAt ?? fallbackCreatedAt,
+      updatedAt: localTenant?.updatedAt ?? fallbackUpdatedAt
+    },
+    currentUsers,
+    role
+  );
 }
 
 export function registerClientRoutes(protectedApp: FastifyInstance) {
@@ -80,219 +299,58 @@ export function registerClientRoutes(protectedApp: FastifyInstance) {
       return;
     }
 
-    const [tenants, userCounts] = await Promise.all([
-      prisma.tenant.findMany({
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          whatsappInstance: true,
-          evolutionApiKey: true,
-          maxChannels: true,
-          maxUsers: true,
-          retentionDays: true,
-          maxUploadMb: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      }),
-      listTenantUserCounts()
-    ]);
+    try {
+      const [coreTenants, localTenants] = await Promise.all([
+        platformCoreClient.listTenants(),
+        listLocalTenantSummaries()
+      ]);
 
-    return tenants.map((tenant) =>
-      mapTenantResponse(tenant, userCounts.get(tenant.id) ?? 0, request.authUser.role)
-    );
-  });
+      const localBySlug = new Map(localTenants.map((entry) => [entry.slug.trim().toLowerCase(), entry]));
 
-  protectedApp.post("/clients", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
-      return;
-    }
+      const usersByTenantIdEntries = await Promise.all(
+        coreTenants.map(async (tenant) => {
+          try {
+            const users = await platformCoreClient.listTenantUsers(tenant.id);
+            return [tenant.id, users.length] as const;
+          } catch {
+            return [tenant.id, 0] as const;
+          }
+        })
+      );
 
-    const parsed = createClientSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        message: "Payload invalido",
-        errors: parsed.error.flatten()
+      const usersByTenantId = new Map(usersByTenantIdEntries);
+
+      return coreTenants.map((coreTenant) => {
+        const localTenant = localBySlug.get(coreTenant.slug.trim().toLowerCase());
+        const currentUsers = usersByTenantId.get(coreTenant.id) ?? 0;
+        return mapTenantSummaryFromCore(coreTenant, localTenant, currentUsers, request.authUser.role);
       });
-    }
-
-    const nextSlug = (parsed.data.slug?.trim() || slugifyClientName(parsed.data.name)).slice(0, 80);
-    if (!nextSlug) {
-      return reply.code(400).send({ message: "Slug do cliente invalido" });
-    }
-
-    const [existingTenant, existingAdminEmail] = await Promise.all([
-      prisma.tenant.findUnique({
-        where: { slug: nextSlug },
-        select: { id: true }
-      }),
-      prisma.user.findFirst({
-        where: { email: parsed.data.adminEmail },
-        select: { id: true, tenantId: true }
-      })
-    ]);
-
-    if (existingTenant) {
-      return reply.code(409).send({ message: "Slug de cliente ja cadastrado" });
-    }
-
-    if (existingAdminEmail) {
-      return reply.code(409).send({ message: "Email do admin inicial ja esta em uso" });
-    }
-
-    const passwordHash = await bcrypt.hash(parsed.data.adminPassword, 10);
-    const evolutionApiKey = normalizeEvolutionApiKey(parsed.data.evolutionApiKey);
-
-    const created = await prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.create({
-        data: {
-          slug: nextSlug,
-          name: parsed.data.name,
-          evolutionApiKey,
-          maxChannels: parsed.data.maxChannels,
-          maxUsers: parsed.data.maxUsers,
-          retentionDays: parsed.data.retentionDays,
-          maxUploadMb: parsed.data.maxUploadMb
-        },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          whatsappInstance: true,
-          evolutionApiKey: true,
-          maxChannels: true,
-          maxUsers: true,
-          retentionDays: true,
-          maxUploadMb: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      });
-
-      await tx.user.create({
-        data: {
-          tenantId: tenant.id,
-          email: parsed.data.adminEmail,
-          name: parsed.data.adminName,
-          role: UserRole.ADMIN,
-          passwordHash
-        }
-      });
-
-      return tenant;
-    });
-
-    return reply.code(201).send(mapTenantResponse(created, 1, request.authUser.role));
-  });
-
-  protectedApp.patch("/clients/:clientId", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
-      return;
-    }
-
-    const params = clientParamsSchema.safeParse(request.params);
-    const body = updateClientSchema.safeParse(request.body);
-
-    if (!params.success || !body.success) {
-      return reply.code(400).send({ message: "Payload invalido" });
-    }
-
-    const client = await prisma.tenant.findUnique({
-      where: { id: params.data.clientId },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        whatsappInstance: true,
-        evolutionApiKey: true,
-        maxChannels: true,
-        maxUsers: true,
-        retentionDays: true,
-        maxUploadMb: true,
-        createdAt: true,
-        updatedAt: true
+    } catch (error) {
+      if (isCoreApiError(error)) {
+        return reply.code(error.statusCode).send(toCoreErrorPayload(error, "Falha ao listar clientes no platform-core"));
       }
-    });
 
-    if (!client) {
-      return reply.code(404).send({ message: "Cliente nao encontrado" });
+      request.log.error({ error }, "Falha ao listar clientes via platform-core");
+      return reply.code(500).send({ message: "Falha ao listar clientes no platform-core" });
     }
-
-    const currentUsers = await prisma.user.count({
-      where: { tenantId: client.id }
-    });
-
-    const nextMaxUsers = body.data.maxUsers ?? client.maxUsers;
-    if (nextMaxUsers < currentUsers) {
-      return reply.code(409).send({
-        message: "Limite de usuarios nao pode ficar abaixo do total atual do cliente.",
-        details: {
-          currentUsers,
-          nextMaxUsers
-        }
-      });
-    }
-
-    const updated = await prisma.tenant.update({
-      where: { id: client.id },
-      data: {
-        name: body.data.name,
-        evolutionApiKey: normalizeEvolutionApiKey(body.data.evolutionApiKey),
-        maxChannels: body.data.maxChannels,
-        maxUsers: body.data.maxUsers,
-        retentionDays: body.data.retentionDays,
-        maxUploadMb: body.data.maxUploadMb
-      },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        whatsappInstance: true,
-        evolutionApiKey: true,
-        maxChannels: true,
-        maxUsers: true,
-        retentionDays: true,
-        maxUploadMb: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-
-    return mapTenantResponse(updated, currentUsers, request.authUser.role);
   });
 
-  protectedApp.delete("/clients/:clientId", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
-      return;
-    }
-
-    const params = clientParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply.code(400).send({ message: "Payload invalido" });
-    }
-
-    if (params.data.clientId === request.authUser.tenantId) {
-      return reply.code(400).send({
-        message: "Nao e permitido excluir o cliente atualmente autenticado."
-      });
-    }
-
-    const client = await prisma.tenant.findUnique({
-      where: { id: params.data.clientId },
-      select: { id: true }
+  protectedApp.post("/clients", async (_request, reply) => {
+    return reply.code(501).send({
+      message: disabledMutationMessage("Criacao de clientes")
     });
+  });
 
-    if (!client) {
-      return reply.code(404).send({ message: "Cliente nao encontrado" });
-    }
-
-    await prisma.tenant.delete({
-      where: { id: client.id }
+  protectedApp.patch("/clients/:clientId", async (_request, reply) => {
+    return reply.code(501).send({
+      message: disabledMutationMessage("Edicao de clientes")
     });
+  });
 
-    return reply.code(204).send();
+  protectedApp.delete("/clients/:clientId", async (_request, reply) => {
+    return reply.code(501).send({
+      message: disabledMutationMessage("Remocao de clientes")
+    });
   });
 
   protectedApp.get("/clients/:clientId/users", async (request, reply) => {
@@ -305,28 +363,21 @@ export function registerClientRoutes(protectedApp: FastifyInstance) {
       return reply.code(400).send({ message: "Payload invalido" });
     }
 
-    const client = await prisma.tenant.findUnique({
-      where: { id: params.data.clientId },
-      select: { id: true }
-    });
-
-    if (!client) {
-      return reply.code(404).send({ message: "Cliente nao encontrado" });
-    }
-
-    return prisma.user.findMany({
-      where: { tenantId: client.id },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        tenantId: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true
+    try {
+      const context = await resolveTenantContext(params.data.clientId);
+      if (!context) {
+        return reply.code(404).send({ message: "Cliente nao encontrado no platform-core" });
       }
-    });
+
+      return listUsersForContext(context);
+    } catch (error) {
+      if (isCoreApiError(error)) {
+        return reply.code(error.statusCode).send(toCoreErrorPayload(error, "Falha ao listar usuarios do cliente no platform-core"));
+      }
+
+      request.log.error({ error }, "Falha ao listar usuarios do cliente via platform-core");
+      return reply.code(500).send({ message: "Falha ao listar usuarios do cliente no platform-core" });
+    }
   });
 
   protectedApp.post("/clients/:clientId/users", async (request, reply) => {
@@ -344,207 +395,39 @@ export function registerClientRoutes(protectedApp: FastifyInstance) {
       });
     }
 
-    const client = await prisma.tenant.findUnique({
-      where: { id: params.data.clientId },
-      select: {
-        id: true,
-        maxUsers: true
+    try {
+      const context = await resolveTenantContext(params.data.clientId);
+      if (!context) {
+        return reply.code(404).send({ message: "Cliente nao encontrado no platform-core" });
       }
-    });
 
-    if (!client) {
-      return reply.code(404).send({ message: "Cliente nao encontrado" });
-    }
-
-    const [existing, currentUsers] = await prisma.$transaction([
-      prisma.user.findUnique({
-        where: {
-          tenantId_email: {
-            tenantId: client.id,
-            email: body.data.email
-          }
-        },
-        select: { id: true }
-      }),
-      prisma.user.count({
-        where: {
-          tenantId: client.id
-        }
-      })
-    ]);
-
-    if (existing) {
-      return reply.code(409).send({ message: "Email ja cadastrado neste cliente" });
-    }
-
-    if (currentUsers >= client.maxUsers) {
-      return reply.code(409).send({
-        message: "Limite de usuarios do plano atingido para este cliente.",
-        details: {
-          maxUsers: client.maxUsers,
-          currentUsers
-        }
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(body.data.password, 10);
-    const createdUser = await prisma.user.create({
-      data: {
-        tenantId: client.id,
-        email: body.data.email,
-        name: body.data.name,
-        role: body.data.role,
-        passwordHash
-      },
-      select: {
-        id: true,
-        tenantId: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true
+      const created = await createCoreUserForContext(context, body.data);
+      if (!created) {
+        return reply.code(500).send({
+          message: "Usuario criado no platform-core, mas nao foi possivel montar resposta local."
+        });
       }
-    });
 
-    return reply.code(201).send(createdUser);
+      return reply.code(201).send(created);
+    } catch (error) {
+      if (isCoreApiError(error)) {
+        return reply.code(error.statusCode).send(toCoreErrorPayload(error, "Falha ao criar usuario no platform-core"));
+      }
+
+      request.log.error({ error }, "Falha ao criar usuario do cliente via platform-core");
+      return reply.code(500).send({ message: "Falha ao criar usuario no platform-core" });
+    }
   });
 
-  protectedApp.patch("/clients/:clientId/users/:userId", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
-      return;
-    }
-
-    const params = clientUserParamsSchema.safeParse(request.params);
-    const body = updateClientUserSchema.safeParse(request.body);
-
-    if (!params.success || !body.success) {
-      return reply.code(400).send({ message: "Payload invalido" });
-    }
-
-    const targetUser = await prisma.user.findFirst({
-      where: {
-        id: params.data.userId,
-        tenantId: params.data.clientId
-      },
-      select: {
-        id: true,
-        tenantId: true,
-        email: true,
-        role: true
-      }
+  protectedApp.patch("/clients/:clientId/users/:userId", async (_request, reply) => {
+    return reply.code(501).send({
+      message: disabledMutationMessage("Edicao de usuarios de cliente")
     });
-
-    if (!targetUser) {
-      return reply.code(404).send({ message: "Usuario nao encontrado" });
-    }
-
-    if (body.data.role !== undefined && body.data.role !== UserRole.ADMIN && targetUser.role === UserRole.ADMIN) {
-      const adminCount = await prisma.user.count({
-        where: {
-          tenantId: targetUser.tenantId,
-          role: UserRole.ADMIN
-        }
-      });
-
-      if (adminCount <= 1) {
-        return reply.code(400).send({ message: "Nao e permitido remover o ultimo admin do cliente" });
-      }
-    }
-
-    if (body.data.email !== undefined && body.data.email !== targetUser.email) {
-      const existing = await prisma.user.findUnique({
-        where: {
-          tenantId_email: {
-            tenantId: targetUser.tenantId,
-            email: body.data.email
-          }
-        },
-        select: { id: true }
-      });
-
-      if (existing && existing.id !== targetUser.id) {
-        return reply.code(409).send({ message: "Email ja cadastrado neste cliente" });
-      }
-    }
-
-    const data: Record<string, unknown> = {};
-    if (body.data.name !== undefined) {
-      data.name = body.data.name;
-    }
-    if (body.data.email !== undefined) {
-      data.email = body.data.email;
-    }
-    if (body.data.role !== undefined) {
-      data.role = body.data.role;
-    }
-    if (body.data.password !== undefined) {
-      data.passwordHash = await bcrypt.hash(body.data.password, 10);
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: targetUser.id },
-      data,
-      select: {
-        id: true,
-        tenantId: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-
-    return updatedUser;
   });
 
-  protectedApp.delete("/clients/:clientId/users/:userId", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
-      return;
-    }
-
-    const params = clientUserParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply.code(400).send({ message: "Payload invalido" });
-    }
-
-    const targetUser = await prisma.user.findFirst({
-      where: {
-        id: params.data.userId,
-        tenantId: params.data.clientId
-      },
-      select: {
-        id: true,
-        role: true
-      }
+  protectedApp.delete("/clients/:clientId/users/:userId", async (_request, reply) => {
+    return reply.code(501).send({
+      message: disabledMutationMessage("Remocao de usuarios de cliente")
     });
-
-    if (!targetUser) {
-      return reply.code(404).send({ message: "Usuario nao encontrado" });
-    }
-
-    if (targetUser.id === request.authUser.sub) {
-      return reply.code(400).send({ message: "Nao e permitido excluir o usuario autenticado." });
-    }
-
-    if (targetUser.role === UserRole.ADMIN) {
-      const adminCount = await prisma.user.count({
-        where: {
-          tenantId: params.data.clientId,
-          role: UserRole.ADMIN
-        }
-      });
-
-      if (adminCount <= 1) {
-        return reply.code(400).send({ message: "Nao e permitido remover o ultimo admin do cliente" });
-      }
-    }
-
-    await prisma.user.delete({
-      where: { id: targetUser.id }
-    });
-
-    return reply.code(204).send();
   });
 }

@@ -24,8 +24,8 @@ Entregar uma plataforma multi-tenant de atendimento para:
 9. Se precisa acompanhar backlog executavel por tarefa: leia `docs/backlog-execucao.md`.
 10. Se precisa acompanhar nota de arquitetura: leia `docs/scorecard-arquitetura.md`.
 11. Se precisa acompanhar metas por sprint: leia `docs/sprints-execucao.md`.
-12. Se precisa acompanhar docs pela interface web: acesse `/docs` no front.
-13. Se precisa rodar testes de composable/front: use scripts em `apps/web/package.json` e veja a secao de testes em `docs/frontend-ui.md`.
+12. Se precisa acompanhar docs pela interface web do modulo omnichannel: acesse `/admin/omnichannel/docs`.
+13. Se precisa rodar testes de composable/front: use scripts em `apps/omni-nuxt-ui/package.json` e veja a secao de testes em `docs/frontend-ui.md`.
 14. Se precisa configurar pipeline CI no GitHub Actions: leia `docs/ci-github-actions.md`.
 15. Se precisa rodar bateria automatica de midia (pipeline/fila/worker): use `npm run test:media:battery` em `apps/api` e veja `docs/ci-github-actions.md`.
 16. Se precisa auditar isolamento entre tenants (seguranca): use `npm run test:tenant:isolation` em `apps/api` e veja `docs/ci-github-actions.md`.
@@ -35,20 +35,33 @@ Entregar uma plataforma multi-tenant de atendimento para:
 20. Se precisa validar gate de release do MVP (texto + midia + dedupe): use `npm run test:gate:mvp` em `apps/api` e veja `docs/ci-github-actions.md`.
 21. Se precisa validar a jornada principal (login -> inbox -> envio -> recebimento): use `npm run test:journey:e2e` em `apps/api`.
 22. Se precisa ajustar limite de upload por cliente: use `PATCH /tenant` com `maxUploadMb` ou o campo `Limite upload por arquivo (MB)` em `/admin`.
+23. Se precisa entender a fusao do front legado com o novo painel: leia `docs/omni-nuxt-ui-merge.md`.
+24. Se precisa acompanhar o plano de performance/infra desta fase: leia `docs/sprint-otimizacao-geral.md`.
+25. Se precisa planejar ownership de funcionalidades por modulo (omnichannel/core/crm/automation/IA): leia `docs/modular-feature-matrix.md`.
+
+## Regra obrigatoria de contexto
+
+Antes de iniciar qualquer implementacao ou refatoracao:
+
+1. Ler este `docs/README.md` e pelo menos os `.md` diretamente ligados ao modulo que sera alterado.
+2. Confirmar no `.md` do modulo as regras de nao regressao e os contratos ativos.
+3. Atualizar a documentacao impactada no mesmo ciclo da entrega (codigo + doc juntos).
 
 ## Mapa rapido de codigo
 
 - API Node: `apps/api/src`
-- Front Nuxt 4: `apps/web`
-- CSS global do front: `apps/web/assets/css/main.css`
-- Tokens visuais: `apps/web/assets/css/tokens.css`
+- Front Nuxt 4 principal: `apps/omni-nuxt-ui`
+- Modulo omnichannel no front principal: `apps/omni-nuxt-ui/app/components/omnichannel`
+- CSS global do front principal: `apps/omni-nuxt-ui/app/assets/css/main.css`
+- Tokens visuais: `apps/omni-nuxt-ui/app/assets/css/tokens.css`
+- Front legado do modulo (referencia): `apps/web`
 - Modelo Prisma: `apps/api/prisma/schema.prisma`
 - Orquestracao local: `docker-compose.yml`
 - Variaveis: `.env` e `.env.example`
 
 ## Portal de documentacao no front
 
-1. Rota: `/docs`.
+1. Rota: `/admin/omnichannel/docs`.
 2. Funcao: listar todos os `.md` e abrir leitura com status de checklist.
 3. Status de checklist:
 - `Concluido`: itens `[x]`.

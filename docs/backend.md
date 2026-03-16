@@ -13,6 +13,14 @@ Qualquer alteracao estrutural em rotas, services, filas, webhooks ou contratos d
 - separar responsabilidades por dominio
 - preservar um backup completo enquanto a migracao modular ainda nao terminou
 
+## Integracao com front principal (2026-03-04)
+
+- Front principal: `apps/omni-nuxt-ui`.
+- Modulo omnichannel no front chama esta API (`apps/api`) via BFF Nuxt:
+  - browser -> `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
+  - BFF -> `NUXT_API_INTERNAL_BASE` (default `http://api:4000`)
+- O backend operacional do modulo continua isolado aqui em `apps/api`.
+
 ## Padrao de modularizacao
 
 Para rotas grandes, o padrao agora e:
@@ -152,8 +160,9 @@ Enquanto a modularizacao nao estiver concluida, deve existir um backup unico (`*
 - `apps/api/src/routes/tenant/routes-core.ts`
   - `/me`, `/tenant` e `PATCH /tenant`
 - `apps/api/src/routes/tenant/routes-clients.ts`
-  - CRUD de clientes (`/clients`)
-  - CRUD de usuarios por cliente (`/clients/:clientId/users`)
+  - leitura de clientes a partir do `platform-core` (`GET /clients`)
+  - leitura/criacao de usuarios por cliente via `platform-core` (`GET/POST /clients/:clientId/users`)
+  - mutacoes legadas (`POST/PATCH/DELETE /clients` e `PATCH/DELETE /clients/:clientId/users/:userId`) foram desativadas com `501` para evitar duplicidade com o painel core
 - `apps/api/src/routes/tenant/routes-audit.ts`
   - auditoria e dashboard de falhas
 - `apps/api/src/routes/tenant/routes-whatsapp.ts`

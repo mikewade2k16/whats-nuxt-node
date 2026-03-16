@@ -63,9 +63,8 @@ export function selectBestContactMatch(value: unknown, remoteJidCandidates: stri
   const name = typeof match.pushName === "string" && match.pushName.trim().length > 0
     ? match.pushName.trim()
     : null;
-  const avatarUrl = typeof match.profilePicUrl === "string"
-    ? normalizeAvatarUrl(match.profilePicUrl)
-    : null;
+  const avatarUrl = extractProfilePictureFromApiResponse(match) ??
+    (typeof match.profilePicUrl === "string" ? normalizeAvatarUrl(match.profilePicUrl) : null);
 
   return {
     remoteJid,

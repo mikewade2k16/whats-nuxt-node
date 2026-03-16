@@ -74,9 +74,15 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
+import { resolveConversationInstanceRouting } from "../../services/whatsapp-instances.js";
+
+const GROUP_PARTICIPANTS_CACHE_TTL_MS = 45_000;
+const groupParticipantsCache = new Map<string, { cachedAt: number; participants: GroupParticipantResponse[] }>();
 
 export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
     protectedApp.get("/conversations/:conversationId/group-participants", async (request, reply) => {
+      const accessScope = await resolveConversationAccessScope(request);
       const params = z
         .object({
           conversationId: z.string().min(1)
@@ -87,11 +93,18 @@ export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
         return reply.code(400).send({ message: "Parametros invalidos" });
       }
 
+      const query = z
+        .object({
+          enrich: z.coerce.boolean().default(false)
+        })
+        .safeParse(request.query);
+
+      const enrichParticipants = query.success ? query.data.enrich : false;
+
       const conversation = await prisma.conversation.findFirst({
-        where: {
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
           id: params.data.conversationId,
-          tenantId: request.authUser.tenantId
-        }
+        })
       });
 
       if (!conversation) {
@@ -100,6 +113,17 @@ export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
 
       if (conversation.channel !== ChannelType.WHATSAPP || !conversation.externalId.endsWith("@g.us")) {
         return reply.code(400).send({ message: "Conversa nao e um grupo WhatsApp" });
+      }
+
+      const cacheKey = `${request.authUser.tenantId}:${conversation.id}`;
+      if (!enrichParticipants) {
+        const cached = groupParticipantsCache.get(cacheKey);
+        if (cached && Date.now() - cached.cachedAt < GROUP_PARTICIPANTS_CACHE_TTL_MS) {
+          return {
+            conversationId: conversation.id,
+            participants: cached.participants
+          };
+        }
       }
 
       const participantsMap = new Map<string, GroupParticipantResponse>();
@@ -156,13 +180,24 @@ export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
           id: request.authUser.tenantId
         },
         select: {
+          id: true,
           evolutionApiKey: true,
           whatsappInstance: true
         }
       });
 
       const evolutionClient = tenant ? createEvolutionClientForTenant(tenant.evolutionApiKey) : null;
-      const instanceName = tenant?.whatsappInstance?.trim() || env.EVOLUTION_DEFAULT_INSTANCE || "default";
+      const routedInstance = tenant
+        ? await resolveConversationInstanceRouting({
+            tenantId: tenant.id,
+            conversation
+          })
+        : null;
+      const instanceName =
+        routedInstance?.instanceName ||
+        tenant?.whatsappInstance?.trim() ||
+        env.EVOLUTION_DEFAULT_INSTANCE ||
+        "default";
       let groupInfo: Record<string, unknown> | null = null;
 
       if (evolutionClient) {
@@ -177,49 +212,60 @@ export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
         }
       }
 
-      if (evolutionClient) {
-        for (const participant of [...participantsMap.values()]) {
-          const normalizedParticipantJid = normalizeParticipantJid(participant.jid);
-          if (!normalizedParticipantJid) {
-            continue;
-          }
+      if (evolutionClient && enrichParticipants) {
+        const candidatesForEnrichment = [...participantsMap.values()]
+          .filter((participant) => {
+            return shouldResolveParticipantName(participant) || !participant.avatarUrl;
+          })
+          .slice(0, 8);
 
-          const remoteJidCandidates = new Set<string>();
-          if (participant.phone) {
-            remoteJidCandidates.add(`${participant.phone}@s.whatsapp.net`);
-          }
-          remoteJidCandidates.add(normalizedParticipantJid);
-
-          if (groupInfo) {
-            for (const relatedJid of collectRelatedRemoteJidsFromGroupInfo(groupInfo, normalizedParticipantJid)) {
-              remoteJidCandidates.add(relatedJid);
+        await Promise.allSettled(
+          candidatesForEnrichment.map(async (participant) => {
+            const normalizedParticipantJid = normalizeParticipantJid(participant.jid);
+            if (!normalizedParticipantJid) {
+              return;
             }
-          }
 
-          if (remoteJidCandidates.size === 0) {
-            continue;
-          }
+            const remoteJidCandidates = new Set<string>();
+            if (participant.phone) {
+              remoteJidCandidates.add(`${participant.phone}@s.whatsapp.net`);
+            }
+            remoteJidCandidates.add(normalizedParticipantJid);
 
-          if (!shouldResolveParticipantName(participant) && participant.avatarUrl) {
-            continue;
-          }
+            if (groupInfo) {
+              for (const relatedJid of collectRelatedRemoteJidsFromGroupInfo(groupInfo, normalizedParticipantJid)) {
+                remoteJidCandidates.add(relatedJid);
+              }
+            }
 
-          const contact = await findContactByRemoteJid(evolutionClient, instanceName, [...remoteJidCandidates]);
-          if (!contact) {
-            continue;
-          }
+            if (remoteJidCandidates.size === 0) {
+              return;
+            }
 
-          mergeParticipantRecord(participantsMap, {
-            jid: normalizedParticipantJid,
-            phone: contact.phone || participant.phone,
-            name: contact.name,
-            avatarUrl: contact.avatarUrl
-          });
-        }
+            const contact = await findContactByRemoteJid(evolutionClient, instanceName, [...remoteJidCandidates]);
+            if (!contact) {
+              return;
+            }
+
+            mergeParticipantRecord(participantsMap, {
+              jid: normalizedParticipantJid,
+              phone: contact.phone || participant.phone,
+              name: contact.name,
+              avatarUrl: contact.avatarUrl
+            });
+          })
+        );
       }
 
       const participants = [...participantsMap.values()]
         .sort((left, right) => left.name.localeCompare(right.name, "pt-BR", { sensitivity: "base" }));
+
+      if (!enrichParticipants) {
+        groupParticipantsCache.set(cacheKey, {
+          cachedAt: Date.now(),
+          participants
+        });
+      }
 
       return {
         conversationId: conversation.id,

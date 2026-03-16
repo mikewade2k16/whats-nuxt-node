@@ -16,7 +16,7 @@
 ## Checklist obrigatorio de compatibilidade (antes de debugar)
 
 1. Conferir versao do Nuxt UI:
-   - `apps/web/package.json`
+   - `apps/omni-nuxt-ui/package.json`
    - Para componentes `Dashboard*`, usar `@nuxt/ui` v4+.
 2. Sempre que aparecer erro de componente ausente/invalido:
    - validar versoes de dependencias primeiro
@@ -43,6 +43,94 @@
    - pontos de extensao e rotas impactadas
 
 ## Problemas comuns e correcao
+
+## 0) Rotas de login duplicadas / confusas
+
+Regra oficial do projeto:
+
+1. Login principal do painel: `/admin/login`
+2. O modulo de atendimento (`/admin/omnichannel/*`) reutiliza a sessao do painel e nao possui login/auth proprio.
+3. Paginas do core (`/admin/core/*`) usam a mesma sessao do painel; `/admin/core/login` foi aposentada e redireciona para `/admin/login`.
+
+Compatibilidade legada:
+
+1. `/` redireciona para `/admin/login`
+2. `/login` redireciona para `/admin/login`
+3. `/auth/*` removido (404 esperado)
+4. `/admin/omnichannel/login` removido (404 esperado)
+
+## 0.4) Login abre de novo com query string (`/admin/login?tenantSlug=...&email=...&password=...`)
+
+Causa comum:
+
+1. Submit nativo do browser antes de hidratar o handler Vue (`@submit.prevent`) em ambiente lento.
+2. Formulario de login executando `GET` e serializando campos na URL.
+
+Correcao aplicada:
+
+1. Login do painel usa bloqueio de submit nativo (`onsubmit="return false;"`) + submit controlado no Vue.
+2. Campos sensiveis em query (`tenantSlug`, `email`, `password`) sao limpos da URL ao montar a pagina.
+
+## 0.5) Como acompanhar os bancos localmente (Postgres + Redis)
+
+Servicos de observabilidade:
+
+1. Adminer (Postgres): `http://localhost:8088`
+2. Redis Commander (Redis): `http://localhost:8089`
+
+Subir somente quando precisar (profile `ops`):
+
+1. `docker compose --profile ops up -d adminer redis-commander`
+
+Conexao no Adminer:
+
+1. System: `PostgreSQL`
+2. Server: `postgres`
+3. Username: valor de `POSTGRES_USER` no `.env`
+4. Password: valor de `POSTGRES_PASSWORD` no `.env`
+5. Database: valor de `POSTGRES_DB` no `.env`
+
+Observacao:
+
+1. O `platform-core` usa o mesmo Postgres em schema separado (`platform_core` por padrao).
+
+## 0.6) Erro 500 no front apos remover rota legacy (`Cannot find module '/pages/auth/index.vue?macro=true'`)
+
+Causa comum:
+
+1. Cache de rotas do Nuxt em dev (`.nuxt/routes.mjs`) mantendo referencia antiga apos exclusao de arquivo em `app/pages`.
+
+Correcao:
+
+1. Recriar o `web` para forcar recompilacao limpa:
+   - `docker compose restart web`
+2. Se persistir, limpar cache de build no container e reiniciar:
+   - `docker compose exec web sh -lc "rm -rf /app/.nuxt /app/.output"`
+   - `docker compose restart web`
+3. Validar:
+   - `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/admin/login` deve retornar `200`
+   - `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/auth/login` deve retornar `404`
+
+## 0.7) Users/clients no modulo nao batem com painel core
+
+Causa comum:
+
+1. API do modulo ainda tentando usar dados legados locais sem sincronizar com `platform-core`.
+2. Credenciais de integracao com `platform-core` ausentes no `api`.
+
+Correcao:
+
+1. Definir no `.env`:
+   - `CORE_API_BASE_URL`
+   - `CORE_API_EMAIL`
+   - `CORE_API_PASSWORD`
+2. Reiniciar a API:
+   - `docker compose restart api`
+3. Validar listagem:
+   - `GET /users` (deve refletir tenant users do core)
+   - `GET /clients` (deve refletir tenants visiveis no core)
+4. Observacao:
+   - `PATCH/DELETE /users/*` e `POST/PATCH/DELETE /clients*` legados retornam `501` por design; gestao completa fica no `/admin/core`.
 
 ## 0) Front sem dados apos migracao para BFF
 
@@ -80,6 +168,46 @@ Correcao:
 Observacao:
 
 1. A API de docs no Nuxt tenta fallback automatico para `/project-docs` e `/docs` mesmo se a env nao existir.
+
+## 0.2) Container `redis-1` nao sobe apos reboot do host
+
+Causa comum:
+
+1. Redis com AOF (`appendonly yes`) em volume local pode falhar apos desligamento abrupto.
+2. Porta `6379` ocupada no host impede bind do container.
+
+Ajuste aplicado no projeto:
+
+1. `docker-compose.yml` agora sobe Redis em modo dev sem AOF (`--appendonly no --save ""`) para reduzir chance de corrupcao e I/O.
+2. Redis nao expoe mais porta no host; API/worker acessam Redis apenas pela rede interna Docker (`redis:6379`).
+3. Redis usa politica `noeviction` com `REDIS_MAXMEMORY` para evitar perda silenciosa de jobs da fila outbound.
+
+Recuperacao recomendada (se ainda estiver quebrado):
+
+1. `docker compose down`
+2. Remover o volume `redis_data` no Docker Desktop (Volumes) para limpar estado legado do AOF.
+3. `docker compose up -d redis`
+4. `docker compose logs -f redis` (deve mostrar `Ready to accept connections`).
+
+## 0.3) Ambiente local muito pesado (CPU/RAM altos em dev)
+
+Causa comum:
+
+1. `npm install` sendo executado em todo restart de `api/worker/retention-worker`.
+2. Bootstrap de banco (`prisma:push` + `prisma:seed`) rodando sempre, mesmo sem mudanca.
+3. Nuxt em modo dev + HMR + varias rotas abertas no navegador.
+
+Ajuste aplicado no projeto:
+
+1. `api/worker/retention-worker/web` agora instalam dependencias apenas quando `node_modules` estiver vazio.
+2. `api` roda `prisma:push` e `prisma:seed` apenas no primeiro boot do volume `api_node_modules` (ou quando `API_DB_BOOTSTRAP_ALWAYS=true`).
+3. `NODE_OPTIONS` por servico foi exposto no `.env` para limitar heap em dev sem perder funcionalidade.
+
+Boas praticas de operacao local:
+
+1. Subir apenas o necessario para a tarefa atual (`docker compose up -d postgres redis api web`).
+2. Ativar `evolution` so quando for validar canal real (`--profile channels`).
+3. Evitar rodar varias abas pesadas da inbox simultaneamente durante debug de frontend.
 
 ## 1) Login falha com "Credenciais invalidas"
 
@@ -197,6 +325,76 @@ Correcao:
    - `EVOLUTION_CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472`
 6. Depois de atualizar imagem, recrie a instancia (`logout/delete`) e rode `Bootstrap` novamente.
 
+## 3.3) Estado WhatsApp oscila entre conectado/desconectado e envio falha (`Connection Closed`, `1006`)
+
+Causa comum:
+
+1. Reconexoes forçadas em sequencia (`connect`/`qrcode?force=true`) durante fase de pareamento.
+2. Polling concorrente de status/QR saturando a Evolution durante instabilidade.
+3. Sessao da instancia em conflito (`stream replaced`) no provider.
+
+Ajuste aplicado no projeto:
+
+1. `GET /tenant/whatsapp/status` agora usa cache curto + deduplicacao de requests in-flight e fallback para ultimo estado conhecido em erro transitorio.
+2. `GET /tenant/whatsapp/qrcode` nao força reconexao continuamente: existe cooldown server-side para `force=true`.
+3. `POST /tenant/whatsapp/connect` agora evita reconnect redundante quando a instancia ja esta `open/connecting` e aplica cooldown curto.
+
+Checklist de validacao:
+
+1. Reiniciar API e web apos atualizar codigo:
+   - `docker compose restart api web worker`
+2. Conferir logs da Evolution:
+   - `docker compose --profile channels logs -f evolution`
+3. Conferir logs do worker para retries de rede:
+   - `docker compose logs -f worker | rg "transientConnectionError|Connection Closed|1006"`
+
+## 3.4) `status/qrcode/connect` retornam 500 e container `evolution` aparece `Exited (1)`
+
+Causa comum:
+
+1. Boot race no startup: Evolution tenta migracao do Prisma enquanto Postgres ainda esta inicializando (`FATAL: the database system is starting up`).
+2. Service `evolution` nao estava ativo no profile `channels`.
+
+Correcao:
+
+1. Subir/recuperar apenas o canal:
+   - `docker compose --profile channels up -d evolution`
+2. Validar se ficou em `Up`:
+   - `docker compose ps -a`
+3. Conferir logs do startup:
+   - `docker compose --profile channels logs --tail=120 evolution`
+4. Validar API novamente:
+   - `GET /tenant/whatsapp/status`
+   - `GET /tenant/whatsapp/qrcode?force=false`
+   - `POST /tenant/whatsapp/connect`
+
+Observacao:
+
+1. O `docker-compose.yml` do projeto agora usa `restart: unless-stopped` no service `evolution` para auto-recuperacao apos falhas transitórias de boot.
+
+## 3.5) Mensagens chegam no WhatsApp, mas nao atualizam na Inbox
+
+Causa comum:
+
+1. Webhook `messages-upsert` sendo recusado por `413 Request body is too large` (payload com `base64` muito grande).
+2. Em chats com identificador `@lid`, alguns eventos podem vir com `remoteJidAlt` e cair em mapeamento inconsistente se nao priorizar JID telefonico.
+
+Correcao aplicada no projeto:
+
+1. API com limite de body mais alto por padrao (`API_BODY_LIMIT_MB=200`).
+2. Bootstrap/setWebhook com `webhookBase64=false` para reduzir payload e evitar gargalo de ingestao.
+3. Parser de webhook prioriza `remoteJidAlt`/`@s.whatsapp.net` para conversa direta antes de `@lid`.
+
+Checklist de recuperacao:
+
+1. Reiniciar API:
+   - `docker compose restart api`
+2. Regravar webhook da instancia (sem base64):
+   - executar `Bootstrap` no Admin (ou `POST /tenant/whatsapp/bootstrap`).
+3. Confirmar em resposta de bootstrap: `webhookResult.webhookBase64=false`.
+4. Verificar logs:
+   - `docker compose logs -f api` (nao deve repetir `Request body is too large` em `messages-upsert`).
+
 ## 3.2) Busca de GIF retorna erro de provider nao configurado
 
 Causa comum:
@@ -246,7 +444,7 @@ Rotas administrativas exigem role `ADMIN`.
 Correcao:
 
 1. Login com usuario ADMIN.
-2. Ou promover usuario em `PATCH /users/:userId`.
+2. Ou promover usuario no painel core (`/admin/core`) ajustando role/permissoes do tenant user.
 
 ## 4.1) `POST /tenant/whatsapp/bootstrap` retorna 403
 
@@ -300,6 +498,45 @@ Correcao:
 3. Reiniciar API apos update:
    `docker compose restart api`
 
+## 7.1) Console com varios `403` em `pps.whatsapp.net` (avatar)
+
+Causa comum:
+
+1. URL de avatar do WhatsApp expirada/restrita para acesso direto pelo browser.
+2. Front tentando baixar avatar direto de host externo sem proxy.
+
+Correcao aplicada:
+
+1. Front passa URLs de avatar WhatsApp por proxy local:
+   - `/api/avatar/whatsapp?url=...`
+2. O proxy server-side retorna:
+   - imagem (`200`) quando disponivel
+   - `204` quando upstream falha/expira (sem quebrar a inbox)
+
+Validacao:
+
+1. A requisicao no browser deve apontar para `http://localhost:3000/api/avatar/whatsapp?...`
+2. O erro `403` de `pps.whatsapp.net` deixa de aparecer em massa no console.
+
+## 7.2) Nome do contato oscila entre numero e nome na mesma conversa
+
+Causa comum:
+
+1. Parte das mensagens foi persistida com `senderName` tecnico (`numero`, `@lid`, `@s.whatsapp.net`).
+2. Ingestao nova e historico legado usando fallback diferente, gerando inconsistencias visuais.
+
+Correcao aplicada:
+
+1. Ingestao (`messages-upsert`) prioriza `existingConversation.contactName` quando `senderName` inbound direto vem fraco/tecnico.
+2. Leitura de mensagens (`GET /conversations/:id/messages*`) normaliza `senderName` no retorno para conversa direta, sem depender do valor bruto legado.
+
+Saneamento do historico legado:
+
+1. Rodar no container da API:
+   - `docker compose exec api npm run fix:sender-names`
+2. Resultado esperado:
+   - `candidatos: 0` apos aplicar.
+
 ## 8) Chat abre sem ultima mensagem / historico truncado
 
 Causa comum:
@@ -310,10 +547,33 @@ Causa comum:
 Correcao:
 
 1. Validar uso de paginacao no front:
-   - arquivo: `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
+   - arquivo: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
 2. Validar contrato da API:
    - `GET /conversations/:conversationId/messages?limit=...&beforeId=...`
    - retorno com `hasMore`
+3. Rodar sync de historico da conversa para backfill de mensagens perdidas em reconnect:
+   - `POST /conversations/:conversationId/messages/sync-history`
+4. Verificar no retorno do sync:
+   - `queryVariant` (estrategia selecionada na Evolution)
+   - `processedCount` e `createdCount`
+
+## 8.1) Inbox continua desatualizada quando websocket oscila
+
+Causa comum:
+
+1. Socket.IO caiu (`disconnect/connect_error`) e a aba ficou sem eventos realtime.
+2. Historico local nao foi revalidado apos sync deduplicado (sem `createdCount`).
+
+Correcao aplicada:
+
+1. `useOmnichannelInboxRealtime` agora ativa polling leve de fallback enquanto o socket estiver instavel.
+2. `useOmnichannelInboxHistory` passou a recarregar a conversa ativa apos sync com `processedCount > 0`.
+3. Endpoint `/messages/sync-history` usa consulta escopada por `where.key.remoteJid` (com `offset/limit`) para evitar lote misto de outras conversas da instância.
+4. Validar retorno do sync:
+   - `queryVariant` deve vir como `where.key+offset` ou `where.key+limit`
+   - se `conversationLastMessageAt` permanecer antigo e `createdCount=0`, a Evolution nao possui backfill novo para essa conversa no momento.
+5. Backfill antigo nao deve mais regredir preview:
+   - `lastMessageAt` agora so avanca (nunca volta para data menor) ao processar webhook/sync de historico.
 
 ## 9) Midia outbound falha (imagem/audio/video/documento)
 
@@ -549,13 +809,13 @@ Interpretacao:
 
 Causa comum:
 
-1. Webhook processando eventos que nao representam nova mensagem (`SEND_MESSAGE`, `MESSAGES_UPDATE`).
+1. Webhook tratando `MESSAGES_UPDATE` como criacao de mensagem (em vez de atualizar estado/delecao/reacao).
 2. Dedupe outbound dependendo de `mediaUrl` identica (pode mudar entre upload local e retorno da Evolution).
 
 Correcao:
 
 1. Processar criacao apenas para evento `MESSAGES_UPSERT`.
-2. Ignorar demais eventos com resposta `202` (`status: ignored`).
+2. Em `MESSAGES_UPDATE`, processar somente atualizacoes suportadas (reacao e delecao) e ignorar o resto com `202`.
 3. No fallback de dedupe outbound (`fromMe`), usar janela curta por `messageType` e conversa, sem exigir `mediaUrl` identica.
 
 ## 12) Foto/video enviados como documento saem como midia normal
@@ -615,9 +875,9 @@ Causa comum:
 
 Correcao:
 
-1. No BFF (`apps/web/server/api/bff/[...path].ts`), nao repassar `content-length` de upstream para respostas JSON reserializadas.
+1. No BFF (`apps/omni-nuxt-ui/server/api/bff/[...path].ts`), nao repassar `content-length` de upstream para respostas JSON reserializadas.
 2. Repassar `content-length` apenas para payload binario (midia/download).
-3. No composable (`apps/web/composables/omnichannel/useOmnichannelInbox.ts`), validar resposta e aplicar fallback para array vazio.
+3. No composable (`apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`), validar resposta e aplicar fallback para array vazio.
 
 Validacao rapida:
 
@@ -686,12 +946,12 @@ Invoke-RestMethod -Method Post `
    - `apps/api/src/workers/senders/common.ts`
 5. Erro webhook inbound: `apps/api/src/routes/webhooks.ts`
 6. Erro realtime: `apps/api/src/event-bus.ts` e `apps/api/src/main.ts`
-7. Erro de UI inbox (container): `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
-8. Erro de dominio inbox (estado/socket/paginacao): `apps/web/composables/omnichannel/useOmnichannelInbox.ts`
-9. Erro de UI inbox (sidebar conversas): `apps/web/components/omnichannel/inbox/InboxConversationsSidebar.vue`
-10. Erro de UI inbox (chat): `apps/web/components/omnichannel/inbox/InboxChatPanel.vue`
-11. Erro de UI inbox (detalhes): `apps/web/components/omnichannel/inbox/InboxDetailsSidebar.vue`
-12. Tipos inbox: `apps/web/components/omnichannel/inbox/types.ts`
-13. Erro de UI admin (container): `apps/web/components/omnichannel/OmnichannelAdminModule.vue`
-14. Erro de dominio admin (estado/polling): `apps/web/composables/omnichannel/useOmnichannelAdmin.ts`
+7. Erro de UI inbox (container): `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+8. Erro de dominio inbox (estado/socket/paginacao): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
+9. Erro de UI inbox (sidebar conversas): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+10. Erro de UI inbox (chat): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxChatPanel.vue`
+11. Erro de UI inbox (detalhes): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+12. Tipos inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/types.ts`
+13. Erro de UI admin (container): `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue`
+14. Erro de dominio admin (estado/polling): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts`
 

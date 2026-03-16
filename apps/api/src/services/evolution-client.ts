@@ -80,7 +80,8 @@ export class EvolutionClient {
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError) {
-        const statusCode = error.response?.status ?? 500;
+        const hasHttpResponse = Boolean(error.response);
+        const statusCode = error.response?.status ?? 503;
         const responseData = error.response?.data ?? null;
         const message =
           (typeof responseData === "object" &&
@@ -88,10 +89,13 @@ export class EvolutionClient {
             "message" in responseData &&
             typeof (responseData as Record<string, unknown>).message === "string" &&
             (responseData as Record<string, string>).message) ||
+          (!hasHttpResponse && `Falha de conexao com Evolution API (${error.code ?? "network_error"})`) ||
           error.message ||
           "Erro na Evolution API";
 
-        throw new EvolutionApiError(message, statusCode, responseData);
+        throw new EvolutionApiError(message, statusCode, responseData ?? {
+          code: error.code ?? null
+        });
       }
 
       throw new EvolutionApiError("Erro inesperado na Evolution API", 500, null);
@@ -115,7 +119,7 @@ export class EvolutionClient {
         webhook: {
           url: params.webhookUrl,
           byEvents: true,
-          base64: true,
+          base64: false,
           headers: params.webhookHeaders,
           events: params.webhookEvents ?? defaultWebhookEvents
         }
@@ -155,7 +159,7 @@ export class EvolutionClient {
             enabled: true,
             url: params.webhookUrl,
             byEvents: true,
-            base64: true,
+            base64: false,
             headers: params.webhookHeaders,
             events: params.webhookEvents ?? defaultWebhookEvents
           }
@@ -216,6 +220,68 @@ export class EvolutionClient {
     );
   }
 
+  async findChats(instanceName: string, query: Record<string, unknown> = {}, timeoutMs?: number) {
+    const encodedInstance = encodeURIComponent(instanceName);
+    const candidateRequests: Array<{
+      method: Method;
+      path: string;
+      data?: Record<string, unknown>;
+    }> = [
+      {
+        method: "POST",
+        path: `/chat/findChats/${encodedInstance}`,
+        data: query
+      },
+      {
+        method: "POST",
+        path: `/chats/findChats/${encodedInstance}`,
+        data: query
+      },
+      {
+        method: "POST",
+        path: "/chat/findChats",
+        data: {
+          instanceName,
+          ...query
+        }
+      },
+      {
+        method: "GET",
+        path: `/chat/findChats/${encodedInstance}`
+      }
+    ];
+
+    let lastError: EvolutionApiError | null = null;
+
+    for (const candidate of candidateRequests) {
+      try {
+        return await this.request<Record<string, unknown> | Array<Record<string, unknown>>>(
+          candidate.method,
+          candidate.path,
+          {
+            data: candidate.data,
+            timeoutMs
+          }
+        );
+      } catch (error) {
+        if (!(error instanceof EvolutionApiError)) {
+          throw error;
+        }
+
+        lastError = error;
+        if (![400, 404, 405, 422].includes(error.statusCode)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new EvolutionApiError("Nao foi possivel consultar conversas na Evolution API", 500, null);
+  }
+
   getBase64FromMediaMessage(instanceName: string, payload: Record<string, unknown>, timeoutMs?: number) {
     return this.request<Record<string, unknown>>(
       "POST",
@@ -225,6 +291,45 @@ export class EvolutionClient {
         timeoutMs
       }
     );
+  }
+
+  async findMessages(instanceName: string, query: Record<string, unknown>, timeoutMs?: number) {
+    const encodedInstance = encodeURIComponent(instanceName);
+    const candidatePaths = [
+      `/chat/findMessages/${encodedInstance}`,
+      `/messages/findMessages/${encodedInstance}`,
+      `/messages/fetch/${encodedInstance}`
+    ];
+
+    let lastError: EvolutionApiError | null = null;
+
+    for (const path of candidatePaths) {
+      try {
+        return await this.request<Record<string, unknown> | Array<Record<string, unknown>>>(
+          "POST",
+          path,
+          {
+            data: query,
+            timeoutMs
+          }
+        );
+      } catch (error) {
+        if (!(error instanceof EvolutionApiError)) {
+          throw error;
+        }
+
+        lastError = error;
+        if (error.statusCode !== 404 && error.statusCode !== 405) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new EvolutionApiError("Nao foi possivel consultar historico de mensagens na Evolution API", 500, null);
   }
 
   sendReaction(params: {

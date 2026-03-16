@@ -7,11 +7,26 @@ export interface TenantSummaryInput {
   slug: string;
   name: string;
   whatsappInstance: string | null;
+  whatsappInstances?: Array<{
+    id: string;
+    instanceName: string;
+    displayName: string | null;
+    phoneNumber: string | null;
+    queueLabel?: string | null;
+    userScopePolicy?: "MULTI_INSTANCE" | "SINGLE_INSTANCE";
+    responsibleUserId?: string | null;
+    responsibleUserName?: string | null;
+    responsibleUserEmail?: string | null;
+    isDefault: boolean;
+    isActive: boolean;
+    userIds?: string[];
+  }>;
   evolutionApiKey?: string | null;
   maxChannels: number;
   maxUsers: number;
   retentionDays: number;
   maxUploadMb: number;
+  canManageAtendimentoLimits?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,17 +36,21 @@ export function mapTenantResponse(
   currentUsers: number,
   role: "ADMIN" | "SUPERVISOR" | "AGENT" | "VIEWER"
 ) {
-  const currentChannels = resolveConfiguredChannelCount(tenant.whatsappInstance);
+  const currentChannels = Array.isArray(tenant.whatsappInstances)
+    ? tenant.whatsappInstances.filter((entry) => entry.isActive).length
+    : resolveConfiguredChannelCount(tenant.whatsappInstance);
 
   return {
     id: tenant.id,
     slug: tenant.slug,
     name: tenant.name,
     whatsappInstance: tenant.whatsappInstance,
+    whatsappInstances: tenant.whatsappInstances ?? [],
     maxChannels: tenant.maxChannels,
     maxUsers: tenant.maxUsers,
     retentionDays: tenant.retentionDays,
     maxUploadMb: tenant.maxUploadMb,
+    canManageAtendimentoLimits: Boolean(tenant.canManageAtendimentoLimits),
     currentChannels,
     currentUsers,
     hasEvolutionApiKey: Boolean(tenant.evolutionApiKey || env.EVOLUTION_API_KEY),

@@ -74,10 +74,13 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { normalizeMessageSenderForConversationResponse } from "./message-display.js";
+import { mergeConversationScopeWhere, mergeMessageScopeWhere, resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationMessageDetailRoute(protectedApp: FastifyInstance) {
     protectedApp.get("/conversations/:conversationId/messages/:messageId", async (request, reply) => {
+      const accessScope = await resolveConversationAccessScope(request);
       const params = z
         .object({
           conversationId: z.string().min(1),
@@ -90,23 +93,37 @@ export function registerConversationMessageDetailRoute(protectedApp: FastifyInst
       }
 
       const message = await prisma.message.findFirst({
-        where: {
+        where: mergeMessageScopeWhere(accessScope.messageWhere, {
           id: params.data.messageId,
           conversationId: params.data.conversationId,
-          tenantId: request.authUser.tenantId,
           hiddenForUsers: {
             none: {
               userId: request.authUser.sub
             }
           }
-        }
+        })
       });
 
       if (!message) {
         return reply.code(404).send({ message: "Mensagem nao encontrada" });
       }
 
-      return message;
+      const conversation = await prisma.conversation.findFirst({
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
+          id: params.data.conversationId,
+        }),
+        select: {
+          externalId: true,
+          contactName: true,
+          contactPhone: true
+        }
+      });
+
+      if (!conversation) {
+        return reply.code(404).send({ message: "Conversa nao encontrada" });
+      }
+
+      return normalizeMessageSenderForConversationResponse(message, conversation);
     });
 
 }

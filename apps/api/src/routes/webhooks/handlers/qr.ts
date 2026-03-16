@@ -4,6 +4,7 @@ import { setLatestQrCode } from "../../../services/whatsapp-qr-cache.js";
 
 interface HandleQrWebhookParams {
   tenantId: string;
+  instanceId?: string | null;
   instanceName: string;
   eventName: string;
   payload: IncomingWebhookPayload;

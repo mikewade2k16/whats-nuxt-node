@@ -74,6 +74,8 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
+import { resolveConversationInstanceRouting } from "../../services/whatsapp-instances.js";
 
 
 export function registerConversationReactionRoute(protectedApp: FastifyInstance) {
@@ -81,6 +83,7 @@ export function registerConversationReactionRoute(protectedApp: FastifyInstance)
       if (!requireConversationWrite(request, reply)) {
         return;
       }
+      const accessScope = await resolveConversationAccessScope(request);
 
       const params = z
         .object({
@@ -95,10 +98,9 @@ export function registerConversationReactionRoute(protectedApp: FastifyInstance)
       }
 
       const conversation = await prisma.conversation.findFirst({
-        where: {
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
           id: params.data.conversationId,
-          tenantId: request.authUser.tenantId
-        }
+        })
       });
 
       if (!conversation) {
@@ -123,6 +125,7 @@ export function registerConversationReactionRoute(protectedApp: FastifyInstance)
           id: request.authUser.tenantId
         },
         select: {
+          id: true,
           evolutionApiKey: true,
           whatsappInstance: true
         }
@@ -139,7 +142,15 @@ export function registerConversationReactionRoute(protectedApp: FastifyInstance)
           });
         }
 
-        const instanceName = tenant.whatsappInstance?.trim() || env.EVOLUTION_DEFAULT_INSTANCE || "";
+        const routedInstance = await resolveConversationInstanceRouting({
+          tenantId: tenant.id,
+          conversation
+        });
+        const instanceName =
+          routedInstance?.instanceName ||
+          tenant.whatsappInstance?.trim() ||
+          env.EVOLUTION_DEFAULT_INSTANCE ||
+          "";
         const evolutionClient = createEvolutionClientForTenant(tenant.evolutionApiKey);
         if (evolutionClient && instanceName) {
           try {
@@ -172,9 +183,54 @@ export function registerConversationReactionRoute(protectedApp: FastifyInstance)
         }
       }
 
+      const metadataRecord = asRecord(message.metadataJson);
+      const metadataWithoutLegacySelfReaction = (() => {
+        if (!metadataRecord) {
+          return message.metadataJson;
+        }
+
+        const reactions = asRecord(metadataRecord.reactions);
+        const rawItems = Array.isArray(reactions?.items) ? reactions.items : [];
+        if (rawItems.length < 1) {
+          return message.metadataJson;
+        }
+
+        const filteredItems = rawItems.filter((item) => {
+          const record = asRecord(item);
+          if (!record) {
+            return true;
+          }
+
+          const actorKey = typeof record.actorKey === "string" ? record.actorKey.trim() : "";
+          const actorUserId = typeof record.actorUserId === "string" ? record.actorUserId.trim() : "";
+
+          if (actorKey === "wa:self") {
+            return false;
+          }
+
+          if (actorKey === `user:${request.authUser.sub}`) {
+            return false;
+          }
+
+          if (actorUserId && actorUserId === request.authUser.sub) {
+            return false;
+          }
+
+          return true;
+        });
+
+        return {
+          ...metadataRecord,
+          reactions: {
+            ...(reactions ?? {}),
+            items: filteredItems
+          }
+        };
+      })();
+
       const nextMetadata = withMessageReactionMetadata({
-        metadataJson: message.metadataJson,
-        actorKey: `user:${request.authUser.sub}`,
+        metadataJson: metadataWithoutLegacySelfReaction,
+        actorKey: "wa:self",
         actorUserId: request.authUser.sub,
         actorName: request.authUser.name,
         actorJid: null,

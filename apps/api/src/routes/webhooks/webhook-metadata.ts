@@ -67,13 +67,5 @@ export function extractQrCode(payload: IncomingWebhookPayload) {
 
 export function shouldValidateWebhookToken() {
   const token = env.EVOLUTION_WEBHOOK_TOKEN?.trim();
-  if (!token) {
-    return false;
-  }
-
-  if (/^change-this-|^example-|^your-/i.test(token)) {
-    return false;
-  }
-
-  return true;
+  return Boolean(token);
 }

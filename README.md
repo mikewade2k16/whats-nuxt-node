@@ -4,6 +4,7 @@ MVP multi-tenant de atendimento com:
 
 - Frontend proprio em `Nuxt 4 + Nuxt UI`
 - Backend `Node.js + TypeScript` stateless
+- Core de plataforma em `Go` (`apps/platform-core`)
 - Realtime com `Socket.IO + Redis adapter`
 - Banco `PostgreSQL` (Prisma)
 - Fila de envio `BullMQ + Redis`
@@ -15,7 +16,9 @@ MVP multi-tenant de atendimento com:
 .
 |- apps/
 |  |- api/     # API + worker + Prisma
-|  `- web/     # Front Nuxt 4
+|  |- platform-core/ # Core de plataforma (auth, limites, modulos)
+|  |- omni-nuxt-ui/ # Front Nuxt 4 principal (painel + modulo omnichannel)
+|  `- web/     # Front legado do modulo (referencia)
 |- docs/       # documentacao tecnica e operacional
 |- docker-compose.yml
 `- .env.example
@@ -41,10 +44,31 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
+O servico `web` roda em modo desenvolvimento (`npm run dev`) com hot reload.
+Ao editar arquivos em `apps/omni-nuxt-ui`, o Nuxt aplica HMR automaticamente.
+Na primeira abertura apos subir os containers, a compilacao inicial pode levar alguns segundos.
+
+Observacoes de performance local (atualizadas em 2026-03-05):
+
+- `api/worker/retention-worker/web` so executam `npm install` quando `node_modules` estiver vazio.
+- O bootstrap de banco da API (`prisma:push` + `prisma:seed`) roda apenas no primeiro boot do volume.
+- Para forcar bootstrap novamente: defina `API_DB_BOOTSTRAP_ALWAYS=true` no `.env`.
+- Redis roda apenas na rede interna Docker (sem porta host), com limite de memoria via `REDIS_MAXMEMORY`.
+
 3. Acesse:
 
 - Front: `http://localhost:3000`
 - API health: `http://localhost:4000/health`
+- Platform Core health: `http://localhost:4100/health`
+- Front Core login: `http://localhost:3000/admin/core/login`
+- Front Core cadastro: `http://localhost:3000/admin/core/cadastro`
+- Front Auth login (omnichannel): `http://localhost:3000/admin/login`
+
+## Credenciais seed (platform-core)
+
+- Platform root (criar tenant): `root@core.local` / `123456`
+- Demo owner: `admin@demo-core.local` / `123456`
+- Demo agent: `agent@demo-core.local` / `123456`
 
 ## Credenciais seed (tenant demo)
 
@@ -112,9 +136,9 @@ Se `EVOLUTION_BASE_URL` estiver vazio, o worker marca mensagens outbound como `S
 - O servico `retention-worker` executa expurgo com base em `tenant.retentionDays`.
 - Expurgo remove mensagens antigas e conversas vazias antigas.
 
-## Painel admin
+## Painel admin (omnichannel)
 
-- URL: `http://localhost:3000/admin`
+- URL: `http://localhost:3000/admin/omnichannel/operacao`
 - Disponivel para usuarios `ADMIN`
 - Permite:
   - atualizar dados do tenant
@@ -137,9 +161,11 @@ docker compose --profile channels up --build
 ### Front (composables)
 
 ```bash
-cd apps/web
+cd apps/omni-nuxt-ui
 npm run test:composables
 ```
+
+Obs: se o script de testes ainda nao estiver disponivel no front final, execute no legado `apps/web` ate concluir a migracao.
 
 ### Bateria de midia (API/worker/fila)
 
@@ -171,6 +197,7 @@ O script valida acesso cruzado entre os tenants `demo` e `acme` e falha com exit
 - Guia geral: `docs/README.md`
 - Arquitetura: `docs/architecture.md`
 - Referencia de rotas/API: `docs/api-reference.md`
+- Core de plataforma (Go): `apps/platform-core/README.md`
 - Setup Evolution: `docs/evolution-setup.md`
 - Troubleshooting: `docs/troubleshooting.md`
 - Modelo atual de dados: `docs/data-model-current.md`

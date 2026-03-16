@@ -74,6 +74,8 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
+import { resolveConversationInstanceRouting } from "../../services/whatsapp-instances.js";
 
 
 export function registerConversationDeleteForAllRoute(protectedApp: FastifyInstance) {
@@ -81,6 +83,7 @@ export function registerConversationDeleteForAllRoute(protectedApp: FastifyInsta
       if (!requireConversationWrite(request, reply)) {
         return;
       }
+      const accessScope = await resolveConversationAccessScope(request);
 
       const params = z
         .object({
@@ -94,10 +97,9 @@ export function registerConversationDeleteForAllRoute(protectedApp: FastifyInsta
       }
 
       const conversation = await prisma.conversation.findFirst({
-        where: {
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
           id: params.data.conversationId,
-          tenantId: request.authUser.tenantId
-        }
+        })
       });
 
       if (!conversation) {
@@ -109,6 +111,7 @@ export function registerConversationDeleteForAllRoute(protectedApp: FastifyInsta
           id: request.authUser.tenantId
         },
         select: {
+          id: true,
           evolutionApiKey: true,
           whatsappInstance: true
         }
@@ -118,7 +121,15 @@ export function registerConversationDeleteForAllRoute(protectedApp: FastifyInsta
         return reply.code(404).send({ message: "Tenant nao encontrado" });
       }
 
-      const instanceName = tenant.whatsappInstance?.trim() || env.EVOLUTION_DEFAULT_INSTANCE || "";
+      const routedInstance = await resolveConversationInstanceRouting({
+        tenantId: tenant.id,
+        conversation
+      });
+      const instanceName =
+        routedInstance?.instanceName ||
+        tenant.whatsappInstance?.trim() ||
+        env.EVOLUTION_DEFAULT_INSTANCE ||
+        "";
       const evolutionClient = createEvolutionClientForTenant(tenant.evolutionApiKey);
 
       if (!evolutionClient || !instanceName) {

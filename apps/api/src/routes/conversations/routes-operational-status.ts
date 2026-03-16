@@ -74,6 +74,7 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationStatusRoute(protectedApp: FastifyInstance) {
@@ -81,6 +82,7 @@ export function registerConversationStatusRoute(protectedApp: FastifyInstance) {
       if (!requireConversationWrite(request, reply)) {
         return;
       }
+      const accessScope = await resolveConversationAccessScope(request);
 
       const params = z
         .object({
@@ -94,10 +96,9 @@ export function registerConversationStatusRoute(protectedApp: FastifyInstance) {
       }
 
       const conversation = await prisma.conversation.findFirst({
-        where: {
+        where: mergeConversationScopeWhere(accessScope.conversationWhere, {
           id: params.data.conversationId,
-          tenantId: request.authUser.tenantId
-        },
+        }),
         include: {
           messages: {
             take: 1,

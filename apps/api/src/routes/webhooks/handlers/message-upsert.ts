@@ -14,13 +14,14 @@ interface HandleMessageUpsertWebhookParams {
     id: string;
     evolutionApiKey: string | null;
   };
+  instanceId: string | null;
   instanceName: string;
   payload: IncomingWebhookPayload;
   webhookCorrelationId: string;
 }
 
 export async function handleMessageUpsertWebhook(params: HandleMessageUpsertWebhookParams) {
-  const { tenant, instanceName, payload, webhookCorrelationId } = params;
+  const { tenant, instanceId, instanceName, payload, webhookCorrelationId } = params;
   const preflight = runMessageUpsertPreflight(payload);
   if (!preflight.ok) {
     return preflight.response;
@@ -37,6 +38,7 @@ export async function handleMessageUpsertWebhook(params: HandleMessageUpsertWebh
     senderAvatarUrl: initialSenderAvatarUrl
   } = await resolveMessageUpsertContext({
     tenant,
+    instanceId,
     instanceName,
     parsed
   });
@@ -83,6 +85,8 @@ export async function handleMessageUpsertWebhook(params: HandleMessageUpsertWebh
     message = await createWebhookMessage({
       tenantId: tenant.id,
       conversationId: conversation.id,
+      instanceId: conversation.instanceId ?? instanceId,
+      instanceScopeKey: conversation.instanceScopeKey,
       direction,
       messageType: parsed.messageType,
       senderName,
@@ -95,7 +99,8 @@ export async function handleMessageUpsertWebhook(params: HandleMessageUpsertWebh
       mediaCaption,
       mediaDurationSeconds: parsed.mediaDurationSeconds ?? null,
       metadataJson: messageMetadataJson,
-      externalMessageId: parsed.externalMessageId ?? null
+      externalMessageId: parsed.externalMessageId ?? null,
+      createdAt: parsed.messageTimestamp ?? null
     });
     messageCreated = true;
   }

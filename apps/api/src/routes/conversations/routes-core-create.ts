@@ -74,12 +74,19 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationCreateRoute(protectedApp: FastifyInstance) {
     protectedApp.post("/conversations", async (request, reply) => {
       if (!requireConversationWrite(request, reply)) {
         return;
+      }
+      const accessScope = await resolveConversationAccessScope(request);
+      if (accessScope.activeInstances.length > 0 && accessScope.accessibleInstances.length < 1) {
+        return reply.code(403).send({
+          message: "Usuario sem instancia WhatsApp atribuida para criar conversa."
+        });
       }
 
       const parsed = createConversationSchema.safeParse(request.body);
@@ -91,13 +98,16 @@ export function registerConversationCreateRoute(protectedApp: FastifyInstance) {
       }
 
       const { externalId, channel, contactName, contactAvatarUrl, contactPhone } = parsed.data;
+      const defaultAccessibleInstance = accessScope.accessibleInstances[0] ?? null;
+      const instanceScopeKey = defaultAccessibleInstance?.instanceName ?? accessScope.accessibleScopeKeys[0] ?? "default";
 
       const conversation = await prisma.conversation.upsert({
         where: {
-          tenantId_externalId_channel: {
+          tenantId_externalId_channel_instanceScopeKey: {
             tenantId: request.authUser.tenantId,
             externalId,
-            channel
+            channel,
+            instanceScopeKey
           }
         },
         update: {
@@ -108,6 +118,8 @@ export function registerConversationCreateRoute(protectedApp: FastifyInstance) {
         },
         create: {
           tenantId: request.authUser.tenantId,
+          instanceId: defaultAccessibleInstance?.id ?? null,
+          instanceScopeKey,
           channel,
           externalId,
           contactName,

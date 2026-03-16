@@ -8,6 +8,7 @@ import {
 } from "../../../lib/correlation.js";
 import type { ParsedIncomingReaction } from "../shared.js";
 import {
+  extractReactionEntries,
   extractPhone,
   normalizeMentionJid,
   sanitizeMediaUrlForRealtime,
@@ -17,6 +18,7 @@ import {
 
 interface HandleReactionWebhookParams {
   tenantId: string;
+  instanceScopeKey: string;
   eventName: string;
   webhookCorrelationId: string;
   parsedReaction: ParsedIncomingReaction;
@@ -25,10 +27,11 @@ interface HandleReactionWebhookParams {
 export async function handleReactionWebhook(params: HandleReactionWebhookParams) {
   const reactionConversation = await prisma.conversation.findUnique({
     where: {
-      tenantId_externalId_channel: {
+      tenantId_externalId_channel_instanceScopeKey: {
         tenantId: params.tenantId,
         externalId: params.parsedReaction.remoteJid,
-        channel: ChannelType.WHATSAPP
+        channel: ChannelType.WHATSAPP,
+        instanceScopeKey: params.instanceScopeKey
       }
     }
   });
@@ -70,11 +73,16 @@ export async function handleReactionWebhook(params: HandleReactionWebhookParams)
   const actorKey = params.parsedReaction.fromMe
     ? "wa:self"
     : `wa:${actorJid ?? (extractPhone(params.parsedReaction.actorJid ?? "") || "unknown")}`;
+  const existingActorEntry = extractReactionEntries(targetMessage.metadataJson).find(
+    (entry) => entry.actorKey === actorKey
+  );
   const nextMetadata = withMessageReactionMetadata({
     metadataJson: targetMessage.metadataJson,
     actorKey,
-    actorUserId: null,
-    actorName: params.parsedReaction.actorName,
+    actorUserId: params.parsedReaction.fromMe
+      ? (existingActorEntry?.actorUserId ?? null)
+      : null,
+    actorName: params.parsedReaction.actorName ?? existingActorEntry?.actorName ?? null,
     actorJid,
     emoji: params.parsedReaction.emoji,
     source: "whatsapp"

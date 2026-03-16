@@ -1,0 +1,513 @@
+{
+  "generatedAt": "2026-03-05T23:11:59.098Z",
+  "baseUrl": "http://localhost:3000",
+  "runs": 7,
+  "timeoutMs": 30000,
+  "login": {
+    "tenantSlug": "demo",
+    "email": "admin@demo.local"
+  },
+  "firstConversationId": "cmlz8z98v0015mn8qm87tpkyu",
+  "metrics": [
+    {
+      "name": "PAGE /admin/omnichannel/docs",
+      "url": "http://localhost:3000/admin/omnichannel/docs",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 349.72,
+      "maxMs": 2420.44,
+      "avgMs": 852.36,
+      "p95Ms": 2420.44,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 2420.44
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 364.41
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1023.94
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 375.56
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 377.31
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 349.72
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1055.17
+        }
+      ]
+    },
+    {
+      "name": "PAGE /admin/omnichannel/inbox",
+      "url": "http://localhost:3000/admin/omnichannel/inbox",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 461.11,
+      "maxMs": 1624.62,
+      "avgMs": 1130.68,
+      "p95Ms": 1624.62,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1624.62
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1264.08
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1019.34
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1554.8
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1294.4
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 696.38
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 461.11
+        }
+      ]
+    },
+    {
+      "name": "PAGE /admin/omnichannel/admin",
+      "url": "http://localhost:3000/admin/omnichannel/admin",
+      "count": 7,
+      "okRatePercent": 0,
+      "minMs": 42.38,
+      "maxMs": 1774.28,
+      "avgMs": 853.61,
+      "p95Ms": 1774.28,
+      "statusCodes": {
+        "404": 7
+      },
+      "samples": [
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 1326.05
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 712.3
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 1774.28
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 380.5
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 1403.87
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 335.9
+        },
+        {
+          "ok": false,
+          "status": 404,
+          "durationMs": 42.38
+        }
+      ]
+    },
+    {
+      "name": "API /api/docs",
+      "url": "http://localhost:3000/api/docs",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 334.06,
+      "maxMs": 1032.75,
+      "avgMs": 615.95,
+      "p95Ms": 1032.75,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 702.96
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 407.33
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 1032.75
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 714.15
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 334.06
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 730.23
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 390.19
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/conversations",
+      "url": "http://localhost:3000/api/bff/conversations",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 322.64,
+      "maxMs": 841.49,
+      "avgMs": 634.66,
+      "p95Ms": 841.49,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 768.84
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 322.64
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 727.97
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 827.41
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 598.25
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 356.04
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 841.49
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/tenant/whatsapp/status",
+      "url": "http://localhost:3000/api/bff/tenant/whatsapp/status",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 48.55,
+      "maxMs": 741.6,
+      "avgMs": 433.23,
+      "p95Ms": 741.6,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 574.38
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 741.6
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 678.5
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 276.51
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 364.34
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 348.72
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 48.55
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/users",
+      "url": "http://localhost:3000/api/bff/users",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 31.94,
+      "maxMs": 667.67,
+      "avgMs": 349.12,
+      "p95Ms": 667.67,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 313.24
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 361.78
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 366.17
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 346.82
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 31.94
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 356.21
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 667.67
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/contacts",
+      "url": "http://localhost:3000/api/bff/contacts",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 26.75,
+      "maxMs": 749.79,
+      "avgMs": 377.69,
+      "p95Ms": 749.79,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 42.42
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 741.2
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 291.34
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 26.75
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 749.79
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 312.42
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 479.89
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/tenant/metrics/failures?days=7",
+      "url": "http://localhost:3000/api/bff/tenant/metrics/failures?days=7",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 573.83,
+      "maxMs": 834.11,
+      "avgMs": 728.44,
+      "p95Ms": 834.11,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 757.62
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 674.94
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 816.2
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 573.83
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 683.27
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 759.1
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 834.11
+        }
+      ]
+    },
+    {
+      "name": "API /api/bff/conversations/:id/messages?limit=50",
+      "url": "http://localhost:3000/api/bff/conversations/cmlz8z98v0015mn8qm87tpkyu/messages?limit=50",
+      "count": 7,
+      "okRatePercent": 100,
+      "minMs": 47.38,
+      "maxMs": 723.51,
+      "avgMs": 424.59,
+      "p95Ms": 723.51,
+      "statusCodes": {
+        "200": 7
+      },
+      "samples": [
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 561.69
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 656.79
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 338.32
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 723.51
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 312.74
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 47.38
+        },
+        {
+          "ok": true,
+          "status": 200,
+          "durationMs": 331.7
+        }
+      ]
+    }
+  ]
+}

@@ -59,6 +59,9 @@ export function resolveIncomingMessageStructure(raw: IncomingWebhookPayload): In
   const chat = (data.chat ?? {}) as Record<string, unknown>;
 
   const jidCandidates = [
+    key.remoteJidAlt,
+    data.remoteJidAlt,
+    rawKey.remoteJidAlt,
     key.remoteJid,
     data.remoteJid,
     data.chatId,
@@ -74,10 +77,11 @@ export function resolveIncomingMessageStructure(raw: IncomingWebhookPayload): In
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
 
-  const remoteJid =
-    jidCandidates.find((value) => value.endsWith("@g.us")) ??
-    jidCandidates[0] ??
-    null;
+  const groupJid = jidCandidates.find((value) => value.endsWith("@g.us"));
+  const directPhoneJid = jidCandidates.find((value) => value.endsWith("@s.whatsapp.net"));
+  const directLidJid = jidCandidates.find((value) => value.endsWith("@lid"));
+
+  const remoteJid = groupJid ?? directPhoneJid ?? directLidJid ?? jidCandidates[0] ?? null;
 
   const participantJid =
     (key.participant as string | undefined) ??

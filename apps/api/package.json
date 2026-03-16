@@ -12,6 +12,8 @@
     "test:media:integration": "tsx src/scripts/media-integration.ts",
     "test:tenant:isolation": "tsx src/scripts/tenant-isolation-audit.ts",
     "test:journey:e2e": "tsx src/scripts/journey-e2e.ts",
+    "fix:sender-names": "tsx src/scripts/normalize-direct-sender-names.ts --apply",
+    "fix:dedupe-direct-conversations": "tsx src/scripts/dedupe-direct-conversations.ts --apply",
     "worker:dev": "tsx watch src/workers/outbound-worker.ts",
     "worker:start": "node dist/workers/outbound-worker.js",
     "worker:retention:dev": "tsx watch src/workers/retention-worker.ts",

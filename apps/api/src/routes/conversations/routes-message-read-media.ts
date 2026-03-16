@@ -48,6 +48,7 @@ import {
   extractEvolutionRehydratedMediaPayload,
   isLikelyEncryptedOrEphemeralMediaUrl,
   mediaTypeLabel,
+  resolveEffectiveMediaMimeType,
   resolveMediaDownloadFileName,
   resolveOutboundMessageContent,
   sanitizeEncryptedMediaFileName
@@ -74,10 +75,13 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { mergeMessageScopeWhere, resolveConversationAccessScope } from "./access.js";
+import { resolveConversationInstanceRouting } from "../../services/whatsapp-instances.js";
 
 
 export function registerConversationMessageMediaRoute(protectedApp: FastifyInstance) {
     protectedApp.get("/conversations/:conversationId/messages/:messageId/media", async (request, reply) => {
+      const accessScope = await resolveConversationAccessScope(request);
       const params = z
         .object({
           conversationId: z.string().min(1),
@@ -91,20 +95,21 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
       }
 
       const message = await prisma.message.findFirst({
-        where: {
+        where: mergeMessageScopeWhere(accessScope.messageWhere, {
           id: params.data.messageId,
           conversationId: params.data.conversationId,
-          tenantId: request.authUser.tenantId,
           hiddenForUsers: {
             none: {
               userId: request.authUser.sub
             }
           }
-        },
+        }),
         select: {
           id: true,
           tenantId: true,
           conversationId: true,
+          instanceId: true,
+          instanceScopeKey: true,
           messageType: true,
           direction: true,
           content: true,
@@ -154,6 +159,14 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
       let resolvedEvolutionClient: EvolutionClient | null | undefined;
       let resolvedInstanceName = env.EVOLUTION_DEFAULT_INSTANCE || "default";
       let rehydrateAttempted = false;
+      const resolveMimeType = (fallbackMimeType?: string | null, fallbackFileName?: string | null) =>
+        resolveEffectiveMediaMimeType({
+          messageType: message.messageType,
+          mediaMimeType: effectiveMediaMimeType,
+          mediaFileName: fallbackFileName ?? effectiveMediaFileName,
+          metadataJson: message.metadataJson,
+          fallbackMimeType
+        });
 
       const attemptEvolutionRehydrate = async (reason: string) => {
         if (rehydrateAttempted) {
@@ -171,13 +184,27 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
               id: request.authUser.tenantId
             },
             select: {
+              id: true,
               whatsappInstance: true,
               evolutionApiKey: true
             }
           });
 
           resolvedEvolutionClient = tenant ? createEvolutionClientForTenant(tenant.evolutionApiKey) : null;
-          resolvedInstanceName = tenant?.whatsappInstance?.trim() || env.EVOLUTION_DEFAULT_INSTANCE || "default";
+          const routedInstance = tenant
+            ? await resolveConversationInstanceRouting({
+                tenantId: tenant.id,
+                conversation: {
+                  instanceId: message.instanceId,
+                  instanceScopeKey: message.instanceScopeKey
+                }
+              })
+            : null;
+          resolvedInstanceName =
+            routedInstance?.instanceName ||
+            tenant?.whatsappInstance?.trim() ||
+            env.EVOLUTION_DEFAULT_INSTANCE ||
+            "default";
         }
 
         if (!resolvedEvolutionClient) {
@@ -227,20 +254,6 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
             return false;
           }
 
-          const resolvedMimeType = rehydratedMedia.mimeType || effectiveMediaMimeType || "application/octet-stream";
-          const resolvedFileName =
-            sanitizeEncryptedMediaFileName(
-              rehydratedMedia.fileName ?? effectiveMediaFileName,
-              resolvedMimeType,
-              message.messageType
-            ) ??
-            resolveMediaDownloadFileName({
-              id: message.id,
-              messageType: message.messageType,
-              mediaFileName: null,
-              mediaMimeType: resolvedMimeType
-            });
-
           const nextMetadata = {
             ...(asRecord(message.metadataJson) ?? {})
           } as Record<string, unknown>;
@@ -254,6 +267,26 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
           nextMetadata.mediaRehydratedAt = new Date().toISOString();
           nextMetadata.mediaRehydratedBy = "conversation-media-proxy";
           nextMetadata.mediaRehydratedReason = reason;
+
+          const resolvedMimeType = resolveEffectiveMediaMimeType({
+            messageType: message.messageType,
+            mediaMimeType: effectiveMediaMimeType,
+            mediaFileName: rehydratedMedia.fileName ?? effectiveMediaFileName,
+            metadataJson: nextMetadata,
+            fallbackMimeType: rehydratedMedia.mimeType
+          });
+          const resolvedFileName =
+            sanitizeEncryptedMediaFileName(
+              rehydratedMedia.fileName ?? effectiveMediaFileName,
+              resolvedMimeType,
+              message.messageType
+            ) ??
+            resolveMediaDownloadFileName({
+              id: message.id,
+              messageType: message.messageType,
+              mediaFileName: null,
+              mediaMimeType: resolvedMimeType
+            });
 
           const updatedMessage = await prisma.message.update({
             where: {
@@ -315,8 +348,7 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
           }
 
           applyMediaResponseHeaders();
-          const mimeType =
-            effectiveMediaMimeType?.trim() || parsedDataUrl.mimeType || "application/octet-stream";
+          const mimeType = resolveMimeType(parsedDataUrl.mimeType);
           reply.type(mimeType);
           reply.header("Content-Length", String(parsedDataUrl.buffer.length));
           return reply.send(parsedDataUrl.buffer);
@@ -374,8 +406,7 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
         }
 
         const contentTypeFromProvider = upstreamResponse.headers.get("content-type")?.split(";")[0]?.trim() ?? null;
-        const mimeType =
-          effectiveMediaMimeType?.trim() || contentTypeFromProvider || "application/octet-stream";
+        const mimeType = resolveMimeType(contentTypeFromProvider);
         const payload = Buffer.from(await upstreamResponse.arrayBuffer());
         applyMediaResponseHeaders();
         reply.type(mimeType);

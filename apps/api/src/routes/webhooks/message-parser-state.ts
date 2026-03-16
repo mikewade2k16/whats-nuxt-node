@@ -23,6 +23,51 @@ import { extractInboundContactMetadata } from "./message-parser-contact.js";
 import { extractQuotedReplyMetadata } from "./message-parser-reply.js";
 import type { IncomingMessageStructure } from "./message-parser-context.js";
 
+function parseNumericTimestamp(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const low = typeof record.low === "number" && Number.isFinite(record.low) ? record.low : null;
+  const high = typeof record.high === "number" && Number.isFinite(record.high) ? record.high : 0;
+  if (low === null) {
+    return null;
+  }
+
+  return (high * 4_294_967_296) + (low >>> 0);
+}
+
+function resolveMessageTimestampDate(candidates: unknown[]) {
+  for (const candidate of candidates) {
+    const numeric = parseNumericTimestamp(candidate);
+    if (numeric === null) {
+      continue;
+    }
+
+    const asMilliseconds = numeric > 1_000_000_000_000 ? numeric : numeric > 1_000_000_000 ? numeric * 1_000 : null;
+    if (!asMilliseconds) {
+      continue;
+    }
+
+    const date = new Date(asMilliseconds);
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  return null;
+}
+
 export function resolveIncomingMessageState(structure: IncomingMessageStructure) {
   const {
     raw,
@@ -96,6 +141,13 @@ export function resolveIncomingMessageState(structure: IncomingMessageStructure)
     (mediaPayload?.mimetype as string | undefined) ??
     (mediaPayload?.mimeType as string | undefined) ??
     ((data.mimetype as string | undefined) ?? (data.mimeType as string | undefined) ?? null);
+  const normalizedMediaMimeType = mediaMimeType?.trim().toLowerCase() ?? "";
+  const isAudioFileDocument =
+    mediaPayloadKey === "documentMessage" &&
+    normalizedMediaMimeType.startsWith("audio/");
+  const isVoiceNoteAudio =
+    mediaPayloadKey === "audioMessage" &&
+    mediaPayload?.ptt === true;
 
   const fallbackMediaCandidates = [
     message.base64,
@@ -147,11 +199,24 @@ export function resolveIncomingMessageState(structure: IncomingMessageStructure)
   const senderName =
     senderNameCandidate?.trim() ||
     (isGroup ? participantPhone || "Participante" : "Contato");
-  const contactMetadata = extractInboundContactMetadata({
-    contactMessage,
-    contactsArrayMessage,
-    senderName
-  });
+  const hasContactsArrayPayload =
+    Array.isArray(contactsArrayMessage.contacts) &&
+    contactsArrayMessage.contacts.length > 0;
+  const hasContactMessagePayload = Object.keys(contactMessage).length > 0;
+  const hasExplicitContactPayload = hasContactMessagePayload || hasContactsArrayPayload;
+  const hasRegularTextPayload = Boolean(text && text.trim().length > 0);
+  const shouldResolveContactMetadata =
+    hasExplicitContactPayload &&
+    !mediaPayload &&
+    !hasRegularTextPayload;
+
+  const contactMetadata = shouldResolveContactMetadata
+    ? extractInboundContactMetadata({
+        contactMessage,
+        contactsArrayMessage,
+        senderName
+      })
+    : null;
   const contactText = contactMetadata
     ? [
         "Contato:",
@@ -219,9 +284,20 @@ export function resolveIncomingMessageState(structure: IncomingMessageStructure)
     (raw.fromMe as boolean | undefined)
   );
 
+  const messageTimestamp = resolveMessageTimestampDate([
+    data.messageTimestamp,
+    raw.messageTimestamp,
+    data.messageTimestampMs,
+    raw.messageTimestampMs
+  ]);
+
   const replyMetadata = extractQuotedReplyMetadata({
     contextInfo,
-    senderName
+    senderName,
+    data,
+    raw,
+    message,
+    extended
   });
   const mentionedJids = extractMentionedJids(contextInfo);
   const linkPreview = extractLinkPreviewMetadata({
@@ -236,11 +312,23 @@ export function resolveIncomingMessageState(structure: IncomingMessageStructure)
   if (mediaPayload) {
     metadataJson.provider = "evolution";
     metadataJson.mediaPayloadKey = mediaPayloadKey;
-    metadataJson.mediaKind = mediaPayloadKey === "stickerMessage" ? "sticker" : "media";
+    metadataJson.mediaKind =
+      mediaPayloadKey === "stickerMessage"
+        ? "sticker"
+        : isVoiceNoteAudio
+          ? "voice_note"
+          : isAudioFileDocument
+            ? "audio_file"
+            : "media";
     metadataJson.contextInfo = contextInfo;
     metadataJson.hasMediaUrl = Boolean(mediaUrl);
     metadataJson.mediaSourceKind = extractedMedia.sourceKind;
     metadataJson.requiresMediaDecrypt = extractedMedia.sourceKind === "url_encrypted";
+    if (mediaPayloadKey === "audioMessage") {
+      metadataJson.audio = {
+        voiceNote: isVoiceNoteAudio
+      };
+    }
     if (extractedMedia.encryptedUrlCandidate) {
       metadataJson.encryptedMediaUrl = extractedMedia.encryptedUrlCandidate;
     }
@@ -301,6 +389,7 @@ export function resolveIncomingMessageState(structure: IncomingMessageStructure)
     isGroup,
     groupName,
     senderAvatarUrl,
-    groupAvatarUrl
+    groupAvatarUrl,
+    messageTimestamp
   };
 }

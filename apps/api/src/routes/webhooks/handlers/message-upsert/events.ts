@@ -31,13 +31,18 @@ export async function publishMessageUpsertEvents(params: PublishMessageUpsertEve
   let conversationForEvent = await prisma.conversation.findUniqueOrThrow({
     where: { id: params.conversation.id }
   });
+  const shouldAdvanceLastMessageAt = params.message.createdAt >= conversationForEvent.lastMessageAt;
 
   if (params.messageCreated) {
     conversationForEvent = await prisma.conversation.update({
       where: { id: params.conversation.id },
       data: {
         status: ConversationStatus.OPEN,
-        lastMessageAt: params.message.createdAt
+        ...(shouldAdvanceLastMessageAt
+          ? {
+              lastMessageAt: params.message.createdAt
+            }
+          : {})
       }
     });
 
@@ -68,7 +73,55 @@ export async function publishMessageUpsertEvents(params: PublishMessageUpsertEve
     params.existingConversation.contactAvatarUrl !== conversationForEvent.contactAvatarUrl ||
     params.existingConversation.contactPhone !== conversationForEvent.contactPhone;
 
-  if (params.messageCreated || conversationIdentityChanged) {
+  const shouldPublishConversationUpdated =
+    conversationIdentityChanged ||
+    (params.messageCreated && shouldAdvanceLastMessageAt);
+
+  if (shouldPublishConversationUpdated) {
+    const latestMessageForConversation = await prisma.message.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        conversationId: params.conversation.id
+      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" }
+      ],
+      select: {
+        id: true,
+        content: true,
+        messageType: true,
+        mediaUrl: true,
+        direction: true,
+        status: true,
+        createdAt: true
+      }
+    });
+
+    if (
+      latestMessageForConversation &&
+      latestMessageForConversation.createdAt > conversationForEvent.lastMessageAt
+    ) {
+      conversationForEvent = await prisma.conversation.update({
+        where: {
+          id: params.conversation.id
+        },
+        data: {
+          lastMessageAt: latestMessageForConversation.createdAt
+        }
+      });
+    }
+
+    const previewMessage = latestMessageForConversation ?? {
+      id: params.message.id,
+      content: params.message.content,
+      messageType: params.message.messageType,
+      mediaUrl: params.message.mediaUrl,
+      direction: params.message.direction,
+      status: params.message.status,
+      createdAt: params.message.createdAt
+    };
+
     await publishEvent({
       type: "conversation.updated",
       tenantId: params.tenantId,
@@ -86,14 +139,16 @@ export async function publishMessageUpsertEvents(params: PublishMessageUpsertEve
         updatedAt: conversationForEvent.updatedAt,
         lastMessageAt: conversationForEvent.lastMessageAt,
         lastMessage: {
-          id: params.message.id,
-          content: params.message.content,
-          messageType: params.message.messageType,
-          mediaUrl: sanitizeMediaUrlForRealtime(params.message.mediaUrl),
-          direction: params.message.direction,
-          status: params.message.status,
-          createdAt: params.message.createdAt,
-          correlationId: params.messageCorrelationId
+          id: previewMessage.id,
+          content: previewMessage.content,
+          messageType: previewMessage.messageType,
+          mediaUrl: sanitizeMediaUrlForRealtime(previewMessage.mediaUrl),
+          direction: previewMessage.direction,
+          status: previewMessage.status,
+          createdAt: previewMessage.createdAt,
+          correlationId: previewMessage.id === params.message.id
+            ? params.messageCorrelationId
+            : undefined
         }
       }
     });

@@ -19,10 +19,13 @@ Regras:
 - toda mudanca de responsabilidade entre arquivos deve ser registrada aqui;
 - se a alteracao impactar comportamento funcional, tambem atualizar `docs/backlog-execucao.md` e/ou `docs/sprints-execucao.md`;
 - este arquivo deve continuar sendo a referencia operacional para localizar rapidamente onde corrigir bugs e onde evoluir funcionalidades.
+- antes de codar na inbox, ler este arquivo e os docs vinculados no `docs/README.md` para evitar regressao de contrato.
+- nunca expor identificadores tecnicos no front (`@lid`, `@s.whatsapp.net`, `@g.us`, ids internos); quando nao houver nome humano, usar telefone.
+- nunca misturar avatar de fontes diferentes: card de grupo usa somente avatar do grupo; card de conversa direta usa somente avatar do contato.
 
 ## Ponto de entrada do modulo
 
-### `apps/web/components/omnichannel/OmnichannelInboxModule.vue`
+### `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
 
 Responsabilidade:
 
@@ -36,7 +39,7 @@ Uso:
 - este e o ponto de montagem do modulo dentro das paginas (`index`/`admin`).
 - alteracoes de contrato entre os paineis normalmente passam por este arquivo.
 
-## Componentes da pasta `apps/web/components/omnichannel/inbox`
+## Componentes da pasta `apps/omni-nuxt-ui/app/components/omnichannel/inbox`
 
 ### `InboxChatPanel.vue`
 
@@ -147,7 +150,8 @@ Responsabilidade:
 
 - player visual de audio dentro do chat;
 - exibe waveform simplificada/tempo;
-- suporta avatar do autor quando aplicavel.
+- suporta avatar do autor quando aplicavel;
+- cobre voice note (`AUDIO`) e tambem arquivo de audio enviado como `DOCUMENT` com MIME `audio/*`.
 
 ### `InboxChatFooter.vue`
 
@@ -176,7 +180,8 @@ Responsabilidade:
 
 - menu de anexos do botao `+`;
 - atalho visual para documento, foto/video, camera, audio, figurinha, contato e futuras entradas;
-- regra atual: `Audio` do menu envia arquivo de audio como documento (para manter abrir/baixar), enquanto o microfone segue no fluxo de voice note.
+- regra atual: `Audio` do menu envia arquivo de audio como documento (para manter sem compressao), enquanto o microfone segue no fluxo de voice note;
+- regra de render: mesmo em `DOCUMENT`, quando MIME for `audio/*` a inbox renderiza player inline + acoes de abrir/baixar.
 
 ### `InboxChatComposerEmojiMenu.vue`
 
@@ -193,6 +198,8 @@ Responsabilidade:
 - textarea do composer;
 - area de digitacao, menções e barra de resposta;
 - integra refs expostas para foco/controle de cursor.
+- regra UX: Esc no composer cancela o reply ativo (quando houver), sem enviar mensagem.
+- regra UX: clicar em Responder em outra mensagem substitui imediatamente o alvo atual do reply.
 
 ### `InboxChatComposerActions.vue`
 
@@ -207,7 +214,8 @@ Responsabilidade:
 
 - coluna esquerda;
 - alterna entre lista de conversas e lista de contatos;
-- busca, filtros, cards da sidebar e acao de novo contato.
+- busca, filtros, cards da sidebar e acao de novo contato;
+- acao `Importar WA` com preview (`create/update/skip`) antes de aplicar merge de contatos.
 
 ### `InboxDetailsSidebar.vue`
 
@@ -224,7 +232,7 @@ Responsabilidade:
 - tipos locais de renderizacao da inbox;
 - hoje usado principalmente para itens derivados de historico (`InboxRenderItem`) e contratos internos de UI.
 
-## Composables da pasta `apps/web/composables/omnichannel`
+## Composables da pasta `apps/omni-nuxt-ui/app/composables/omnichannel`
 
 ### `useInboxChatPresentation.ts`
 
@@ -402,7 +410,8 @@ Responsabilidade:
 - agregacao de badges por emoji;
 - resolucao da reacao do usuario atual;
 - montagem do menu de reacao rapida;
-- toggle de reacao via callback para o pai.
+- toggle de reacao via callback para o pai;
+- regra de consistencia: reacao do proprio numero WhatsApp usa `actorKey = wa:self` para evitar duplicidade entre origem painel e webhook.
 
 ### `useInboxChatSelection.ts`
 
@@ -476,6 +485,8 @@ Responsabilidade:
 - criar contato manual e abrir conversa;
 - salvar contato a partir de card de mensagem;
 - abrir conversa 1:1 a partir de contato salvo;
+- gerar preview da importacao de contatos do WhatsApp (`dryRun`);
+- aplicar importacao por lote e recarregar contatos/conversas apos merge.
 - sincronizar o `contactId` salvo de volta nas mensagens locais para refletir o novo estado do card sem recarregar a conversa.
 
 ### `useOmnichannelInboxConversationActions.ts`
@@ -536,6 +547,7 @@ Responsabilidade:
 - carga inicial e incremental de mensagens;
 - carga de participantes de grupo;
 - hidratacao tardia de midia em payloads realtime sanitizados.
+- sync de historico em background e refresh da pagina ativa quando houver processamento real (`processedCount > 0`), reduzindo abertura desatualizada.
 
 ### `useOmnichannelInboxOutboundPipeline.ts`
 
@@ -545,9 +557,11 @@ Responsabilidade:
 - envio de texto, midia e contato;
 - fallback BFF/fetch direto para anexos;
 - reconcile otimista de mensagens outbound;
+- metadata de reply outbound preserva `messageId` interno para jump local e `externalMessageId` para quote valido no WhatsApp;
 - envio de contato com metadata canonica (`contact` + `contacts[]`) para manter compatibilidade entre UI e worker;
 - voice note gravado segue como `AUDIO`;
-- arquivo de audio escolhido pelo menu passa como `DOCUMENT`, preservando o fluxo de abrir/baixar.
+- arquivo de audio escolhido pelo menu passa como `DOCUMENT`;
+- no render, documento de audio (`audio/*`) tem playback inline e continua com baixar/abrir.
 
 ### `useOmnichannelInboxRealtime.ts`
 
@@ -557,6 +571,8 @@ Responsabilidade:
 - conciliacao de `conversation.updated`, `message.created` e `message.updated`;
 - polling do status do WhatsApp;
 - sincronizacao de unread/mention/scroll no fluxo realtime.
+- ao conectar/reconectar socket, forca refresh de conversas e da conversa ativa para reduzir abertura com historico defasado.
+- quando socket entra em `disconnect/connect_error`, ativa fallback de refresh leve (polling controlado) ate reconectar, para evitar inbox "congelada" sem eventos.
 
 ### `useOmnichannelInboxMessageActions.ts`
 

@@ -74,6 +74,7 @@ import {
   updateStatusSchema
 } from "./schemas.js";
 import type { GroupParticipantResponse } from "./types.js";
+import { resolveConversationAccessScope } from "./access.js";
 
 
 export function registerConversationSandboxRoute(protectedApp: FastifyInstance) {
@@ -81,22 +82,31 @@ export function registerConversationSandboxRoute(protectedApp: FastifyInstance) 
       if (!requireConversationWrite(request, reply)) {
         return;
       }
+      const accessScope = await resolveConversationAccessScope(request);
 
       if (!env.SANDBOX_ENABLED) {
         return reply.code(400).send({
           message: "Sandbox desativado. Defina SANDBOX_ENABLED=true para usar conversa de teste."
         });
       }
+      if (accessScope.activeInstances.length > 0 && accessScope.accessibleInstances.length < 1) {
+        return reply.code(403).send({
+          message: "Usuario sem instancia WhatsApp atribuida para usar a sandbox."
+        });
+      }
 
       const externalId = resolveSandboxTestExternalId();
       const contactPhone = extractPhone(externalId) || null;
+      const defaultAccessibleInstance = accessScope.accessibleInstances[0] ?? null;
+      const instanceScopeKey = defaultAccessibleInstance?.instanceName ?? accessScope.accessibleScopeKeys[0] ?? "default";
 
       const conversation = await prisma.conversation.upsert({
         where: {
-          tenantId_externalId_channel: {
+          tenantId_externalId_channel_instanceScopeKey: {
             tenantId: request.authUser.tenantId,
             externalId,
-            channel: ChannelType.WHATSAPP
+            channel: ChannelType.WHATSAPP,
+            instanceScopeKey
           }
         },
         update: {
@@ -107,6 +117,8 @@ export function registerConversationSandboxRoute(protectedApp: FastifyInstance) 
         },
         create: {
           tenantId: request.authUser.tenantId,
+          instanceId: defaultAccessibleInstance?.id ?? null,
+          instanceScopeKey,
           channel: ChannelType.WHATSAPP,
           externalId,
           contactName: "Conversa de Teste (Sandbox)",

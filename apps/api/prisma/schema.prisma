@@ -14,6 +14,11 @@ enum UserRole {
   VIEWER
 }
 
+enum WhatsAppInstanceUserScopePolicy {
+  MULTI_INSTANCE
+  SINGLE_INSTANCE
+}
+
 enum ChannelType {
   WHATSAPP
   INSTAGRAM
@@ -59,7 +64,7 @@ model Tenant {
   whatsappInstance String?
   evolutionApiKey  String?
   maxChannels      Int            @default(1)
-  maxUsers         Int            @default(2)
+  maxUsers         Int            @default(3)
   retentionDays    Int            @default(15)
   maxUploadMb      Int            @default(500)
   createdAt        DateTime       @default(now())
@@ -71,6 +76,8 @@ model Tenant {
   savedStickers    SavedSticker[]
   contacts         Contact[]
   hiddenMessages   HiddenMessageForUser[]
+  whatsappInstances WhatsAppInstance[]
+  whatsappInstanceUserAccesses WhatsAppInstanceUserAccess[]
 }
 
 model User {
@@ -88,9 +95,54 @@ model User {
   auditEvents  AuditEvent[]
   savedStickers SavedSticker[] @relation("SavedStickerAuthor")
   hiddenMessages HiddenMessageForUser[]
+  whatsappInstanceAccesses WhatsAppInstanceUserAccess[]
+  createdWhatsAppInstances WhatsAppInstance[] @relation("WhatsAppInstanceCreator")
+  responsibleWhatsAppInstances WhatsAppInstance[] @relation("WhatsAppInstanceResponsible")
 
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+model WhatsAppInstance {
+  id               String   @id @default(cuid())
+  tenantId         String
+  instanceName     String
+  displayName      String?
+  phoneNumber      String?
+  evolutionApiKey  String?
+  queueLabel       String?
+  userScopePolicy  WhatsAppInstanceUserScopePolicy @default(MULTI_INSTANCE)
+  isDefault        Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdByUserId  String?
+  responsibleUserId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser    User?    @relation("WhatsAppInstanceCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  responsibleUser  User?    @relation("WhatsAppInstanceResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  conversations    Conversation[]
+  messages         Message[]
+  userAccesses     WhatsAppInstanceUserAccess[]
+
+  @@unique([tenantId, instanceName])
+  @@index([tenantId, isActive, isDefault])
+  @@index([tenantId, responsibleUserId])
+}
+
+model WhatsAppInstanceUserAccess {
+  id         String           @id @default(cuid())
+  tenantId   String
+  instanceId String
+  userId     String
+  createdAt  DateTime         @default(now())
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instance   WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, userId])
+  @@index([tenantId, userId])
+  @@index([tenantId, instanceId])
 }
 
 model SavedSticker {
@@ -113,6 +165,8 @@ model SavedSticker {
 model Conversation {
   id            String             @id @default(cuid())
   tenantId      String
+  instanceId    String?
+  instanceScopeKey String          @default("default")
   assignedToId  String?
   contactId     String?
   channel       ChannelType
@@ -125,21 +179,26 @@ model Conversation {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instance      WhatsAppInstance?  @relation(fields: [instanceId], references: [id], onDelete: SetNull)
   assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   contact       Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages      Message[]
   auditEvents   AuditEvent[]
 
-  @@unique([tenantId, externalId, channel])
+  @@unique([tenantId, externalId, channel, instanceScopeKey])
   @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([tenantId, instanceScopeKey, lastMessageAt(sort: Desc)])
   @@index([assignedToId])
   @@index([contactId])
+  @@index([instanceId])
 }
 
 model Message {
   id                String           @id @default(cuid())
   tenantId          String
   conversationId    String
+  instanceId        String?
+  instanceScopeKey  String           @default("default")
   senderUserId      String?
   direction         MessageDirection
   messageType       MessageType      @default(TEXT)
@@ -159,13 +218,16 @@ model Message {
   updatedAt         DateTime         @updatedAt
   tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  instance          WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
   senderUser        User?            @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   auditEvents       AuditEvent[]
   hiddenForUsers    HiddenMessageForUser[]
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, instanceScopeKey, createdAt])
   @@index([conversationId, createdAt])
   @@index([senderUserId])
+  @@index([instanceId])
 }
 
 model AuditEvent {

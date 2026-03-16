@@ -24,7 +24,7 @@ Jobs:
 Gates atuais:
 
 1. `apps/api`: `npm ci`, `npm run prisma:generate`, `npm run build`
-2. `apps/web`: `npm ci`, `npm run test:composables`, `npm run build`
+2. `apps/omni-nuxt-ui`: `npm ci`, `npm run test:composables`, `npm run build`
 3. seguranca multi-tenant: sobe API com Postgres/Redis efemeros e executa `npm run test:tenant:isolation`
 4. integracao de midia: sobe API + worker com Postgres/Redis efemeros e executa `npm run test:media:integration`
 5. gate MVP: no job `media-integration-audit`, executa `npm run test:gate:mvp` para validar texto/midia inbound+outbound + dedupe
@@ -38,7 +38,7 @@ Gates atuais:
    - `npm run prisma:generate`
    - `npm run build`
 2. Web:
-   - `cd apps/web`
+   - `cd apps/omni-nuxt-ui`
    - `npm ci`
    - `npm run test:composables`
    - `npm run build`

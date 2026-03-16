@@ -13,6 +13,7 @@ import {
 import { outboundQueueMaxAttempts, outboundQueueName } from "../queue.js";
 import { redisOptions, redisPublisher } from "../redis.js";
 import { recordAuditEvent } from "../services/audit-log.js";
+import { resolveConversationInstanceRouting } from "../services/whatsapp-instances.js";
 import {
   extractExternalMessageId,
   getEvolutionUrls,
@@ -97,6 +98,43 @@ function isUnrecoverableEvolutionError(status: number | undefined, responseData:
   return false;
 }
 
+function isTransientEvolutionConnectionError(
+  status: number | undefined,
+  responseData: unknown,
+  errorCode?: string
+) {
+  const normalizedMessages = extractEvolutionErrorMessages(responseData)
+    .join(" ")
+    .toLowerCase();
+  const normalizedCode = (errorCode ?? "").toLowerCase();
+
+  if (
+    normalizedMessages.includes("connection closed") ||
+    normalizedMessages.includes("connection failure") ||
+    normalizedMessages.includes("not connected") ||
+    normalizedMessages.includes("session closed") ||
+    normalizedMessages.includes("stream errored out") ||
+    normalizedMessages.includes("statusreason") ||
+    normalizedMessages.includes("1006")
+  ) {
+    return true;
+  }
+
+  if (
+    normalizedCode.includes("econnreset") ||
+    normalizedCode.includes("etimedout") ||
+    normalizedCode.includes("econnrefused")
+  ) {
+    return true;
+  }
+
+  if (!status) {
+    return false;
+  }
+
+  return status === 408 || status === 425 || status === 502 || status === 503 || status === 504;
+}
+
 type RetryCategory =
   | "unrecoverable"
   | "rate_limit"
@@ -114,6 +152,15 @@ function resolveRetryDecision(error: unknown): RetryDecision {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
     const responseData = error.response?.data;
+    const transientConnectionError = isTransientEvolutionConnectionError(status, responseData, error.code);
+
+    if (transientConnectionError) {
+      return {
+        retryable: true,
+        maxAttempts: outboundQueueMaxAttempts,
+        category: "network"
+      };
+    }
 
     if (isUnrecoverableEvolutionError(status, responseData)) {
       return {
@@ -264,7 +311,8 @@ const worker = new Worker(
       where: { id: messageId },
       include: {
         conversation: true,
-        tenant: true
+        tenant: true,
+        instance: true
       }
     });
 
@@ -286,8 +334,19 @@ const worker = new Worker(
     }
 
     try {
-      const instance = message.tenant.whatsappInstance ?? env.EVOLUTION_DEFAULT_INSTANCE;
-      const { textUrl, mediaUrl, audioUrl, contactUrl, stickerUrl } = getEvolutionUrls(instance ?? "");
+      const routedInstance = await resolveConversationInstanceRouting({
+        tenantId: message.tenantId,
+        conversation: {
+          instanceId: message.instanceId ?? message.conversation.instanceId,
+          instanceScopeKey: message.instanceScopeKey || message.conversation.instanceScopeKey
+        }
+      });
+      const instanceName =
+        routedInstance?.instanceName ||
+        message.instance?.instanceName ||
+        message.tenant.whatsappInstance ||
+        env.EVOLUTION_DEFAULT_INSTANCE;
+      const { textUrl, mediaUrl, audioUrl, contactUrl, stickerUrl } = getEvolutionUrls(instanceName ?? "");
 
       if (!env.EVOLUTION_BASE_URL) {
         await setStatus({
@@ -343,6 +402,7 @@ const worker = new Worker(
           audioUrl,
           stickerUrl,
           recipient,
+          conversationExternalId: message.conversation.externalId,
           messageType: message.messageType,
           mediaSource,
           caption,
@@ -414,6 +474,11 @@ const worker = new Worker(
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
         const unrecoverable = isUnrecoverableEvolutionError(error.response?.status, responseData);
+        const transientConnectionError = isTransientEvolutionConnectionError(
+          error.response?.status,
+          responseData,
+          error.code
+        );
         console.error("Falha no envio outbound", {
           messageId: message.id,
           correlationId,
@@ -423,6 +488,7 @@ const worker = new Worker(
           response: responseData,
           responseErrors: extractEvolutionErrorMessages(responseData),
           unrecoverable,
+          transientConnectionError,
           retryCategory: retryDecision.category,
           currentAttempt,
           configuredAttempts,
@@ -450,6 +516,7 @@ const worker = new Worker(
               errorCode: error.code ?? null,
               responseErrors: extractEvolutionErrorMessages(responseData),
               unrecoverable,
+              transientConnectionError,
               retryCategory: retryDecision.category,
               attemptsUsed: currentAttempt,
               maxAttemptsForError: Math.min(retryDecision.maxAttempts, configuredAttempts),

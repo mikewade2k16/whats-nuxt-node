@@ -19,9 +19,16 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - ${REDIS_MAXMEMORY_POLICY:-noeviction}
     volumes:
       - redis_data:/data
     healthcheck:
@@ -29,29 +36,69 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+  adminer:
+    image: adminer:4.8.1
+    profiles: ["ops"]
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "8088:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    profiles: ["ops"]
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8089:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   api:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run prisma:generate && npm run prisma:push && npm run prisma:seed && npm run dev"
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
+      npm run prisma:generate;
+      if [ \"${API_DB_BOOTSTRAP_ALWAYS:-false}\" = \"true\" ] || [ ! -f node_modules/.api-db-bootstrapped ]; then
+        npm run prisma:push && npm run prisma:seed && touch node_modules/.api-db-bootstrapped;
+      fi;
+      npm run dev"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       PORT: ${PORT}
       CORS_ORIGIN: ${CORS_ORIGIN}
       JWT_SECRET: ${JWT_SECRET}
+      CORE_API_BASE_URL: ${CORE_API_BASE_URL:-http://platform-core:4100}
+      CORE_API_EMAIL: ${CORE_API_EMAIL:-root@core.local}
+      CORE_API_PASSWORD: ${CORE_API_PASSWORD:-123456}
+      CORE_REQUEST_TIMEOUT_MS: ${CORE_REQUEST_TIMEOUT_MS:-15000}
+      CORE_ATENDIMENTO_MODULE_CODE: ${CORE_ATENDIMENTO_MODULE_CODE:-atendimento}
       EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_SEND_PATH: ${EVOLUTION_SEND_PATH}
       EVOLUTION_SEND_MEDIA_PATH: ${EVOLUTION_SEND_MEDIA_PATH}
       EVOLUTION_SEND_AUDIO_PATH: ${EVOLUTION_SEND_AUDIO_PATH}
-      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH}
-      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH}
+      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH:-/message/sendSticker/:instance}
+      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH:-/message/sendReaction/:instance}
       EVOLUTION_DEFAULT_INSTANCE: ${EVOLUTION_DEFAULT_INSTANCE}
       EVOLUTION_WEBHOOK_TOKEN: ${EVOLUTION_WEBHOOK_TOKEN}
+      WEBHOOK_IDEMPOTENCY_TTL_SECONDS: ${WEBHOOK_IDEMPOTENCY_TTL_SECONDS:-21600}
+      WEBHOOK_IDEMPOTENCY_PROCESSING_TTL_SECONDS: ${WEBHOOK_IDEMPOTENCY_PROCESSING_TTL_SECONDS:-120}
       WEBHOOK_RECEIVER_BASE_URL: ${WEBHOOK_RECEIVER_BASE_URL}
       RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-true}
       RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
+      NODE_OPTIONS: ${API_NODE_OPTIONS:---max-old-space-size=768}
     ports:
       - "4000:4000"
     depends_on:
@@ -62,11 +109,35 @@ services:
     volumes:
       - ./apps/api:/app
       - api_node_modules:/app/node_modules
+    restart: unless-stopped
+
+  platform-core:
+    build:
+      context: ./apps/platform-core
+      dockerfile: Dockerfile
+    environment:
+      CORE_DATABASE_URL: ${CORE_DATABASE_URL:-postgresql://omnichannel:omnichannel@postgres:5432/omnichannel}
+      CORE_DB_SCHEMA: ${CORE_DB_SCHEMA:-platform_core}
+      CORE_HTTP_ADDR: ${CORE_HTTP_ADDR:-:4100}
+      CORE_JWT_SECRET: ${CORE_JWT_SECRET:-change-this-core-secret}
+      CORE_JWT_ISSUER: ${CORE_JWT_ISSUER:-platform-core}
+      CORE_JWT_TTL_MINUTES: ${CORE_JWT_TTL_MINUTES:-60}
+      CORE_DEFAULT_USERS_LIMIT: ${CORE_DEFAULT_USERS_LIMIT:-3}
+      CORE_ALLOWED_ORIGINS: ${CORE_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORE_AUTO_MIGRATE: ${CORE_AUTO_MIGRATE:-true}
+    ports:
+      - "4100:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
   worker:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run prisma:generate && npm run worker:dev"
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
+      npm run prisma:generate && npm run worker:dev"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -76,11 +147,12 @@ services:
       EVOLUTION_SEND_PATH: ${EVOLUTION_SEND_PATH}
       EVOLUTION_SEND_MEDIA_PATH: ${EVOLUTION_SEND_MEDIA_PATH}
       EVOLUTION_SEND_AUDIO_PATH: ${EVOLUTION_SEND_AUDIO_PATH}
-      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH}
-      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH}
+      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH:-/message/sendSticker/:instance}
+      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH:-/message/sendReaction/:instance}
       EVOLUTION_DEFAULT_INSTANCE: ${EVOLUTION_DEFAULT_INSTANCE}
       RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-true}
       RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
+      NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=384}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,13 +168,16 @@ services:
   retention-worker:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run prisma:generate && npm run worker:retention:dev"
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
+      npm run prisma:generate && npm run worker:retention:dev"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-true}
       RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
+      NODE_OPTIONS: ${RETENTION_WORKER_NODE_OPTIONS:---max-old-space-size=256}
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,22 +193,26 @@ services:
   web:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    command: sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi; npm run dev -- --host 0.0.0.0 --port 3000"
     environment:
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE}
-      NUXT_GIF_PROVIDER: ${NUXT_GIF_PROVIDER}
-      NUXT_TENOR_API_KEY: ${NUXT_TENOR_API_KEY}
-      NUXT_TENOR_BASE_URL: ${NUXT_TENOR_BASE_URL}
+      NUXT_CORE_API_INTERNAL_BASE: ${NUXT_CORE_API_INTERNAL_BASE:-http://platform-core:4100}
+      NUXT_GIF_PROVIDER: ${NUXT_GIF_PROVIDER:-tenor}
+      NUXT_TENOR_API_KEY: ${NUXT_TENOR_API_KEY:-}
+      NUXT_TENOR_BASE_URL: ${NUXT_TENOR_BASE_URL:-https://tenor.googleapis.com/v2}
       PROJECT_DOCS_DIR: /project-docs
+      NODE_OPTIONS: ${WEB_NODE_OPTIONS:---max-old-space-size=1024}
     ports:
       - "3000:3000"
     depends_on:
       - api
+      - platform-core
     volumes:
-      - ./apps/web:/app
+      - ./apps/omni-nuxt-ui:/app
       - ./docs:/project-docs:ro
       - web_node_modules:/app/node_modules
+    restart: unless-stopped
 
   evolution:
     image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
@@ -165,6 +244,7 @@ services:
         condition: service_healthy
     volumes:
       - evolution_instances:/evolution/instances
+    restart: unless-stopped
 
 volumes:
   postgres_data:

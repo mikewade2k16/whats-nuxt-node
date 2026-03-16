@@ -1,4 +1,8 @@
 import { asRecord } from "./object-utils.js";
+import {
+  extractAvatarFromPayload,
+  pickFirstAvatar
+} from "./media.js";
 
 function pickFirstNonEmptyString(values: unknown[]) {
   for (const value of values) {
@@ -54,6 +58,32 @@ export function normalizeContactPhone(value: unknown) {
   return normalized.length >= 7 ? normalized : null;
 }
 
+function normalizeBase64Thumbnail(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith("data:image")) {
+    return trimmed;
+  }
+
+  const normalized = trimmed.replace(/\s+/g, "");
+  if (normalized.length < 96 || normalized.length > 5_000_000) {
+    return null;
+  }
+
+  if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) {
+    return null;
+  }
+
+  return `data:image/jpeg;base64,${normalized}`;
+}
+
 export function extractInboundContactMetadata(params: {
   contactMessage: Record<string, unknown>;
   contactsArrayMessage: Record<string, unknown>;
@@ -73,16 +103,15 @@ export function extractInboundContactMetadata(params: {
     ? pickFirstNonEmptyString([firstArrayContact.vcard])
     : null;
 
-  const name =
+  const explicitName =
     pickFirstNonEmptyString([
       params.contactMessage.displayName,
       params.contactMessage.fullName,
       params.contactsArrayMessage.displayName,
       firstArrayContact?.displayName,
-      firstArrayContact?.fullName,
-      params.senderName
+      firstArrayContact?.fullName
     ]) ??
-    "Contato";
+    null;
 
   const phone =
     normalizeContactPhone(params.contactMessage.phoneNumber) ??
@@ -93,13 +122,48 @@ export function extractInboundContactMetadata(params: {
     parsePhoneFromVcard(firstArrayVcard);
 
   const resolvedVcard = vcard ?? firstArrayVcard;
+  const avatarUrl =
+    pickFirstAvatar([
+      params.contactMessage.profilePicUrl,
+      params.contactMessage.profilePictureUrl,
+      params.contactMessage.pictureUrl,
+      params.contactMessage.avatarUrl,
+      params.contactMessage.thumb,
+      params.contactMessage.jpegThumbnail,
+      firstArrayContact?.profilePicUrl,
+      firstArrayContact?.profilePictureUrl,
+      firstArrayContact?.pictureUrl,
+      firstArrayContact?.avatarUrl,
+      firstArrayContact?.thumb,
+      firstArrayContact?.jpegThumbnail
+    ]) ??
+    normalizeBase64Thumbnail(params.contactMessage.jpegThumbnail) ??
+    normalizeBase64Thumbnail(firstArrayContact?.jpegThumbnail) ??
+    extractAvatarFromPayload(params.contactMessage, [
+      "profilePicUrl",
+      "profilePictureUrl",
+      "pictureUrl",
+      "avatarUrl",
+      "thumb",
+      "jpegThumbnail",
+      "thumbnail"
+    ]) ??
+    extractAvatarFromPayload(firstArrayContact, [
+      "profilePicUrl",
+      "profilePictureUrl",
+      "pictureUrl",
+      "avatarUrl",
+      "thumb",
+      "jpegThumbnail",
+      "thumbnail"
+    ]);
 
-  if (!name && !phone && !resolvedVcard) {
+  if (!phone && !resolvedVcard) {
     return null;
   }
 
   const metadata: Record<string, unknown> = {
-    name: name || "Contato"
+    name: explicitName || params.senderName || "Contato"
   };
 
   if (phone) {
@@ -108,6 +172,10 @@ export function extractInboundContactMetadata(params: {
 
   if (resolvedVcard) {
     metadata.vcard = resolvedVcard;
+  }
+
+  if (avatarUrl) {
+    metadata.avatarUrl = avatarUrl;
   }
 
   return metadata;

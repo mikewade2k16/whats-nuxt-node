@@ -2,12 +2,14 @@ import axios from "axios";
 import { MessageType } from "@prisma/client";
 import { env } from "../../config.js";
 import { normalizeMediaForEvolution } from "./common.js";
+import { extractQuoted } from "./quoted.js";
 
 type SendMediaMessageParams = {
   mediaUrl: string | null;
   audioUrl: string | null;
   stickerUrl: string | null;
   recipient: string;
+  conversationExternalId?: string | null;
   messageType: MessageType;
   mediaSource: string;
   caption: string | null;
@@ -125,18 +127,21 @@ function defaultFileName(mediaType: MessageType, mimeType: string) {
 
 function buildMediaPayload(params: {
   recipient: string;
+  conversationExternalId?: string | null;
   mediaType: MessageType;
   mediaSource: string;
   caption: string | null;
   fileName: string | null;
   mimeType: string | null;
+  metadataJson?: unknown;
 }) {
   const mediaType = toEvolutionMediaTypeForMediaEndpoint(params.mediaType);
   const normalizedMimeType = normalizeMimeType(params.mimeType, params.mediaType, mediaType);
   const fallbackFileName = defaultFileName(params.mediaType, normalizedMimeType);
   const normalizedFileName = sanitizeFileName(params.fileName?.trim() || fallbackFileName);
+  const quoted = extractQuoted(params.metadataJson, params.conversationExternalId?.trim() || null);
 
-  return {
+  const payload: Record<string, unknown> = {
     number: params.recipient,
     media: normalizeMediaForEvolution(params.mediaSource),
     mediatype: mediaType,
@@ -145,21 +150,30 @@ function buildMediaPayload(params: {
     mimetype: normalizedMimeType,
     caption: params.caption ?? ""
   };
+
+  if (quoted) {
+    payload.quoted = quoted;
+  }
+
+  return payload;
 }
 
 function buildAudioPayload(params: {
   recipient: string;
+  conversationExternalId?: string | null;
   mediaSource: string;
   fileName: string | null;
   mimeType: string | null;
   ptt: boolean;
+  metadataJson?: unknown;
 }) {
   const normalizedMedia = normalizeMediaForEvolution(params.mediaSource);
   const normalizedMimeType = params.mimeType?.trim().toLowerCase() || "audio/ogg";
   const fallbackFileName = defaultFileName(MessageType.AUDIO, normalizedMimeType);
   const normalizedFileName = sanitizeFileName(params.fileName?.trim() || fallbackFileName);
+  const quoted = extractQuoted(params.metadataJson, params.conversationExternalId?.trim() || null);
 
-  return {
+  const payload: Record<string, unknown> = {
     number: params.recipient,
     audio: normalizedMedia,
     media: normalizedMedia,
@@ -167,6 +181,12 @@ function buildAudioPayload(params: {
     fileName: normalizedFileName,
     mimetype: normalizedMimeType
   };
+
+  if (quoted) {
+    payload.quoted = quoted;
+  }
+
+  return payload;
 }
 
 function resolveAudioPtt(metadataJson: unknown) {
@@ -260,16 +280,18 @@ function ensureMediaEndpoint(mediaUrl: string | null) {
 async function sendByMediaEndpoint(params: SendMediaMessageParams, messageType: MessageType) {
   const response = await axios.post(
     ensureMediaEndpoint(params.mediaUrl),
-    buildMediaPayload({
-      recipient: params.recipient,
-      mediaType: messageType,
-      mediaSource: params.mediaSource,
-      caption: params.caption,
-      fileName: params.fileName,
-      mimeType: params.mimeType
-    }),
-    buildRequestConfig(params.apiKey)
-  );
+      buildMediaPayload({
+        recipient: params.recipient,
+        conversationExternalId: params.conversationExternalId,
+        mediaType: messageType,
+        mediaSource: params.mediaSource,
+        caption: params.caption,
+        fileName: params.fileName,
+        mimeType: params.mimeType,
+        metadataJson: params.metadataJson
+      }),
+      buildRequestConfig(params.apiKey)
+    );
 
   return response.data;
 }
@@ -300,10 +322,12 @@ export async function sendAudioMessage(params: SendMediaMessageParams) {
       params.audioUrl,
       buildAudioPayload({
         recipient: params.recipient,
+        conversationExternalId: params.conversationExternalId,
         mediaSource: params.mediaSource,
         fileName: params.fileName,
         mimeType: params.mimeType,
-        ptt: resolveAudioPtt(params.metadataJson)
+        ptt: resolveAudioPtt(params.metadataJson),
+        metadataJson: params.metadataJson
       }),
       buildRequestConfig(params.apiKey)
     );

@@ -25,6 +25,7 @@ Correlation id (observabilidade):
 | GET | `/tenant` | Sim | `apps/api/src/routes/tenant.ts` |
 | GET | `/tenant/audit-events` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
 | GET | `/tenant/metrics/failures` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
+| GET | `/tenant/metrics/http-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
 | PATCH | `/tenant` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
 | GET | `/tenant/whatsapp/status` | Sim | `apps/api/src/routes/tenant.ts` |
 | POST | `/tenant/whatsapp/validate-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
@@ -34,14 +35,21 @@ Correlation id (observabilidade):
 | POST | `/tenant/whatsapp/logout` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
 | GET | `/users` | Sim | `apps/api/src/routes/users.ts` |
 | POST | `/users` | Sim (ADMIN) | `apps/api/src/routes/users.ts` |
-| PATCH | `/users/:userId` | Sim (ADMIN) | `apps/api/src/routes/users.ts` |
+| PATCH | `/users/:userId` | Sim (ADMIN) | `apps/api/src/routes/users.ts` (desativado: `501`) |
+| GET | `/contacts` | Sim | `apps/api/src/routes/contacts.ts` |
+| POST | `/contacts` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
+| PATCH | `/contacts/:contactId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
+| POST | `/contacts/:contactId/open-conversation` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
+| POST | `/contacts/import-whatsapp` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
 | GET | `/stickers` | Sim | `apps/api/src/routes/stickers.ts` |
 | POST | `/stickers` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/stickers.ts` |
 | DELETE | `/stickers/:stickerId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/stickers.ts` |
 | GET | `/conversations` | Sim | `apps/api/src/routes/conversations.ts` |
+| POST | `/conversations/sync-open` | Sim | `apps/api/src/routes/conversations/routes-core-sync-open.ts` |
 | GET | `/conversations/sandbox/test` | Sim | `apps/api/src/routes/conversations.ts` |
 | POST | `/conversations` | Sim | `apps/api/src/routes/conversations.ts` |
 | GET | `/conversations/:conversationId/messages` | Sim | `apps/api/src/routes/conversations.ts` |
+| POST | `/conversations/:conversationId/messages/sync-history` | Sim | `apps/api/src/routes/conversations.ts` |
 | GET | `/conversations/:conversationId/messages/:messageId` | Sim | `apps/api/src/routes/conversations.ts` |
 | GET | `/conversations/:conversationId/messages/:messageId/media` | Sim | `apps/api/src/routes/conversations.ts` |
 | POST | `/conversations/:conversationId/messages` | Sim | `apps/api/src/routes/conversations.ts` |
@@ -58,12 +66,12 @@ Estas rotas existem no `web` para leitura dos arquivos `.md`:
 
 | Metodo | Rota | Auth | Arquivo |
 | --- | --- | --- | --- |
-| GET | `/api/docs` | Sessao no front | `apps/web/server/api/docs/index.get.ts` |
-| GET | `/api/docs/:slug` | Sessao no front | `apps/web/server/api/docs/[slug].get.ts` |
+| GET | `/api/docs` | Sessao no front | `apps/omni-nuxt-ui/server/api/docs/index.get.ts` |
+| GET | `/api/docs/:slug` | Sessao no front | `apps/omni-nuxt-ui/server/api/docs/[slug].get.ts` |
 
 Implementacao de leitura e parse de checklist:
 
-- `apps/web/server/utils/project-docs.ts`
+- `apps/omni-nuxt-ui/server/utils/project-docs.ts`
 
 Campos de BI retornados por `/api/docs` e `/api/docs/:slug`:
 
@@ -124,9 +132,23 @@ Response:
     "email": "admin@demo.local",
     "name": "Admin Demo",
     "role": "ADMIN"
+  },
+  "coreAccessToken": "jwt-core",
+  "coreUser": {
+    "id": "uuid",
+    "name": "Admin Demo",
+    "email": "admin@demo.local",
+    "isPlatformAdmin": false,
+    "tenantId": "uuid-tenant-core"
   }
 }
 ```
+
+Observacoes:
+
+1. Credenciais sao validadas no `platform-core` (Go).
+2. O token `token` e a sessao JWT do modulo de atendimento (Node), emitida apos validacao no core.
+3. `coreAccessToken` e retornado para o front acessar `/api/core-bff/*` sem segundo login.
 
 ### `POST /tenant/whatsapp/bootstrap`
 
@@ -256,12 +278,145 @@ Response (resumo):
 }
 ```
 
+### `GET /tenant/metrics/http-endpoints`
+
+Uso:
+
+1. Dashboard tecnico de latencia e taxa de erro por endpoint HTTP da API.
+2. Suporta perfis `ADMIN` e `SUPERVISOR`.
+
+Query:
+
+1. `limit` (opcional, default `20`, max `100`)
+2. `sortBy` (opcional, `p95|avg|errors|requests`, default `p95`)
+3. `order` (opcional, `asc|desc`, default `desc`)
+4. `routeContains` (opcional, filtro por trecho de rota)
+
+Response (resumo):
+
+```json
+{
+  "generatedAt": "2026-03-05T23:30:00.000Z",
+  "startedAt": "2026-03-05T20:10:00.000Z",
+  "uptimeSeconds": 12000,
+  "summary": {
+    "totalRequests": 540,
+    "totalErrors": 12,
+    "clientErrors": 7,
+    "serverErrors": 5,
+    "errorRatePercent": 2.22
+  },
+  "endpoints": [
+    {
+      "key": "GET /conversations",
+      "method": "GET",
+      "route": "/conversations",
+      "totalRequests": 130,
+      "errors": 2,
+      "clientErrors": 2,
+      "serverErrors": 0,
+      "errorRatePercent": 1.54,
+      "avgMs": 143.72,
+      "p95Ms": 389.11,
+      "minMs": 11.52,
+      "maxMs": 771.21,
+      "lastStatusCode": 200,
+      "lastSeenAt": "2026-03-05T23:29:58.000Z"
+    }
+  ]
+}
+```
+
 ### `POST /users`
 
 Regras de limite (plano):
 
-1. Usa `tenant.maxUsers` para bloquear criacao de usuario acima do limite.
-2. Quando limite for atingido, retorna `409` com detalhes (`maxUsers`, `currentUsers`).
+1. A criacao passou a usar `platform-core` como fonte de verdade (`/core/tenants/{tenantId}/users/invite`).
+2. A API de atendimento sincroniza o usuario no banco local apenas como shadow tecnico para manter compatibilidade de atribuicao/conversas.
+3. Quando o `platform-core` estiver indisponivel ou rejeitar a operacao, a API retorna o erro equivalente.
+
+### `PATCH /users/:userId` e `DELETE /users/:userId`
+
+1. Fluxo legado desativado para evitar duplicidade de gestao de usuarios.
+2. Ambas as rotas retornam `501`.
+3. Gestao de edicao/remocao deve ser feita no painel core (`/admin/core`).
+
+### `POST /contacts/import-whatsapp`
+
+Uso:
+
+1. Gerar preview e importar contatos salvos na instancia WhatsApp conectada para `Contact` do tenant.
+2. Aplicar dedupe por telefone/JID com decisao `create/update/skip`.
+3. Sincronizar `contactId` e dados do contato nas conversas diretas apos o merge.
+
+Payload (preview):
+
+```json
+{
+  "dryRun": true,
+  "updateExisting": true,
+  "overwriteNames": false,
+  "overwriteAvatars": false,
+  "includeGroups": false,
+  "limit": 500
+}
+```
+
+Payload (aplicar merge):
+
+```json
+{
+  "dryRun": false,
+  "updateExisting": true,
+  "overwriteNames": false,
+  "overwriteAvatars": false,
+  "includeGroups": false,
+  "limit": 500,
+  "selectedPhones": ["5511999999999", "5511911111111"]
+}
+```
+
+Response (resumo):
+
+```json
+{
+  "dryRun": true,
+  "generatedAt": "2026-03-06T23:10:00.000Z",
+  "summary": {
+    "totalProviderRecords": 120,
+    "candidates": 98,
+    "create": 35,
+    "update": 12,
+    "skip": 51,
+    "invalid": 4,
+    "selected": 98
+  },
+  "items": [
+    {
+      "phone": "5511999999999",
+      "remoteJid": "5511999999999@s.whatsapp.net",
+      "name": "Contato Exemplo",
+      "avatarUrl": "https://...",
+      "existingContactId": null,
+      "existingName": null,
+      "existingAvatarUrl": null,
+      "action": "create",
+      "reason": "Novo contato identificado no WhatsApp."
+    }
+  ],
+  "applied": null,
+  "warnings": []
+}
+```
+
+Regras:
+
+1. Requer perfil com escrita (`ADMIN`, `SUPERVISOR` ou `AGENT`).
+2. Quando `dryRun=true`, retorna apenas preview para revisao antes do merge.
+3. Quando `dryRun=false`, executa criacao/atualizacao por lote e retorna `applied.created/updated/skipped/failed`.
+4. Se `selectedPhones` for enviado, o merge aplica somente aos telefones selecionados.
+5. O endpoint tenta usar a instancia WhatsApp do tenant; sem instancia configurada retorna `400`.
+6. Erros de conector Evolution retornam status/erro detalhado para ajuste operacional.
 
 ### `GET /stickers`
 
@@ -441,6 +596,40 @@ Campos chave no retorno:
 5. `lastMessage.mediaUrl`: URL de midia quando aplicavel.
    - para eventos/listagem realtime, `data:` URI e sanitizada (retorna `null`) para evitar payload muito pesado.
 
+### `POST /conversations/sync-open`
+
+Uso: importar/atualizar conversas abertas da instancia WhatsApp (Evolution) para a lista local do tenant.
+
+Payload (opcional):
+
+```json
+{
+  "limitConversations": 200,
+  "includeGroups": true
+}
+```
+
+Response (resumo):
+
+```json
+{
+  "instanceName": "demo-instance",
+  "fetchedChatsCount": 344,
+  "selectedChatsCount": 200,
+  "createdCount": 31,
+  "updatedCount": 14,
+  "skippedCount": 155,
+  "totalConversationsAfterSync": 202
+}
+```
+
+Regras:
+
+1. Requer permissao de escrita na inbox (`ADMIN`, `SUPERVISOR`, `AGENT`).
+2. Retorna `409` quando a instancia estiver desconectada.
+3. Deduplica por `remoteJid` e evita regredir `lastMessageAt`.
+4. Nomes tecnicos (`@lid`, JID puro, numero cru) nao sobrescrevem nome humano ja salvo.
+
 ### `GET /conversations/:conversationId/messages`
 
 Uso: carregar mensagens da conversa com paginacao para historico (scroll infinito).
@@ -466,6 +655,48 @@ Regra:
 2. Com `beforeId`, retorna mensagens anteriores a essa ancora.
 3. `hasMore=true` indica que ainda existe historico para carregar.
 4. Cada mensagem pode incluir metadados de midia (`messageType`, `mediaUrl`, `mediaMimeType`, etc.).
+
+### `POST /conversations/:conversationId/messages/sync-history`
+
+Uso: sincronizar historico da conversa direto da Evolution (backfill para mensagens que nao chegaram por webhook durante desconexao).
+
+Payload (opcional):
+
+```json
+{
+  "maxMessages": 300,
+  "page": 1
+}
+```
+
+Response (resumo):
+
+```json
+{
+  "conversationId": "cuid",
+  "externalId": "5511999999999@s.whatsapp.net",
+  "conversationLastMessageAt": "2026-03-11T13:22:11.000Z",
+  "queryVariant": "where.key+limit",
+  "queryAttempts": 4,
+  "queryCandidates": 2,
+  "fetchedCount": 320,
+  "selectedCount": 300,
+  "processedCount": 300,
+  "createdCount": 12,
+  "deduplicatedCount": 288,
+  "ignoredCount": 0,
+  "failedCount": 0,
+  "firstFailureMessage": null
+}
+```
+
+Regras:
+
+1. Disponivel para perfis com escrita na inbox (`ADMIN`, `SUPERVISOR`, `AGENT`).
+2. Disponivel apenas para conversa `WHATSAPP`.
+3. Consulta Evolution via `findMessages` escopada por `where.key.remoteJid`, com estrategias de compatibilidade apenas de paginacao (`offset/limit`).
+4. Reaproveita o mesmo pipeline de webhook para deduplicacao/normalizacao.
+5. Mensagens novas respeitam timestamp original do provedor (`messageTimestamp`) na coluna `createdAt`.
 
 ### `GET /conversations/:conversationId/messages/:messageId`
 
@@ -530,10 +761,12 @@ Payload com reply estruturado:
   "content": "Perfeito, combinado",
   "metadataJson": {
     "reply": {
-      "messageId": "cuid-da-msg-original",
+      "messageId": "cuid-da-msg-original-no-banco",
+      "externalMessageId": "BAE5F8A0A1D2C3",
       "author": "Contato",
       "content": "Mensagem original resumida",
-      "messageType": "TEXT"
+      "messageType": "TEXT",
+      "fromMe": false
     }
   }
 }
@@ -548,7 +781,9 @@ Regras:
 5. `mediaUrl` aceita URL HTTP/HTTPS e `data:` URL (base64) para teste rapido no MVP.
 6. No worker outbound, `data:*;base64,...` e convertido para base64 puro antes da chamada `sendMedia`.
    - Evolution `v2.3.7` retorna `400` (`Owned media must be a url or base64`) se receber `data:` URI crua.
-7. Para conversas de grupo, o front pode enviar `metadataJson.mentions`:
+7. Em reply outbound, `metadataJson.reply.externalMessageId` deve carregar o ID real do provedor para que o WhatsApp mantenha o link clicavel para a mensagem original.
+8. O worker envia `quoted` no formato minimo (`{ key: { id } }`) para evitar mismatch de `remoteJid/fromMe/participant` no provedor.
+9. Para conversas de grupo, o front pode enviar `metadataJson.mentions`:
 
 ```json
 {
