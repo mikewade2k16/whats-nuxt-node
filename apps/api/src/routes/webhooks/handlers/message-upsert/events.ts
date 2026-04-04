@@ -130,6 +130,8 @@ export async function publishMessageUpsertEvents(params: PublishMessageUpsertEve
         channel: conversationForEvent.channel,
         status: conversationForEvent.status,
         externalId: conversationForEvent.externalId,
+        instanceId: conversationForEvent.instanceId,
+        instanceScopeKey: conversationForEvent.instanceScopeKey,
         contactId: conversationForEvent.contactId,
         contactName: conversationForEvent.contactName,
         contactAvatarUrl: conversationForEvent.contactAvatarUrl,

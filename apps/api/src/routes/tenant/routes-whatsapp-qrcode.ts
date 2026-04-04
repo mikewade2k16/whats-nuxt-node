@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { requireAdmin } from "../../lib/guards.js";
 import { EvolutionApiError } from "../../services/evolution-client.js";
-import { getLatestQrCode, setLatestQrCode } from "../../services/whatsapp-qr-cache.js";
+import {
+  deleteLatestQrCode,
+  getLatestQrCode,
+  setLatestQrCode
+} from "../../services/whatsapp-qr-cache.js";
 import {
   createEvolutionClientOrThrow,
   extractQrAndPairing,
@@ -48,6 +52,39 @@ function canAttemptForcedConnect(params: {
   };
 }
 
+function buildMissingEvolutionInstanceQrPayload(params: {
+  instanceId: string;
+  instanceName: string;
+}) {
+  return {
+    configured: false,
+    instanceId: params.instanceId,
+    instanceName: params.instanceName,
+    qrCode: null,
+    pairingCode: null,
+    source: "missing-instance",
+    message: "Instancia cadastrada no tenant, mas ainda nao existe na Evolution. Clique em Configurar WhatsApp para criar o canal primeiro."
+  };
+}
+
+function buildRefusedQrPayload(params: {
+  instanceId: string;
+  instanceName: string;
+  connectionState: Record<string, unknown>;
+}) {
+  return {
+    configured: true,
+    instanceId: params.instanceId,
+    instanceName: params.instanceName,
+    qrCode: null,
+    pairingCode: null,
+    source: "refused",
+    connectionState: params.connectionState,
+    message:
+      "O ultimo pareamento foi recusado pela Evolution ou o limite de QR foi atingido. Clique em Conectar por QR para resetar a sessao e gerar um novo codigo."
+  };
+}
+
 export function registerTenantWhatsAppQrCodeRoute(protectedApp: FastifyInstance) {
   protectedApp.get("/tenant/whatsapp/qrcode", async (request, reply) => {
     if (!requireAdmin(request, reply)) {
@@ -76,8 +113,29 @@ export function registerTenantWhatsAppQrCodeRoute(protectedApp: FastifyInstance)
     try {
       const client = createEvolutionClientOrThrow(tenant.evolutionApiKey);
       const instanceName = instance.instanceName;
-      const connectionStateBefore = await client.getConnectionState(instanceName);
+      let connectionStateBefore: Record<string, unknown>;
+      try {
+        connectionStateBefore = await client.getConnectionState(instanceName);
+      } catch (error) {
+        if (error instanceof EvolutionApiError && error.statusCode === 404) {
+          return buildMissingEvolutionInstanceQrPayload({
+            instanceId: instance.id,
+            instanceName
+          });
+        }
+
+        throw error;
+      }
       const stateBefore = normalizeConnectionState(connectionStateBefore);
+
+      if (stateBefore === "refused") {
+        await deleteLatestQrCode(tenant.id, instanceName);
+        return buildRefusedQrPayload({
+          instanceId: instance.id,
+          instanceName,
+          connectionState: connectionStateBefore
+        });
+      }
 
       let qrCode: string | null = null;
       let pairingCode: string | null = null;

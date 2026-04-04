@@ -22,6 +22,7 @@ export function useOmnichannelInboxState() {
   const users = ref<TenantUser[]>([]);
   const whatsappInstances = ref<WhatsAppInstanceRecord[]>([]);
   const messages = ref<Message[]>([]);
+  const visibleMessagesConversationId = ref<string | null>(null);
 
   const activeConversationId = ref<string | null>(null);
   const leftCollapsed = ref(false);
@@ -47,6 +48,7 @@ export function useOmnichannelInboxState() {
 
   const hasMoreMessages = ref(false);
   const showLoadOlderMessagesButton = ref(false);
+  const showScrollToLatestButton = ref(false);
   const stickyDateLabel = ref("");
   const showStickyDate = ref(false);
 
@@ -74,6 +76,7 @@ export function useOmnichannelInboxState() {
     users,
     whatsappInstances,
     messages,
+    visibleMessagesConversationId,
     activeConversationId,
     leftCollapsed,
     rightCollapsed,
@@ -96,6 +99,7 @@ export function useOmnichannelInboxState() {
     updatingAssignee,
     hasMoreMessages,
     showLoadOlderMessagesButton,
+    showScrollToLatestButton,
     stickyDateLabel,
     showStickyDate,
     draft,

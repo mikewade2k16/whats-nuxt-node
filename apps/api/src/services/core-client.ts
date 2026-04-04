@@ -68,13 +68,26 @@ export interface CoreAuthUser {
   id: string;
   name: string;
   email: string;
+  nick?: string | null;
+  profileImage?: string | null;
   isPlatformAdmin: boolean;
   tenantId?: string;
+  clientId?: number | null;
+  clientName?: string;
+  level?: string;
+  userType?: string;
+  preferences?: string;
+  moduleCodes?: string[];
+  atendimentoAccess?: boolean;
 }
 
 interface CoreAuthLoginResponse {
   accessToken: string;
   expiresAt?: string;
+  user?: CoreAuthUser;
+}
+
+interface CoreAuthMeResponse {
   user?: CoreAuthUser;
 }
 
@@ -274,6 +287,53 @@ export class PlatformCoreClient {
       }
 
       throw new CoreApiError("Falha ao autenticar usuario no platform-core.", 500, null);
+    }
+  }
+
+  async getMe(accessToken: string) {
+    const normalizedToken = accessToken.trim();
+    if (!normalizedToken) {
+      throw new CoreApiError("Token do platform-core ausente.", 401, null);
+    }
+
+    try {
+      const response = await axios.request<CoreAuthMeResponse>({
+        method: "GET",
+        url: `${this.baseUrl}/core/auth/me`,
+        timeout: this.timeoutMs,
+        headers: {
+          Authorization: normalizedToken.startsWith("Bearer ")
+            ? normalizedToken
+            : `Bearer ${normalizedToken}`
+        }
+      });
+
+      const user = response.data.user;
+      if (!user?.id || !user?.email) {
+        throw new CoreApiError("Resposta invalida do platform-core (perfil ausente).", 500, response.data);
+      }
+
+      return user;
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        throw error;
+      }
+
+      if (error instanceof AxiosError) {
+        const statusCode = error.response?.status ?? 500;
+        const details = error.response?.data ?? null;
+        const message =
+          (typeof details === "object" &&
+            details !== null &&
+            "message" in details &&
+            typeof (details as { message?: unknown }).message === "string" &&
+            String((details as { message: string }).message).trim()) ||
+          error.message ||
+          "Falha ao carregar perfil no platform-core.";
+        throw new CoreApiError(message, statusCode, details);
+      }
+
+      throw new CoreApiError("Falha ao carregar perfil no platform-core.", 500, null);
     }
   }
 

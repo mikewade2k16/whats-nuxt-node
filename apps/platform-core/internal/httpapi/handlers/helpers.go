@@ -33,6 +33,11 @@ func decodeJSON(r *http.Request, destination any) error {
 	return nil
 }
 
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, limit int64, destination any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	return decodeJSON(r, destination)
+}
+
 func required(value string) bool {
 	return strings.TrimSpace(value) != ""
 }

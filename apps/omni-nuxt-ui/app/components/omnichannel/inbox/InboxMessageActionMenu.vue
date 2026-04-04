@@ -19,6 +19,10 @@ const emit = defineEmits<{
 
 const actionItems = computed(() => [[
   {
+    label: "Responder",
+    onSelect: () => emit("reply")
+  },
+  {
     label: props.isSelected ? "Desmarcar" : "Selecionar",
     onSelect: () => emit("toggle-select")
   },
@@ -44,16 +48,12 @@ const actionItems = computed(() => [[
       <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-smile" :disabled="!canManageConversation" />
     </UDropdownMenu>
 
-    <UButton size="xs" color="neutral" variant="ghost" :disabled="!canManageConversation" @click="emit('reply')">
-      Responder
-    </UButton>
-
     <UDropdownMenu :items="actionItems" :content="{ side: 'top', align: 'end', sideOffset: 8 }">
       <UButton
         size="xs"
         color="neutral"
         variant="ghost"
-        icon="i-lucide-ellipsis-vertical"
+        icon="i-lucide-chevron-down"
         :disabled="!canManageConversation"
       />
     </UDropdownMenu>

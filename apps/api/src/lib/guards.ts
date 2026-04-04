@@ -1,6 +1,23 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { UserRole } from "@prisma/client";
-import { resolveCoreAtendimentoAccessByEmail } from "../services/core-atendimento-access.js";
+import { resolveCoreAtendimentoAccessByEmail, resolveTenantHasAtendimentoModule } from "../services/core-atendimento-access.js";
+
+export async function requirePlatformAdmin(request: FastifyRequest, reply: FastifyReply) {
+  if (!requireAdmin(request, reply)) {
+    return false;
+  }
+
+  const access = await resolveCoreAtendimentoAccessByEmail(
+    String(request.authUser?.email ?? "").trim().toLowerCase()
+  );
+
+  if (!access.isPlatformAdmin) {
+    reply.code(403).send({ message: "Acesso exclusivo para administradores da plataforma" });
+    return false;
+  }
+
+  return true;
+}
 
 function requireRoles(
   request: FastifyRequest,
@@ -51,6 +68,15 @@ export async function requireAtendimentoModuleAccess(request: FastifyRequest, re
   }
 
   try {
+    const tenantSlug = String(request.authUser?.tenantSlug ?? "").trim();
+    if (tenantSlug) {
+      const tenantHasModule = await resolveTenantHasAtendimentoModule(tenantSlug);
+      if (!tenantHasModule) {
+        reply.code(403).send({ message: "Cliente nao possui o modulo de atendimento ativo" });
+        return false;
+      }
+    }
+
     const access = await resolveCoreAtendimentoAccessByEmail(email);
     const isSuperRoot = access.isPlatformAdmin
       && access.userType === "admin"

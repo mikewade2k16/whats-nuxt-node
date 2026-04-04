@@ -1,9 +1,17 @@
 import type {
+  FinanceDetailResponse,
+  FinanceLineMutationResponse,
   FinanceLineItem,
   FinanceSheetItem,
+  FinanceSheetListItem,
   FinancesListResponse,
   FinanceMutationResponse
 } from '~/types/finances'
+import {
+  isFinanceUuid,
+  normalizeFinanceEntityId,
+  normalizeFinanceLinkedUuid
+} from '~/utils/finance-ids'
 
 interface FinancesFetchOptions {
   q?: string
@@ -33,7 +41,14 @@ interface FinanceUpdatePayload {
   clientName?: string
 }
 
+interface FinanceLinePatchPayload {
+  effective?: boolean
+  effectiveDate?: string
+}
+
 const DEFAULT_FETCH_LIMIT = 240
+const FINANCE_SHEETS_API_BASE = '/api/admin/finance-sheets'
+const COLLECTION_KEY = '__collection__'
 
 function normalizeText(value: unknown, max = 12000) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
@@ -55,6 +70,11 @@ function normalizeDate(value: unknown) {
   if (!raw) return ''
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
   return ''
+}
+
+function normalizeSheetId(value: unknown) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  return isFinanceUuid(raw) ? raw : ''
 }
 
 function normalizeAmount(value: unknown, allowNegative = false) {
@@ -103,7 +123,7 @@ function normalizeAdjustments(value: unknown) {
       : {}
 
     return {
-      id: normalizeText(source.id, 80) || `adj-${Date.now()}-${index + 1}`,
+      id: normalizeFinanceEntityId(source.id),
       amount: normalizeAmount(source.amount, true),
       note: normalizeText(source.note, 240),
       date: normalizeDate(source.date)
@@ -122,14 +142,14 @@ function normalizeRows(value: FinanceLineItem[] | undefined, kind: 'entrada' | '
 
     return {
       adjustments,
-      id: normalizeText(item?.id, 80) || `${kind}-${Date.now()}-${index + 1}`,
+      id: normalizeFinanceEntityId(item?.id),
       description: normalizeText(item?.description, 260),
       category: normalizeText(item?.category, 120),
       effective: Boolean(item?.effective),
       effectiveDate: normalizeDate(item?.effectiveDate),
       amount: normalizeAmount(item?.amount, false),
       adjustmentAmount,
-      fixedAccountId: normalizeText(item?.fixedAccountId, 80),
+      fixedAccountId: normalizeFinanceLinkedUuid(item?.fixedAccountId),
       details: normalizeText(item?.details, 600)
     }
   })
@@ -141,15 +161,18 @@ export function useFinancesManager() {
   const realtime = useTenantRealtime()
   realtime.start()
 
-  const sheets = ref<FinanceSheetItem[]>([])
+  const sheets = ref<FinanceSheetListItem[]>([])
+  const activeSheet = ref<FinanceSheetItem | null>(null)
+  const detailLoading = ref(false)
   const loading = ref(false)
   const creating = ref(false)
-  const deletingId = ref<number | null>(null)
+  const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
+  let activeDetailRequestId = 0
 
-  function keyFor(id: number, field: 'fetch' | 'create' | 'update' | 'delete') {
-    return `${id}:${field}`
+  function keyFor(id: string, field: 'fetch' | 'create' | 'update' | 'delete') {
+    return `${id || COLLECTION_KEY}:${field}`
   }
 
   function setSaving(key: string, value: boolean) {
@@ -162,22 +185,100 @@ export function useFinancesManager() {
     savingMap.value = next
   }
 
-  function upsertSheet(payload: FinanceSheetItem) {
-    const index = sheets.value.findIndex(item => item.id === payload.id)
-    if (index < 0) {
-      sheets.value.unshift(payload)
-      return
+  function isFinanceSheetDetail(value: FinanceSheetListItem | FinanceSheetItem): value is FinanceSheetItem {
+    return Array.isArray((value as FinanceSheetItem).entradas) && Array.isArray((value as FinanceSheetItem).saidas)
+  }
+
+  function toSheetListItem(payload: FinanceSheetListItem | FinanceSheetItem): FinanceSheetListItem {
+    return {
+      id: payload.id,
+      title: payload.title,
+      period: payload.period,
+      status: payload.status,
+      notes: payload.notes,
+      clientId: payload.clientId,
+      clientName: payload.clientName,
+      summary: payload.summary,
+      preview: payload.preview,
+      createdAt: payload.createdAt,
+      updatedAt: payload.updatedAt
     }
-    sheets.value[index] = payload
+  }
+
+  function upsertSheet(payload: FinanceSheetListItem | FinanceSheetItem) {
+    const normalized = toSheetListItem(payload)
+    const index = sheets.value.findIndex(item => item.id === normalized.id)
+    if (index < 0) {
+      sheets.value.unshift(normalized)
+    } else {
+      sheets.value[index] = normalized
+    }
+
+    if (isFinanceSheetDetail(payload) && activeSheet.value?.id === payload.id) {
+      activeSheet.value = payload
+    }
+  }
+
+  function replaceActiveSheetLine(line: FinanceLineItem, summary: FinanceSheetItem['summary'], preview: string, updatedAt: string) {
+    if (!activeSheet.value) return
+
+    const applyToCollection = (collection: FinanceLineItem[]) => {
+      const index = collection.findIndex(item => item.id === line.id)
+      if (index < 0) return false
+      collection[index] = {
+        ...collection[index],
+        ...line
+      }
+      return true
+    }
+
+    if (!applyToCollection(activeSheet.value.entradas)) {
+      applyToCollection(activeSheet.value.saidas)
+    }
+
+    activeSheet.value.summary = { ...summary }
+    activeSheet.value.preview = preview
+    activeSheet.value.updatedAt = updatedAt
+    upsertSheet(activeSheet.value)
+  }
+
+  async function fetchSheetDetail(id: string) {
+    const sheetId = normalizeSheetId(id)
+    if (!sheetId) return null
+
+    detailLoading.value = true
+    errorMessage.value = ''
+    const requestId = activeDetailRequestId + 1
+    activeDetailRequestId = requestId
+
+    try {
+      const response = await bffFetch<FinanceDetailResponse>(`${FINANCE_SHEETS_API_BASE}/${sheetId}`)
+      if (requestId !== activeDetailRequestId) {
+        return response.data
+      }
+
+      activeSheet.value = response.data
+      upsertSheet(response.data)
+      return response.data
+    } catch {
+      if (requestId === activeDetailRequestId) {
+        errorMessage.value = 'Falha ao carregar detalhes da planilha financeira.'
+      }
+      return null
+    } finally {
+      if (requestId === activeDetailRequestId) {
+        detailLoading.value = false
+      }
+    }
   }
 
   async function fetchSheets(options: FinancesFetchOptions = {}) {
     loading.value = true
     errorMessage.value = ''
-    setSaving(keyFor(0, 'fetch'), true)
+    setSaving(keyFor(COLLECTION_KEY, 'fetch'), true)
 
     try {
-      const response = await bffFetch<FinancesListResponse>('/api/admin/finances', {
+      const response = await bffFetch<FinancesListResponse>(FINANCE_SHEETS_API_BASE, {
         query: {
           page: 1,
           limit: DEFAULT_FETCH_LIMIT,
@@ -187,21 +288,24 @@ export function useFinancesManager() {
         }
       })
       sheets.value = Array.isArray(response.data) ? response.data : []
+      if (activeSheet.value && !sheets.value.some(item => item.id === activeSheet.value?.id)) {
+        activeSheet.value = null
+      }
     } catch {
       errorMessage.value = 'Falha ao carregar planilhas financeiras.'
     } finally {
       loading.value = false
-      setSaving(keyFor(0, 'fetch'), false)
+      setSaving(keyFor(COLLECTION_KEY, 'fetch'), false)
     }
   }
 
   async function createSheet(payload: FinanceCreatePayload = {}) {
     creating.value = true
     errorMessage.value = ''
-    setSaving(keyFor(0, 'create'), true)
+    setSaving(keyFor(COLLECTION_KEY, 'create'), true)
 
     try {
-      const response = await bffFetch<FinanceMutationResponse>('/api/admin/finances', {
+      const response = await bffFetch<FinanceMutationResponse>(FINANCE_SHEETS_API_BASE, {
         method: 'POST',
         body: {
           title: normalizeText(payload.title, 180),
@@ -216,95 +320,127 @@ export function useFinancesManager() {
       })
 
       upsertSheet(response.data)
+      activeSheet.value = response.data
       return response.data
     } catch {
       errorMessage.value = 'Falha ao criar planilha financeira.'
       return null
     } finally {
       creating.value = false
-      setSaving(keyFor(0, 'create'), false)
+      setSaving(keyFor(COLLECTION_KEY, 'create'), false)
     }
   }
 
-  async function updateSheet(id: number, payload: FinanceUpdatePayload) {
-    if (!Number.isFinite(id) || id <= 0) return null
+  async function updateSheet(id: string, payload: FinanceUpdatePayload) {
+    const sheetId = normalizeSheetId(id)
+    if (!sheetId) return null
 
     errorMessage.value = ''
-    setSaving(keyFor(id, 'update'), true)
+    setSaving(keyFor(sheetId, 'update'), true)
 
     try {
-      const response = await bffFetch<FinanceMutationResponse>(`/api/admin/finances/${id}`, {
-        method: 'PATCH',
+      const response = await bffFetch<FinanceMutationResponse>(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
+        method: 'PUT',
         body: {
-          title: Object.prototype.hasOwnProperty.call(payload, 'title')
-            ? normalizeText(payload.title, 180)
-            : undefined,
-          period: Object.prototype.hasOwnProperty.call(payload, 'period')
-            ? normalizePeriod(payload.period)
-            : undefined,
-          status: Object.prototype.hasOwnProperty.call(payload, 'status')
-            ? normalizeText(payload.status, 120)
-            : undefined,
-          notes: Object.prototype.hasOwnProperty.call(payload, 'notes')
-            ? normalizeText(payload.notes, 12000)
-            : undefined,
-          entradas: Object.prototype.hasOwnProperty.call(payload, 'entradas')
-            ? normalizeRows(payload.entradas, 'entrada')
-            : undefined,
-          saidas: Object.prototype.hasOwnProperty.call(payload, 'saidas')
-            ? normalizeRows(payload.saidas, 'saida')
-            : undefined,
-          clientId: Object.prototype.hasOwnProperty.call(payload, 'clientId')
-            ? normalizeClientId(payload.clientId)
-            : undefined,
-          clientName: Object.prototype.hasOwnProperty.call(payload, 'clientName')
-            ? normalizeText(payload.clientName, 120)
-            : undefined
+          title: normalizeText(payload.title, 180),
+          period: normalizePeriod(payload.period),
+          status: normalizeText(payload.status, 120),
+          notes: normalizeText(payload.notes, 12000),
+          entradas: normalizeRows(payload.entradas, 'entrada') || [],
+          saidas: normalizeRows(payload.saidas, 'saida') || [],
+          clientId: normalizeClientId(payload.clientId),
+          clientName: normalizeText(payload.clientName, 120)
         }
       })
 
       upsertSheet(response.data)
+      if (activeSheet.value?.id === response.data.id) {
+        activeSheet.value = response.data
+      }
       return response.data
     } catch {
       errorMessage.value = 'Falha ao salvar planilha financeira.'
       return null
     } finally {
-      setSaving(keyFor(id, 'update'), false)
+      setSaving(keyFor(sheetId, 'update'), false)
     }
   }
 
-  async function deleteSheet(id: number) {
-    if (!Number.isFinite(id) || id <= 0) return false
+  async function deleteSheet(id: string) {
+    const sheetId = normalizeSheetId(id)
+    if (!sheetId) return false
 
-    deletingId.value = id
+    deletingId.value = sheetId
     errorMessage.value = ''
-    setSaving(keyFor(id, 'delete'), true)
+    setSaving(keyFor(sheetId, 'delete'), true)
 
     try {
-      await bffFetch<{ status: 'success' }>(`/api/admin/finances/${id}`, {
+      await bffFetch<{ status: 'success' }>(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
         method: 'DELETE'
       })
 
-      sheets.value = sheets.value.filter(item => item.id !== id)
+      sheets.value = sheets.value.filter(item => item.id !== sheetId)
+      if (activeSheet.value?.id === sheetId) {
+        activeSheet.value = null
+      }
       return true
     } catch {
       errorMessage.value = 'Falha ao excluir planilha financeira.'
       return false
     } finally {
       deletingId.value = null
-      setSaving(keyFor(id, 'delete'), false)
+      setSaving(keyFor(sheetId, 'delete'), false)
+    }
+  }
+
+  async function updateSheetLine(id: string, lineId: string, payload: FinanceLinePatchPayload) {
+    const sheetId = normalizeSheetId(id)
+    if (!sheetId) return null
+
+    errorMessage.value = ''
+    setSaving(keyFor(sheetId, 'update'), true)
+
+    try {
+      const response = await bffFetch<FinanceLineMutationResponse>(`${FINANCE_SHEETS_API_BASE}/${sheetId}/lines/${lineId}`, {
+        method: 'PATCH',
+        body: {
+          effective: Object.prototype.hasOwnProperty.call(payload, 'effective')
+            ? Boolean(payload.effective)
+            : undefined,
+          effectiveDate: Object.prototype.hasOwnProperty.call(payload, 'effectiveDate')
+            ? normalizeDate(payload.effectiveDate)
+            : undefined
+        }
+      })
+
+      replaceActiveSheetLine(
+        response.data.line,
+        response.data.summary,
+        response.data.preview,
+        response.data.updatedAt
+      )
+      return response.data
+    } catch {
+      errorMessage.value = 'Falha ao salvar linha financeira.'
+      return null
+    } finally {
+      setSaving(keyFor(sheetId, 'update'), false)
     }
   }
 
   watch(
     () => sessionSimulation.requestContextHash,
     () => {
+      activeSheet.value = null
       void fetchSheets()
     }
   )
 
   const stopRealtimeSubscription = realtime.subscribeEntity('finances', () => {
     void fetchSheets()
+    if (activeSheet.value?.id) {
+      void fetchSheetDetail(activeSheet.value.id)
+    }
   })
 
   onScopeDispose(() => {
@@ -313,14 +449,18 @@ export function useFinancesManager() {
 
   return {
     sheets,
+    activeSheet,
+    detailLoading,
     loading,
     creating,
     deletingId,
     errorMessage,
     savingMap,
     fetchSheets,
+    fetchSheetDetail,
     createSheet,
     updateSheet,
+    updateSheetLine,
     deleteSheet
   }
 }

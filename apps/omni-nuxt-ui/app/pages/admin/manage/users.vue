@@ -64,7 +64,8 @@ const createForm = reactive({
   phone: '',
   clientId: '' as string | number,
   level: 'marketing',
-  userType: 'client'
+  userType: 'client',
+  isPlatformAdmin: false
 })
 
 const filtersState = ref<Record<string, unknown>>({
@@ -479,6 +480,7 @@ function resetCreateForm() {
   createForm.clientId = canChooseClient.value ? '' : sessionSimulation.clientId
   createForm.level = 'marketing'
   createForm.userType = canChooseClient.value ? 'client' : 'client'
+  createForm.isPlatformAdmin = false
 }
 
 function resetAccessDraftStates() {
@@ -549,7 +551,8 @@ async function submitCreateUser() {
     phone: createForm.phone,
     clientId: createForm.clientId === '' ? null : Number(createForm.clientId),
     level: createForm.level,
-    userType: createForm.userType
+    userType: createForm.userType,
+    isPlatformAdmin: createForm.isPlatformAdmin
   })
 
   if (!createdId) {
@@ -589,6 +592,19 @@ function onResetFilters() {
     clientFilter: ''
   }
 }
+
+watch(
+  () => createForm.isPlatformAdmin,
+  (isPlatformAdmin) => {
+    if (!isPlatformAdmin) {
+      return
+    }
+
+    createForm.level = 'admin'
+    createForm.userType = 'admin'
+    createForm.clientId = ''
+  }
+)
 
 watch(
   () => viewerUserType.value,
@@ -783,6 +799,7 @@ onMounted(() => {
             <p class="text-xs text-[rgb(var(--muted))]">Level</p>
             <USelect
               v-model="createForm.level"
+              :disabled="createForm.isPlatformAdmin"
               :items="[
                 { label: 'admin', value: 'admin' },
                 { label: 'manager', value: 'manager' },
@@ -793,10 +810,21 @@ onMounted(() => {
             />
           </div>
 
+          <div v-if="canChooseClient" class="space-y-2 sm:col-span-2">
+            <div class="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2">
+              <div class="space-y-1">
+                <p class="text-sm font-medium text-[rgb(var(--text))]">Platform admin</p>
+                <p class="text-xs text-[rgb(var(--muted))]">Acesso root/global com troca de tenant e permissoes amplas.</p>
+              </div>
+              <USwitch v-model="createForm.isPlatformAdmin" />
+            </div>
+          </div>
+
           <div v-if="canChooseClient" class="space-y-1">
             <p class="text-xs text-[rgb(var(--muted))]">User type</p>
             <USelect
               v-model="createForm.userType"
+              :disabled="createForm.isPlatformAdmin"
               :items="[
                 { label: 'client', value: 'client' },
                 { label: 'admin', value: 'admin' }
@@ -804,9 +832,14 @@ onMounted(() => {
             />
           </div>
 
-          <div v-if="canChooseClient" class="space-y-1 sm:col-span-2">
+          <div v-if="canChooseClient && !createForm.isPlatformAdmin" class="space-y-1 sm:col-span-2">
             <p class="text-xs text-[rgb(var(--muted))]">Cliente vinculado</p>
             <USelect v-model="createForm.clientId" :items="clientSelectOptions" placeholder="Sem cliente" />
+          </div>
+
+          <div v-else-if="canChooseClient" class="space-y-1 sm:col-span-2">
+            <p class="text-xs text-[rgb(var(--muted))]">Escopo</p>
+            <UInput model-value="Root / Global" disabled />
           </div>
 
           <div v-else class="space-y-1 sm:col-span-2">

@@ -3,6 +3,33 @@ import { z } from "zod";
 
 const whatsappInstanceUserScopePolicySchema = z.enum(["MULTI_INSTANCE", "SINGLE_INSTANCE"]);
 
+const booleanQueryParamSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+
+    if (["0", "false", "no", "off", ""].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean());
+
 export const updateTenantSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   whatsappInstance: z.string().min(2).max(80).optional(),
@@ -28,13 +55,13 @@ export const connectWhatsAppSchema = z.object({
 
 export const qrCodeQuerySchema = z.object({
   instanceId: z.string().min(1).optional(),
-  force: z.coerce.boolean().default(false)
+  force: booleanQueryParamSchema
 });
 
 export const whatsappStatusQuerySchema = z.object({
   instanceId: z.string().min(1).optional(),
-  includeWebhook: z.coerce.boolean().default(false),
-  force: z.coerce.boolean().default(false)
+  includeWebhook: booleanQueryParamSchema,
+  force: booleanQueryParamSchema
 });
 
 export const validateWhatsAppEndpointsSchema = z.object({

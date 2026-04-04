@@ -15,6 +15,7 @@ import (
 	"platform-core/internal/database"
 	"platform-core/internal/domain/auth"
 	"platform-core/internal/domain/core"
+	"platform-core/internal/domain/finance"
 	"platform-core/internal/httpapi"
 	"platform-core/internal/realtime"
 )
@@ -44,11 +45,13 @@ func main() {
 
 	authService := auth.NewService(pool, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTTTL)
 	coreService := core.NewService(pool, cfg.DefaultUsersLimit)
+	financeService := finance.NewService(pool)
 	hub := realtime.NewHub(cfg.AllowedOrigins, cfg.WSPingInterval, cfg.WSWriteTimeout, cfg.WSReadTimeout)
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		AuthService:        authService,
 		CoreService:        coreService,
+		FinanceService:     financeService,
 		Hub:                hub,
 		StartedAt:          startedAt,
 		RedisURL:           cfg.RedisURL,

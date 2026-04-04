@@ -122,6 +122,7 @@ const contactPickerSearchModel = computed({
   position: relative;
   display: flex;
   align-items: center;
+
 }
 
 .chat-page__file-input {

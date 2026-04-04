@@ -24,3 +24,11 @@ export async function getLatestQrCode(tenantId: string, instanceName: string) {
   }
 }
 
+export async function deleteLatestQrCode(tenantId: string, instanceName: string) {
+  const redis = createRedisConnection();
+  try {
+    await redis.del(qrKey(tenantId, instanceName));
+  } finally {
+    await redis.quit();
+  }
+}

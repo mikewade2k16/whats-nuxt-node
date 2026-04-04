@@ -168,7 +168,7 @@ export default defineEventHandler(async (event) => {
   for (const patch of patchQueue) {
     await coreAdminFetch(
       event,
-      `/core/admin/users/${current.id}`,
+      '/core/auth/profile',
       {
         method: 'PATCH',
         body: {

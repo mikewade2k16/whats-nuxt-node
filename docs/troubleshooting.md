@@ -285,6 +285,74 @@ Correcao:
 4. Validar:
    - `docker compose ps worker` deve permanecer `Up`.
 
+## 2.3) Worker em crash loop apos alteracao do schema Prisma (SyntaxError enum)
+
+Causa:
+
+1. O volume `worker_node_modules` guarda o Prisma Client gerado na primeira vez que o container subiu.
+2. Quando o schema Prisma e alterado (ex.: novo enum adicionado como `WhatsAppInstanceUserScopePolicy`), o `prisma:generate` do `api` atualiza o volume `api_node_modules`, mas o volume `worker_node_modules` fica com o client antigo.
+3. O startup do worker roda `prisma:generate`, mas o `tsx` pode usar o cache do client antigo antes da geracao completar, causando o crash em loop.
+
+Sintoma:
+
+```
+SyntaxError: The requested module '@prisma/client' does not provide an export named 'XxxEnum'
+```
+
+Correcao rapida (recuperacao):
+
+```bash
+docker compose exec worker npm run prisma:generate
+docker compose restart worker
+```
+
+Prevencao permanente (ja aplicada no docker-compose.yml):
+
+O comando de startup do worker agora limpa o client antes de regenerar:
+
+```yaml
+rm -rf node_modules/.prisma/client && npm run prisma:generate && npm run worker:dev
+```
+
+Isso garante que toda vez que o worker sobe, o Prisma Client e gerado limpo a partir do schema atual.
+
+Regra: sempre que alterar o schema Prisma e precisar testar antes do proximo boot completo, rodar:
+
+```bash
+docker compose exec worker npm run prisma:generate
+docker compose restart worker
+```
+
+## 2.4) Mensagens PENDING presas (worker ativo mas sem processar)
+
+Causa:
+
+1. Jobs perdidos no Redis (reinicio abrupto, eviction por maxmemory, crash antes de enfileirar).
+2. Worker estava em crash loop por qualquer motivo (ver 2.3) e os jobs expiraram ou nunca foram adicionados.
+
+Comportamento esperado com o monitor automatico (ja implementado):
+
+1. O worker verifica a cada 5 minutos se existem mensagens OUTBOUND com status `PENDING` ha mais de 10 minutos.
+2. Se detectar, loga `STALE_PENDING_DETECTED` com IDs e re-enfileira automaticamente (ate 20 por ciclo).
+3. Em producao: monitorar esse log com Datadog / CloudWatch / Grafana Loki para receber alerta antes do cliente perceber.
+
+Correcao manual (quando o monitor nao resolver):
+
+```bash
+# Reprocessar todas as FAILED de uma conversa
+POST /conversations/:conversationId/messages/reprocess-failed
+
+# Reprocessar uma mensagem especifica
+POST /conversations/:conversationId/messages/:messageId/reprocess
+```
+
+Para producao — setup minimo de alerta:
+
+1. Tail de logs filtrado:
+   `docker compose logs -f worker | grep STALE_PENDING`
+2. Ou configurar alerta no provedor de logs quando aparecer `STALE_PENDING_DETECTED`.
+3. O proximo passo ideal e um webhook de notificacao (Slack/email) disparado por esse log.
+
 ## 3) Webhook inbound nao chega na plataforma
 
 Causa comum:

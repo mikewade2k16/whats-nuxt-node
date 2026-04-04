@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../../config.js";
 import { prisma } from "../../db.js";
-import { requireAdmin } from "../../lib/guards.js";
+import { requireAdmin, requirePlatformAdmin } from "../../lib/guards.js";
 import { CoreApiError, type CoreTenant, platformCoreClient } from "../../services/core-client.js";
 import { invalidateCoreAtendimentoAccessCacheByEmail } from "../../services/core-atendimento-access.js";
 import {
@@ -295,7 +295,7 @@ function mapTenantSummaryFromCore(
 
 export function registerClientRoutes(protectedApp: FastifyInstance) {
   protectedApp.get("/clients", async (request, reply) => {
-    if (!requireAdmin(request, reply)) {
+    if (!await requirePlatformAdmin(request, reply)) {
       return;
     }
 
@@ -363,6 +363,13 @@ export function registerClientRoutes(protectedApp: FastifyInstance) {
       return reply.code(400).send({ message: "Payload invalido" });
     }
 
+    const isOwnTenant = params.data.clientId === request.authUser.tenantId;
+    if (!isOwnTenant) {
+      if (!await requirePlatformAdmin(request, reply)) {
+        return;
+      }
+    }
+
     try {
       const context = await resolveTenantContext(params.data.clientId);
       if (!context) {
@@ -393,6 +400,13 @@ export function registerClientRoutes(protectedApp: FastifyInstance) {
         message: "Payload invalido",
         errors: body.success ? undefined : body.error.flatten()
       });
+    }
+
+    const isOwnTenant = params.data.clientId === request.authUser.tenantId;
+    if (!isOwnTenant) {
+      if (!await requirePlatformAdmin(request, reply)) {
+        return;
+      }
     }
 
     try {

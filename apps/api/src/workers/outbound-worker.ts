@@ -10,7 +10,7 @@ import {
   normalizeCorrelationId,
   withCorrelationIdMetadata
 } from "../lib/correlation.js";
-import { outboundQueueMaxAttempts, outboundQueueName } from "../queue.js";
+import { outboundQueue, outboundQueueMaxAttempts, outboundQueueName, outboundRetryJobOptions } from "../queue.js";
 import { redisOptions, redisPublisher } from "../redis.js";
 import { recordAuditEvent } from "../services/audit-log.js";
 import { resolveConversationInstanceRouting } from "../services/whatsapp-instances.js";
@@ -599,8 +599,103 @@ worker.on("failed", (job, error) => {
   });
 });
 
+// ---------------------------------------------------------------
+// Monitor de mensagens PENDING presas
+//
+// Roda a cada 5 minutos. Detecta mensagens OUTBOUND com status
+// PENDING ha mais de STALE_PENDING_THRESHOLD_MS e re-enfileira
+// automaticamente (ate MAX_REQUEUE_PER_CYCLE por ciclo).
+// Em producao: um alerta de log "STALE_PENDING_DETECTED" pode ser
+// monitorado por Datadog / CloudWatch / Uptime Kuma para disparo
+// de notificacao automatica.
+// ---------------------------------------------------------------
+const STALE_PENDING_THRESHOLD_MS = 10 * 60_000; // 10 minutos
+const STALE_CHECK_INTERVAL_MS    = 5  * 60_000; //  5 minutos
+const MAX_REQUEUE_PER_CYCLE      = 20;
+
+async function runStalePendingCheck(): Promise<void> {
+  const threshold = new Date(Date.now() - STALE_PENDING_THRESHOLD_MS);
+  try {
+    const stale = await prisma.message.findMany({
+      where: {
+        direction: "OUTBOUND",
+        status: MessageStatus.PENDING,
+        createdAt: { lt: threshold }
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        conversationId: true,
+        metadataJson: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: "asc" },
+      take: MAX_REQUEUE_PER_CYCLE
+    });
+
+    if (stale.length === 0) {
+      return;
+    }
+
+    console.error("STALE_PENDING_DETECTED", {
+      count: stale.length,
+      thresholdMinutes: STALE_PENDING_THRESHOLD_MS / 60_000,
+      oldest: stale[0]?.createdAt?.toISOString() ?? null,
+      messageIds: stale.map((m) => m.id)
+    });
+
+    for (const msg of stale) {
+      const correlationId = normalizeCorrelationId(
+        getCorrelationIdFromMetadata(msg.metadataJson)
+      );
+      try {
+        await outboundQueue.add(
+          "send-message",
+          {
+            tenantId: msg.tenantId,
+            conversationId: msg.conversationId,
+            messageId: msg.id,
+            correlationId: correlationId ?? undefined
+          },
+          outboundRetryJobOptions
+        );
+        console.log("STALE_PENDING_REQUEUED", {
+          messageId: msg.id,
+          staleSinceMs: Date.now() - msg.createdAt.getTime()
+        });
+      } catch (requeueError) {
+        console.error("STALE_PENDING_REQUEUE_FAILED", {
+          messageId: msg.id,
+          error: requeueError instanceof Error ? requeueError.message : String(requeueError)
+        });
+      }
+    }
+  } catch (error) {
+    console.error("STALE_PENDING_CHECK_ERROR", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+// Aguarda 30s no boot para o worker estabilizar, depois inicia ciclos
+let stalePendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleStalePendingCheck(): void {
+  stalePendingTimer = setTimeout(async () => {
+    await runStalePendingCheck();
+    scheduleStalePendingCheck();
+  }, STALE_CHECK_INTERVAL_MS);
+}
+
+setTimeout(() => {
+  scheduleStalePendingCheck();
+}, 30_000);
+
 const shutdown = async () => {
   console.log("Encerrando worker...");
+  if (stalePendingTimer) {
+    clearTimeout(stalePendingTimer);
+  }
   await worker.close();
   await redisPublisher.quit();
   await prisma.$disconnect();

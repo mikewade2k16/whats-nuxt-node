@@ -1,4 +1,4 @@
-import { nextTick, type Ref } from "vue";
+import { nextTick, type Ref, watch } from "vue";
 import type { Conversation, GroupParticipant, Message } from "~/types";
 import { ApiClientError } from "~/composables/useApi";
 import type {
@@ -16,6 +16,7 @@ export function useOmnichannelInboxHistory(options: {
   apiFetch: <T = unknown>(path: string, init?: Record<string, unknown>) => Promise<T>;
   conversations: Ref<Conversation[]>;
   messages: Ref<Message[]>;
+  visibleMessagesConversationId: Ref<string | null>;
   activeConversationId: Ref<string | null>;
   selectedInstanceId: Ref<string>;
   loadingConversations: Ref<boolean>;
@@ -42,17 +43,123 @@ export function useOmnichannelInboxHistory(options: {
 }) {
   const HISTORY_SYNC_COOLDOWN_MS = 120_000;
   const OPEN_CONVERSATIONS_SYNC_COOLDOWN_MS = 90_000;
+  const CONVERSATION_CACHE_STALE_MS = 45_000;
   let conversationsRequestInFlight: Promise<void> | null = null;
   let openConversationsSyncRequestInFlight: Promise<SyncOpenConversationsResponse | null> | null = null;
   let openConversationsLastAttemptAt = 0;
   let openConversationsBootstrapCompleted = false;
   const messagesRequestInFlightByConversation = new Map<string, Promise<void>>();
+  const conversationMessagesCache = new Map<string, {
+    messages: Message[];
+    hasMore: boolean;
+    lastLoadedAt: number;
+  }>();
+
+  function cloneMessages(entries: Message[]) {
+    return entries.map((entry) => options.normalizeMessage(entry));
+  }
+
+  function getConversationCache(conversationId: string) {
+    return conversationMessagesCache.get(conversationId) ?? null;
+  }
+
+  function persistConversationCache(
+    conversationId: string,
+    messageEntries: Message[],
+    hasMore: boolean,
+    lastLoadedAt = Date.now()
+  ) {
+    conversationMessagesCache.set(conversationId, {
+      messages: cloneMessages(messageEntries),
+      hasMore,
+      lastLoadedAt
+    });
+  }
+
+  function applyConversationSnapshot(conversationId: string, snapshot: { messages: Message[]; hasMore: boolean }) {
+    options.visibleMessagesConversationId.value = conversationId;
+    options.messages.value = cloneMessages(snapshot.messages);
+    options.hasMoreMessages.value = snapshot.hasMore;
+  }
+
+  function resolveConversationPreviewTimestamp(conversationId: string) {
+    const conversationEntry = options.conversations.value.find((entry) => entry.id === conversationId);
+    return Number(new Date(conversationEntry?.lastMessageAt ?? 0));
+  }
+
+  function resolveLatestMessageTimestamp(messageEntries: Message[]) {
+    const lastMessage = messageEntries[messageEntries.length - 1] ?? null;
+    return Number(new Date(lastMessage?.createdAt ?? 0));
+  }
+
+  function conversationCacheHasPreviewGap(
+    conversationId: string,
+    cacheEntry: { messages: Message[]; hasMore: boolean; lastLoadedAt: number }
+  ) {
+    const previewTimestamp = resolveConversationPreviewTimestamp(conversationId);
+    const latestCachedTimestamp = resolveLatestMessageTimestamp(cacheEntry.messages);
+
+    if (!Number.isFinite(previewTimestamp) || previewTimestamp <= 0) {
+      return false;
+    }
+
+    if (!Number.isFinite(latestCachedTimestamp) || latestCachedTimestamp <= 0) {
+      return true;
+    }
+
+    return previewTimestamp > latestCachedTimestamp;
+  }
+
+  function conversationNeedsUnreadBoundary(
+    conversationId: string,
+    messageEntries: Message[],
+    hasMore: boolean
+  ) {
+    if (!hasMore || messageEntries.length < 1) {
+      return false;
+    }
+
+    const readAt = options.getReadAt(conversationId);
+    if (!readAt) {
+      return false;
+    }
+
+    const conversationPreviewTimestamp = resolveConversationPreviewTimestamp(conversationId);
+    if (!Number.isFinite(conversationPreviewTimestamp) || conversationPreviewTimestamp <= readAt) {
+      return false;
+    }
+
+    const oldestLoadedTimestamp = Number(new Date(messageEntries[0]?.createdAt ?? 0));
+    if (!Number.isFinite(oldestLoadedTimestamp)) {
+      return false;
+    }
+
+    return oldestLoadedTimestamp > readAt;
+  }
 
   function wait(ms: number) {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
   }
+
+  watch(
+    () => ({
+      conversationId: options.visibleMessagesConversationId.value,
+      hasMore: options.hasMoreMessages.value,
+      messages: options.messages.value
+    }),
+    (snapshot) => {
+      if (!snapshot.conversationId) {
+        return;
+      }
+
+      persistConversationCache(snapshot.conversationId, snapshot.messages, snapshot.hasMore);
+    },
+    {
+      deep: true
+    }
+  );
 
   async function fetchMessagesPage(conversationId: string, beforeId?: string) {
     const query = new URLSearchParams({
@@ -68,6 +175,119 @@ export function useOmnichannelInboxHistory(options: {
 
   async function fetchMessageById(conversationId: string, messageId: string) {
     return options.apiFetch<Message>(`/conversations/${conversationId}/messages/${messageId}`);
+  }
+
+  async function handleConversationNotFound(conversationId: string) {
+    conversationMessagesCache.delete(conversationId);
+
+    if (options.activeConversationId.value === conversationId) {
+      options.activeConversationId.value = null;
+      options.messages.value = [];
+      options.visibleMessagesConversationId.value = null;
+      options.hasMoreMessages.value = false;
+    }
+
+    options.conversations.value = options.conversations.value.filter((entry) => entry.id !== conversationId);
+
+    const fallbackConversation = options.conversations.value[0];
+    const selectConversation = options.getSelectConversation();
+    if (fallbackConversation && selectConversation && options.activeConversationId.value === null) {
+      try {
+        await selectConversation(fallbackConversation.id);
+      } catch {
+        // fallback selection is best-effort after stale conversation removal.
+      }
+    }
+  }
+
+  async function refreshConversationMessages(
+    conversationId: string,
+    refreshOptions: {
+      silent?: boolean;
+      syncHistory?: boolean;
+      ensureUnreadBoundary?: boolean;
+    } = {}
+  ) {
+    const cached = getConversationCache(conversationId);
+    const isActiveConversation = options.activeConversationId.value === conversationId;
+    const shouldShowLoader = isActiveConversation && refreshOptions.silent !== true && !cached;
+
+    if (shouldShowLoader) {
+      options.loadingMessages.value = true;
+    }
+
+    try {
+      const response = await fetchMessagesPage(conversationId);
+      const baseMessages =
+        options.visibleMessagesConversationId.value === conversationId
+          ? options.messages.value
+          : cached?.messages ?? [];
+      const nextMessages = baseMessages.length > 0
+        ? options.mergeMessages(baseMessages, response.messages)
+        : options.mergeMessages(response.messages);
+      const nextHasMore =
+        response.hasMore ||
+        cached?.hasMore ||
+        (
+          options.visibleMessagesConversationId.value === conversationId &&
+          options.hasMoreMessages.value
+        ) ||
+        false;
+
+      if (isActiveConversation) {
+        options.visibleMessagesConversationId.value = conversationId;
+        options.messages.value = nextMessages;
+        options.hasMoreMessages.value = nextHasMore;
+
+        if (refreshOptions.ensureUnreadBoundary !== false) {
+          await ensureUnreadBoundaryLoaded(conversationId);
+        }
+
+        persistConversationCache(conversationId, options.messages.value, options.hasMoreMessages.value);
+      } else {
+        persistConversationCache(conversationId, nextMessages, nextHasMore);
+      }
+
+      if (refreshOptions.syncHistory !== false) {
+        void syncConversationHistoryInBackground(conversationId);
+      }
+    } catch (error) {
+      if (error instanceof ApiClientError && error.statusCode === 404) {
+        await handleConversationNotFound(conversationId);
+        return;
+      }
+
+      throw error;
+    } finally {
+      if (shouldShowLoader) {
+        options.loadingMessages.value = false;
+      }
+    }
+  }
+
+  function updateConversationCacheFromMessage(messageEntry: Message) {
+    const conversationId = messageEntry.conversationId;
+    const cached = getConversationCache(conversationId);
+    const isVisibleConversation = options.visibleMessagesConversationId.value === conversationId;
+    const baseMessages = isVisibleConversation
+      ? options.messages.value
+      : cached?.messages ?? [];
+
+    if (!isVisibleConversation && baseMessages.length < 1) {
+      return;
+    }
+
+    const nextMessages = options.mergeMessages(baseMessages, [messageEntry]);
+    const nextHasMore = isVisibleConversation
+      ? options.hasMoreMessages.value
+      : (cached?.hasMore ?? false);
+
+    if (isVisibleConversation) {
+      options.messages.value = nextMessages;
+      options.hasMoreMessages.value = nextHasMore;
+    }
+
+    persistConversationCache(conversationId, nextMessages, nextHasMore);
   }
 
   async function hydrateRealtimeMediaMessage(conversationId: string, messageId: string) {
@@ -217,6 +437,7 @@ export function useOmnichannelInboxHistory(options: {
         ) {
           options.activeConversationId.value = null;
           options.messages.value = [];
+          options.visibleMessagesConversationId.value = null;
         }
 
         if (!options.activeConversationId.value && options.conversations.value.length > 0) {
@@ -273,7 +494,12 @@ export function useOmnichannelInboxHistory(options: {
     }
   }
 
-  async function loadConversationMessages(conversationId: string) {
+  async function loadConversationMessages(
+    conversationId: string,
+    loadOptions: {
+      forceRefresh?: boolean;
+    } = {}
+  ) {
     const existingRequest = messagesRequestInFlightByConversation.get(conversationId);
     if (existingRequest) {
       await existingRequest;
@@ -281,35 +507,52 @@ export function useOmnichannelInboxHistory(options: {
     }
 
     const request = (async () => {
+      const cached = getConversationCache(conversationId);
+      const canUseCache = !loadOptions.forceRefresh && cached && cached.messages.length > 0;
+
+      if (canUseCache) {
+        applyConversationSnapshot(conversationId, cached);
+
+        const needsImmediateRefresh =
+          conversationCacheHasPreviewGap(conversationId, cached) ||
+          Date.now() - cached.lastLoadedAt > CONVERSATION_CACHE_STALE_MS;
+        const needsUnreadBoundary = conversationNeedsUnreadBoundary(
+          conversationId,
+          cached.messages,
+          cached.hasMore
+        );
+
+        try {
+          if (needsImmediateRefresh) {
+            await refreshConversationMessages(conversationId, {
+              silent: true,
+              syncHistory: true,
+              ensureUnreadBoundary: true
+            });
+          } else if (needsUnreadBoundary) {
+            await ensureUnreadBoundaryLoaded(conversationId);
+            persistConversationCache(conversationId, options.messages.value, options.hasMoreMessages.value);
+          }
+        } catch (error) {
+          console.error("Nao foi possivel atualizar mensagens da conversa em background.", error);
+        }
+
+        return;
+      }
+
       options.loadingMessages.value = true;
       try {
         const response = await fetchMessagesPage(conversationId);
+        options.visibleMessagesConversationId.value = conversationId;
         options.messages.value = options.mergeMessages(response.messages);
         options.hasMoreMessages.value = response.hasMore;
 
         await ensureUnreadBoundaryLoaded(conversationId);
+        persistConversationCache(conversationId, options.messages.value, options.hasMoreMessages.value);
         void syncConversationHistoryInBackground(conversationId);
       } catch (error) {
         if (error instanceof ApiClientError && error.statusCode === 404) {
-          options.messages.value = [];
-          options.hasMoreMessages.value = false;
-
-          if (options.activeConversationId.value === conversationId) {
-            options.activeConversationId.value = null;
-          }
-
-          options.conversations.value = options.conversations.value.filter((entry) => entry.id !== conversationId);
-
-          const fallbackConversation = options.conversations.value[0];
-          const selectConversation = options.getSelectConversation();
-          if (fallbackConversation && selectConversation && options.activeConversationId.value === null) {
-            try {
-              await selectConversation(fallbackConversation.id);
-            } catch {
-              // fallback selection is best-effort after stale conversation removal.
-            }
-          }
-
+          await handleConversationNotFound(conversationId);
           return;
         }
 
@@ -377,14 +620,11 @@ export function useOmnichannelInboxHistory(options: {
     }
 
     try {
-      const refreshed = await fetchMessagesPage(conversationId);
-      if (options.activeConversationId.value !== conversationId) {
-        return;
-      }
-
-      options.messages.value = options.mergeMessages(refreshed.messages);
-      options.hasMoreMessages.value = refreshed.hasMore;
-      await ensureUnreadBoundaryLoaded(conversationId);
+      await refreshConversationMessages(conversationId, {
+        silent: true,
+        syncHistory: false,
+        ensureUnreadBoundary: true
+      });
     } catch {
       // best-effort refresh after sync.
     }
@@ -501,9 +741,11 @@ export function useOmnichannelInboxHistory(options: {
     hydrateRealtimeMediaMessage,
     loadConversations,
     loadConversationMessages,
+    refreshConversationMessages,
     syncConversationHistory,
     loadGroupParticipants,
     loadOlderMessages,
-    scheduleGroupParticipantsRefresh
+    scheduleGroupParticipantsRefresh,
+    updateConversationCacheFromMessage
   };
 }

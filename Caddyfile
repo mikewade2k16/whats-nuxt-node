@@ -1,0 +1,51 @@
+# Caddyfile — SSL automático via Let's Encrypt
+# Substitua SEU_DOMINIO pelo domínio real antes de subir
+
+app.{$DOMAIN} {
+    reverse_proxy web:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+    # WebSocket (Nuxt HMR em dev — manter para testes)
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @ws web:3000
+}
+
+api.{$DOMAIN} {
+    reverse_proxy api:4000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+    # WebSocket (Socket.IO)
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @ws api:4000
+}
+
+evo.{$DOMAIN} {
+    reverse_proxy evolution:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+    # WebSocket (Evolution API)
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @ws evolution:8080
+}
+
+db.{$DOMAIN} {
+    basic_auth {
+        {$ADMINER_USER} {$ADMINER_PASSWORD_HASH}
+    }
+    reverse_proxy adminer:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}

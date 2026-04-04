@@ -144,6 +144,13 @@ export class EvolutionClient {
     );
   }
 
+  deleteInstance(instanceName: string) {
+    return this.request<Record<string, unknown>>(
+      "DELETE",
+      `/instance/delete/${encodeURIComponent(instanceName)}`
+    );
+  }
+
   setWebhook(params: {
     instanceName: string;
     webhookUrl: string;

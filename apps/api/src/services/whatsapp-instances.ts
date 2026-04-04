@@ -53,14 +53,14 @@ export function buildFallbackInstanceScopeKey(tenant?: {
     return explicit;
   }
 
-  const envDefault = normalizeWhatsAppInstanceName(env.EVOLUTION_DEFAULT_INSTANCE);
-  if (envDefault) {
-    return envDefault;
-  }
-
   const tenantSlug = String(tenant?.slug ?? "").trim();
   if (tenantSlug) {
     return `${tenantSlug}-wa`;
+  }
+
+  const envDefault = normalizeWhatsAppInstanceName(env.EVOLUTION_DEFAULT_INSTANCE);
+  if (envDefault) {
+    return envDefault;
   }
 
   return "default";

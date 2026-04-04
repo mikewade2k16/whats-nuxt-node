@@ -40,6 +40,7 @@ const emit = defineEmits<{
   persist: []
   'effective-toggle': [next: boolean]
   'effective-date-open': [open: boolean]
+  'effective-date-changed': []
   'effective-date-submit-shortcut': [event: KeyboardEvent]
   'effective-date-cancel-shortcut': []
   'effective-today': []
@@ -112,7 +113,7 @@ function adjustmentSignValue(adjustment: FinanceLineAdjustment) {
         @update:model-value="emit('persist')"
       />
 
-      <div class="finances-page__line-col finances-page__line-col--effective finances-page__effective-cell">
+      <div class="finances-page__line-col finances-page__line-col--effective finances-page__effective-cell" @click.stop>
         <OmniSwitchInput
           v-model="row.effective"
           class="finances-page__line-effective-switch"
@@ -141,7 +142,7 @@ function adjustmentSignValue(adjustment: FinanceLineAdjustment) {
           </template>
 
           <div class="finances-page__inline-modal-row">
-            <UInput v-model="row.effectiveDate" type="date" class="finances-page__effective-date-input" @update:model-value="emit('persist')" />
+            <UInput v-model="row.effectiveDate" type="date" class="finances-page__effective-date-input" @update:model-value="emit('effective-date-changed')" />
             <UButton size="xs" color="neutral" variant="ghost" class="finances-page__effective-date-action finances-page__effective-date-action--today" @click="emit('effective-today')">Hoje</UButton>
             <UButton size="xs" color="neutral" variant="ghost" class="finances-page__effective-date-action finances-page__effective-date-action--clear" @click="emit('effective-clear')">Limpar</UButton>
             <UButton size="xs" color="neutral" variant="ghost" class="finances-page__effective-date-action finances-page__effective-date-action--close" @click="emit('effective-close')">Fechar</UButton>

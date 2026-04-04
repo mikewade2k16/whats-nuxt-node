@@ -57,6 +57,28 @@ function copyRequestHeaders(source: Record<string, string | string[] | undefined
   return headers;
 }
 
+function applyCoreAuthorizationHeader(
+  source: Record<string, string | string[] | undefined>,
+  headers: Headers
+) {
+  const authorization = headers.get("authorization")?.trim();
+  if (authorization) {
+    headers.delete("x-core-token");
+    return;
+  }
+
+  const rawCoreToken = source["x-core-token"];
+  const coreToken = Array.isArray(rawCoreToken)
+    ? String(rawCoreToken[0] ?? "").trim()
+    : String(rawCoreToken ?? "").trim();
+
+  if (coreToken) {
+    headers.set("authorization", coreToken.startsWith("Bearer ") ? coreToken : `Bearer ${coreToken}`);
+  }
+
+  headers.delete("x-core-token");
+}
+
 function applyForwardedHeaders(event: H3Event, headers: Headers) {
   const requestIp = resolveTrustedEventClientIp(event) || "unknown";
   headers.set("x-forwarded-for", requestIp);
@@ -77,6 +99,7 @@ export default defineEventHandler(async (event) => {
   const method = event.method.toUpperCase();
   const requestHeaders = getRequestHeaders(event);
   const headers = copyRequestHeaders(requestHeaders);
+  applyCoreAuthorizationHeader(requestHeaders, headers);
   applyForwardedHeaders(event, headers);
   const targetPath = getTargetPath(event.context.params?.path).toLowerCase();
 

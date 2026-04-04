@@ -27,6 +27,7 @@ export function useOmnichannelAdminConnectionState(options: {
       return "warning";
     }
     if (
+      connectionStateNormalized.value === "refused" ||
       connectionStateNormalized.value === "close" ||
       connectionStateNormalized.value === "closed" ||
       connectionStateNormalized.value === "disconnected" ||
@@ -48,6 +49,10 @@ export function useOmnichannelAdminConnectionState(options: {
 
     if (value === "connecting") {
       return hasQrCode.value ? "Desconectado (aguardando QR)" : "Desconectado (iniciando QR)";
+    }
+
+    if (value === "refused") {
+      return "Pareamento recusado";
     }
 
     if (value === "close" || value === "closed" || value === "disconnected" || value === "logout") {
@@ -76,6 +81,10 @@ export function useOmnichannelAdminConnectionState(options: {
       return "WhatsApp desconectado (QR pronto para leitura)";
     }
 
+    if (connectionStateNormalized.value === "refused") {
+      return "WhatsApp recusou o ultimo pareamento";
+    }
+
     if (connectionStateNormalized.value === "connecting") {
       return "WhatsApp desconectado (aguardando QR)";
     }
@@ -90,6 +99,10 @@ export function useOmnichannelAdminConnectionState(options: {
 
     if (hasQrCode.value) {
       return "Escaneie o QR Code abaixo no WhatsApp para reconectar esta instancia.";
+    }
+
+    if (connectionStateNormalized.value === "refused") {
+      return "O ultimo QR foi recusado ou expirou na Evolution. Clique em Conectar por QR para resetar a sessao e gerar um novo codigo.";
     }
 
     if (connectionStateNormalized.value === "connecting") {
@@ -114,6 +127,10 @@ export function useOmnichannelAdminConnectionState(options: {
 
     if (connectionStateNormalized.value === "connecting") {
       return "Aguardando emissao do QR Code pela instancia...";
+    }
+
+    if (connectionStateNormalized.value === "refused") {
+      return "O ultimo QR foi recusado ou expirou. Clique em Conectar por QR para gerar um novo codigo.";
     }
 
     return "QR ainda indisponivel. Clique em Conectar por QR.";

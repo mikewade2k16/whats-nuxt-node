@@ -6,6 +6,13 @@ export interface CoreAuthUser {
   profileImage?: string | null;
   isPlatformAdmin: boolean;
   tenantId?: string;
+  clientId?: number | null;
+  clientName?: string;
+  level?: string;
+  userType?: string;
+  preferences?: string;
+  moduleCodes?: string[];
+  atendimentoAccess?: boolean;
 }
 
 export interface CoreLoginResponse {

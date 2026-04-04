@@ -36,11 +36,9 @@ export default defineEventHandler(async (event) => {
     if (!access.isAdmin) {
       return true
     }
-
     if (requestedClientId <= 0) {
       return true
     }
-
     return Number(client.id) === requestedClientId
   })
 
@@ -56,4 +54,3 @@ export default defineEventHandler(async (event) => {
       }))
   }
 })
-

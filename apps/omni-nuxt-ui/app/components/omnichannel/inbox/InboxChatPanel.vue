@@ -57,6 +57,7 @@ const props = defineProps<{
   loadingOlderMessages: boolean;
   hasMoreMessages: boolean;
   showLoadOlderMessagesButton: boolean;
+  showScrollToLatestButton: boolean;
   messageRenderItems: InboxRenderItem[];
   groupParticipants: GroupParticipant[];
   loadingGroupParticipants: boolean;
@@ -94,6 +95,7 @@ const emit = defineEmits<{
   (event: "body-mounted", element: HTMLElement | null): void;
   (event: "chat-scroll", payload: Event): void;
   (event: "load-older-messages"): void;
+  (event: "scroll-to-latest"): void;
   (event: "send", payload?: MentionSendPayload): void;
   (event: "open-mention", payload: MentionOpenPayload): void;
   (event: "close-conversation"): void;
@@ -287,12 +289,33 @@ function focusComposerInput(options?: { cursorAtEnd?: boolean }) {
 }
 
 function focusComposerInputSoon(options?: { cursorAtEnd?: boolean }) {
+  const attemptFocus = () => {
+    const focused = focusComposerInput(options);
+    if (focused) {
+      onComposerCursorUpdate();
+    }
+
+    return focused;
+  };
+
   void nextTick(() => {
-    if (!focusComposerInput(options)) {
+    if (attemptFocus()) {
       return;
     }
 
-    onComposerCursorUpdate();
+    if (!import.meta.client) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      if (attemptFocus()) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        attemptFocus();
+      }, 0);
+    });
   });
 }
 
@@ -314,6 +337,31 @@ function isTypingShortcutKey(event: KeyboardEvent) {
   return event.key.length === 1 && event.key !== "Dead" && !event.isComposing;
 }
 
+function isTextEditingElement(element: Element | null) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (element.isContentEditable) {
+    return true;
+  }
+
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+
+  const role = element.getAttribute("role")?.trim().toLowerCase();
+  return role === "textbox" || role === "searchbox" || role === "combobox";
+}
+
+function isInsideInboxPanel(element: Element | null) {
+  return element instanceof HTMLElement && Boolean(element.closest("#omni-inbox-center"));
+}
+
 function shouldHandleGlobalComposerKeydown(event: KeyboardEvent) {
   if (!import.meta.client || !canFocusComposer()) {
     return false;
@@ -328,7 +376,14 @@ function shouldHandleGlobalComposerKeydown(event: KeyboardEvent) {
   }
 
   const activeElement = document.activeElement;
-  return !activeElement || activeElement === document.body;
+  return (
+    !isTextEditingElement(activeElement) &&
+    (
+      !activeElement ||
+      activeElement === document.body ||
+      isInsideInboxPanel(activeElement)
+    )
+  );
 }
 
 function shouldHandleGlobalReplyEscape(event: KeyboardEvent) {
@@ -345,7 +400,14 @@ function shouldHandleGlobalReplyEscape(event: KeyboardEvent) {
   }
 
   const activeElement = document.activeElement;
-  return !activeElement || activeElement === document.body;
+  return (
+    !isTextEditingElement(activeElement) &&
+    (
+      !activeElement ||
+      activeElement === document.body ||
+      isInsideInboxPanel(activeElement)
+    )
+  );
 }
 
 function onGlobalComposerKeydown(event: KeyboardEvent) {
@@ -792,6 +854,7 @@ const bodyBindings = computed(() => ({
   loadingOlderMessages: props.loadingOlderMessages,
   hasMoreMessages: props.hasMoreMessages,
   showLoadOlderMessagesButton: props.showLoadOlderMessagesButton,
+  showScrollToLatestButton: props.showScrollToLatestButton,
   messageRenderItems: props.messageRenderItems,
   selectionMode: selectionMode.value,
   selectedMessageCount: selectedMessageCount.value,
@@ -806,6 +869,7 @@ const bodyBindings = computed(() => ({
   chatBodyRef: setChatBodyElement,
   onChatScroll: (payload: Event) => emit("chat-scroll", payload),
   onLoadOlderMessages: () => emit("load-older-messages"),
+  onScrollToLatest: () => emit("scroll-to-latest"),
   onChatBodyClick,
   onSetReply: onSetReplyWithFocus,
   isMessageSelected,
@@ -1025,11 +1089,8 @@ const footerBindings = computed(() => ({
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 0;
+  padding: 0 !important;
 }
 </style>
-
-
-
 
 

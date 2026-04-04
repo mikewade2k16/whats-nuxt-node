@@ -5,6 +5,7 @@ import type {
   TenantHttpEndpointMetricsResponse,
   TenantSettings,
   TenantUser,
+  WhatsAppInstanceUserScopePolicy,
   WhatsAppInstanceAssignableUser,
   WhatsAppInstanceManagementResponse,
   WhatsAppInstanceRecord,
@@ -30,7 +31,7 @@ import { useOmnichannelAdminQrPolling } from "~/composables/omnichannel/useOmnic
 import { useOmnichannelAdminTenantOps } from "~/composables/omnichannel/useOmnichannelAdminTenantOps";
 
 export function useOmnichannelAdmin() {
-  const { user } = useAuth();
+  const { user, token, setSession } = useAuth();
   const { apiFetch } = useApi();
   const STATUS_SILENT_CACHE_TTL_MS = 10_000;
   const QR_SILENT_CACHE_TTL_MS = 15_000;
@@ -74,14 +75,26 @@ export function useOmnichannelAdmin() {
   const userForm = reactive(createUserFormState());
   const userFieldErrors = reactive<Record<string, string>>({});
   const whatsappForm = reactive(createWhatsAppFormState());
-  const whatsappInstanceForm = reactive({
+  const whatsappInstanceForm = reactive<{
+    id: string;
+    instanceName: string;
+    displayName: string;
+    phoneNumber: string;
+    evolutionApiKey: string;
+    queueLabel: string;
+    userScopePolicy: WhatsAppInstanceUserScopePolicy;
+    responsibleUserId: string;
+    isDefault: boolean;
+    isActive: boolean;
+    assignedUserIds: string[];
+  }>({
     id: "",
     instanceName: "",
     displayName: "",
     phoneNumber: "",
     evolutionApiKey: "",
     queueLabel: "",
-    userScopePolicy: "MULTI_INSTANCE" as const,
+    userScopePolicy: "MULTI_INSTANCE",
     responsibleUserId: "",
     isDefault: false,
     isActive: true,
@@ -150,7 +163,9 @@ export function useOmnichannelAdmin() {
       null;
 
     whatsappForm.instanceId = selected?.id ?? "";
-    whatsappForm.instanceName = selected?.instanceName ?? tenant.value?.whatsappInstance ?? "";
+    whatsappForm.instanceName = selected?.instanceName
+      ?? tenant.value?.whatsappInstance
+      ?? (user.value?.tenantSlug ? `${user.value.tenantSlug}-whatsapp` : "");
   }
 
   function resetWhatsAppInstanceForm() {
@@ -535,11 +550,13 @@ export function useOmnichannelAdmin() {
     editingClientId,
     selectedClientId,
     selectedClient,
+    createdClientAccess,
     savingUser,
     deletingUserId,
     editingUserId,
     loadClients,
     resetClientForm,
+    dismissCreatedClientAccess,
     startEditClient,
     saveClient,
     deleteClient,
@@ -565,6 +582,96 @@ export function useOmnichannelAdmin() {
     clientForm,
     userForm
   });
+
+  const togglingAtendimentoAccessUserId = ref("");
+  const switchingTenant = ref(false);
+  const switchTenantError = ref("");
+
+  async function toggleAtendimentoAccess(userId: string, grant: boolean) {
+    if (!canManageTenant.value) {
+      setError("Perfil sem permissao para gerenciar acessos.");
+      return;
+    }
+
+    togglingAtendimentoAccessUserId.value = userId;
+    clearMessages(true);
+
+    try {
+      const response = await apiFetch<{ users: WhatsAppInstanceAssignableUser[] }>(
+        `/tenant/users/${userId}/atendimento-access`,
+        { method: "PUT", body: { grant } }
+      );
+      whatsappInstanceUsers.value = response.users;
+      infoMessage.value = grant
+        ? "Acesso ao atendimento concedido."
+        : "Acesso ao atendimento removido.";
+    } catch (error) {
+      setError(extractError(error));
+    } finally {
+      togglingAtendimentoAccessUserId.value = "";
+    }
+  }
+
+  async function reloadAllData() {
+    stopQrPolling();
+    tenant.value = null;
+    users.value = [];
+    whatsappInstances.value = [];
+    whatsappInstanceUsers.value = [];
+    statusResult.value = null;
+    bootstrapResult.value = null;
+    qrResult.value = null;
+    failuresDashboard.value = null;
+    httpEndpointMetrics.value = null;
+    endpointValidation.value = null;
+    pairingCode.value = null;
+    clearMessages(true);
+    lastStatusFetchedAt = 0;
+    lastQrFetchedAt = 0;
+
+    await loadInitialData();
+    if (canManageTenant.value) {
+      await loadWhatsAppInstances({ silent: true });
+      await loadClients();
+    }
+    if (canManageTenant.value && !isConnected.value) {
+      startQrPolling();
+    }
+  }
+
+  async function switchTenant(clientId: number) {
+    if (switchingTenant.value) {
+      return;
+    }
+
+    switchingTenant.value = true;
+    switchTenantError.value = "";
+    try {
+      const response = await apiFetch<{
+        token: string;
+        user: {
+          id: string;
+          tenantId: string;
+          tenantSlug: string;
+          email: string;
+          name: string;
+          role: string;
+        };
+      }>("/auth/switch-tenant", {
+        method: "POST",
+        body: { clientId }
+      });
+
+      setSession(response.token, response.user as Parameters<typeof setSession>[1]);
+      await reloadAllData();
+    } catch (error) {
+      switchTenantError.value = error instanceof Error
+        ? error.message
+        : "Falha ao trocar de tenant.";
+    } finally {
+      switchingTenant.value = false;
+    }
+  }
 
   onMounted(async () => {
     if (canViewOpsDashboard.value) {
@@ -616,6 +723,7 @@ export function useOmnichannelAdmin() {
     endpointValidation,
     infoMessage,
     errorMessage,
+    createdClientAccess,
     pairingCode,
     failureWindowDays,
     tenantForm,
@@ -649,6 +757,7 @@ export function useOmnichannelAdmin() {
     editingUserId,
     loadClients,
     resetClientForm,
+    dismissCreatedClientAccess,
     startEditClient,
     saveClient,
     deleteClient,
@@ -671,6 +780,12 @@ export function useOmnichannelAdmin() {
     generatePairingCode,
     loadFailuresDashboard,
     loadHttpEndpointMetrics,
-    validateEvolutionEndpoints
+    validateEvolutionEndpoints,
+    toggleAtendimentoAccess,
+    togglingAtendimentoAccessUserId,
+    switchTenant,
+    switchingTenant,
+    switchTenantError,
+    reloadAllData
   };
 }

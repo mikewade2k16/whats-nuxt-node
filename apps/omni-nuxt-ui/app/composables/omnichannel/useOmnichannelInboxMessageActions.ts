@@ -38,7 +38,10 @@ export function useOmnichannelInboxMessageActions(options: {
   mergeMessages: (...chunks: Message[][]) => Message[];
   updateConversationPreviewFromMessage: (messageEntry: Message) => void;
   scheduleStickyDateRefresh: () => void;
-  loadConversationMessages: (conversationId: string) => Promise<void>;
+  loadConversationMessages: (
+    conversationId: string,
+    loadOptions?: { forceRefresh?: boolean }
+  ) => Promise<void>;
 }) {
   const processingMessageAction = ref(false);
 
@@ -128,7 +131,7 @@ export function useOmnichannelInboxMessageActions(options: {
 
       return response;
     } catch (error) {
-      await options.loadConversationMessages(conversationId);
+      await options.loadConversationMessages(conversationId, { forceRefresh: true });
       throw error;
     } finally {
       processingMessageAction.value = false;

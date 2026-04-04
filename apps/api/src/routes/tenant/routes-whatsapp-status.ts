@@ -9,11 +9,12 @@ import { whatsappStatusQuerySchema } from "./schemas.js";
 import { resolveTenantInstanceById } from "../../services/whatsapp-instances.js";
 
 interface WhatsAppStatusPayload {
-  configured: true;
-  instanceName: string;
-  webhookUrl: string;
-  connectionState: Record<string, unknown>;
-  webhook: Record<string, unknown> | null;
+  configured: boolean;
+  instanceId?: string;
+  instanceName?: string;
+  webhookUrl?: string;
+  connectionState?: Record<string, unknown>;
+  webhook?: Record<string, unknown> | null;
   message?: string;
 }
 
@@ -53,6 +54,20 @@ function setCachedStatus(key: string, payload: WhatsAppStatusPayload, now = Date
   });
 }
 
+function buildMissingEvolutionInstancePayload(params: {
+  tenantSlug: string;
+  instanceId: string;
+  instanceName: string;
+}) {
+  return {
+    configured: false,
+    instanceId: params.instanceId,
+    instanceName: params.instanceName,
+    webhookUrl: buildWebhookUrl(params.tenantSlug),
+    message: "Instancia cadastrada no tenant, mas ainda nao existe na Evolution. Abra o Admin e clique em Configurar WhatsApp."
+  } satisfies WhatsAppStatusPayload;
+}
+
 export function registerTenantWhatsAppStatusRoute(protectedApp: FastifyInstance) {
   protectedApp.get("/tenant/whatsapp/status", async (request, reply) => {
     const query = whatsappStatusQuerySchema.safeParse(request.query);
@@ -64,7 +79,7 @@ export function registerTenantWhatsAppStatusRoute(protectedApp: FastifyInstance)
     const instance = await resolveTenantInstanceById({
       tenantId: tenant.id,
       instanceId: query.data.instanceId,
-      includeInactive: true
+      includeInactive: false
     });
 
     if (!instance) {
@@ -94,15 +109,36 @@ export function registerTenantWhatsAppStatusRoute(protectedApp: FastifyInstance)
 
     const requestPromise = (async (): Promise<WhatsAppStatusPayload> => {
       const client = createEvolutionClientOrThrow(tenant.evolutionApiKey);
-      const connectionState = await client.getConnectionState(instanceName);
+      let connectionState: Record<string, unknown>;
+      try {
+        connectionState = await client.getConnectionState(instanceName);
+      } catch (error) {
+        if (error instanceof EvolutionApiError && error.statusCode === 404) {
+          return buildMissingEvolutionInstancePayload({
+            tenantSlug: tenant.slug,
+            instanceId: instance.id,
+            instanceName
+          });
+        }
+
+        throw error;
+      }
+
       let webhook: Record<string, unknown> | null = null;
 
       if (includeWebhook) {
-        webhook = await client.findWebhook(instanceName);
+        try {
+          webhook = await client.findWebhook(instanceName);
+        } catch (error) {
+          if (!(error instanceof EvolutionApiError) || error.statusCode !== 404) {
+            throw error;
+          }
+        }
       }
 
       const payload: WhatsAppStatusPayload = {
         configured: true,
+        instanceId: instance.id,
         instanceName,
         webhookUrl: buildWebhookUrl(tenant.slug),
         connectionState,

@@ -8,6 +8,7 @@ const {
   loadingOlderMessages,
   hasMoreMessages,
   showLoadOlderMessagesButton,
+  showScrollToLatestButton,
   messageRenderItems,
   selectionMode,
   selectedMessageCount,
@@ -22,6 +23,7 @@ const {
   chatBodyRef,
   onChatScroll,
   onLoadOlderMessages,
+  onScrollToLatest,
   onChatBodyClick,
   onSetReply,
   isMessageSelected,
@@ -91,6 +93,7 @@ const {
   "loadingOlderMessages",
   "hasMoreMessages",
   "showLoadOlderMessagesButton",
+  "showScrollToLatestButton",
   "messageRenderItems",
   "selectionMode",
   "selectedMessageCount",
@@ -105,6 +108,7 @@ const {
   "chatBodyRef",
   "onChatScroll",
   "onLoadOlderMessages",
+  "onScrollToLatest",
   "onChatBodyClick",
   "onSetReply",
   "isMessageSelected",
@@ -279,6 +283,19 @@ const {
           :resolve-outbound-operator-label="resolveOutboundOperatorLabel"
         />
       </div>
+
+      <div v-if="showScrollToLatestButton" class="chat-page__scroll-latest">
+        <UButton
+          size="sm"
+          color="primary"
+          variant="solid"
+          icon="i-lucide-chevron-down"
+          class="chat-page__scroll-latest-btn"
+          @click.stop="onScrollToLatest()"
+        >
+          Ultimas mensagens
+        </UButton>
+      </div>
     </template>
   </div>
 </template>
@@ -315,6 +332,22 @@ const {
   border: 1px solid rgb(var(--border));
   border-radius: 999px;
   padding: 0.2rem 0.6rem;
+}
+
+.chat-page__scroll-latest {
+  position: sticky;
+  bottom: 0.9rem;
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 0.35rem;
+  margin-top: -2.75rem;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.chat-page__scroll-latest-btn {
+  pointer-events: auto;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.24);
 }
 
 .chat-date-separator,

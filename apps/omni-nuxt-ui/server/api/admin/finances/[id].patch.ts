@@ -1,14 +1,14 @@
 import { createError, getRouterParam, readBody } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
 import { resolveOwnedClientId } from '~~/server/utils/access-context'
-import { updateFinanceSheetById } from '~~/server/utils/finances-repository'
+import { coreAdminFetch } from '~~/server/utils/core-admin-fetch'
+import type { FinanceSheetItem } from '~/types/finances'
 
 export default defineEventHandler(async (event) => {
   const access = await requireScopedFeatureAccess(event, '/admin/finance')
 
-  const idRaw = getRouterParam(event, 'id')
-  const id = Number.parseInt(String(idRaw ?? ''), 10)
-  if (!Number.isFinite(id) || id <= 0) {
+  const sheetId = String(getRouterParam(event, 'id') ?? '').trim().toLowerCase()
+  if (!sheetId) {
     throw createError({ statusCode: 400, statusMessage: 'Id da planilha invalido.' })
   }
 
@@ -20,35 +20,29 @@ export default defineEventHandler(async (event) => {
     entradas?: unknown
     saidas?: unknown
     clientId?: number
-    clientName?: string
   }>(event)
 
-  const hasClientIdPatch = Object.prototype.hasOwnProperty.call(body ?? {}, 'clientId')
-  const resolvedClientId = hasClientIdPatch
-    ? resolveOwnedClientId(access, body?.clientId)
-    : undefined
+  const resolvedClientId = resolveOwnedClientId(access, body?.clientId)
 
-  const updated = updateFinanceSheetById(id, {
-    title: body?.title,
-    period: body?.period,
-    status: body?.status,
-    notes: body?.notes,
-    entradas: body?.entradas,
-    saidas: body?.saidas,
-    clientId: resolvedClientId,
-    clientName: body?.clientName
-  }, {
-    viewerUserType: access.userType,
-    viewerClientId: access.clientId
-  })
-
-  if (!updated) {
-    throw createError({ statusCode: 404, statusMessage: 'Planilha nao encontrada.' })
-  }
+  const response = await coreAdminFetch<{ item: FinanceSheetItem }>(
+    event,
+    `/core/admin/finance-sheets/${sheetId}`,
+    {
+      method: 'PUT',
+      body: {
+        title: body?.title,
+        period: body?.period,
+        status: body?.status,
+        notes: body?.notes,
+        entradas: body?.entradas,
+        saidas: body?.saidas,
+        clientId: resolvedClientId > 0 ? resolvedClientId : undefined
+      }
+    }
+  )
 
   return {
-    status: 'success',
-    data: updated
+    status: 'success' as const,
+    data: response.item
   }
 })
-

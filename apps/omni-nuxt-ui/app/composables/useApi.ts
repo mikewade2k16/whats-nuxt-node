@@ -41,6 +41,7 @@ function withLeadingSlash(path: string) {
 export function useApi() {
   const { token, clearSession } = useAuth();
   const { clearSession: clearCoreSession } = useCoreAuth();
+  const sessionSimulation = useSessionSimulationStore();
   const DEFAULT_TIMEOUT_MS = 30_000;
 
   async function apiFetch<T>(path: string, options: Parameters<typeof $fetch<T>>[1] = {}) {
@@ -66,6 +67,7 @@ export function useApi() {
       if (statusCode === 401) {
         clearSession();
         clearCoreSession();
+        sessionSimulation.reset();
         if (import.meta.client) {
           void navigateTo("/admin/login");
         }

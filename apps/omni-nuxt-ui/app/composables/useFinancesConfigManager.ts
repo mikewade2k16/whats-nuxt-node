@@ -4,6 +4,10 @@ import type {
   FinanceConfigResponse,
   FinanceFixedAccountConfig
 } from '~/types/finances'
+import {
+  isFinanceUuid,
+  normalizeFinanceEntityId
+} from '~/utils/finance-ids'
 
 interface FinanceConfigState {
   clientId: number
@@ -12,6 +16,8 @@ interface FinanceConfigState {
   recurringEntries: FinanceRecurringEntryConfig[]
   updatedAt: string
 }
+
+const FINANCE_CONFIG_API_BASE = '/api/admin/finance-config'
 
 function normalizeText(value: unknown, max = 300) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
@@ -35,7 +41,7 @@ export function useFinancesConfigManager() {
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<FinanceConfigResponse>('/api/admin/finances/config', {
+      const response = await bffFetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
         query: {
           clientId: Number.isFinite(Number(clientId)) ? Number(clientId) : undefined
         }
@@ -60,29 +66,48 @@ export function useFinancesConfigManager() {
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<FinanceConfigResponse>('/api/admin/finances/config', {
-        method: 'PATCH',
+      const normalizedCategories = Array.isArray(payload.categories)
+        ? payload.categories.map((category) => {
+          const rawId = normalizeText(category.id, 90)
+          return {
+            rawId,
+            id: normalizeFinanceEntityId(rawId),
+            name: normalizeText(category.name, 120),
+            kind: category.kind,
+            description: normalizeText(category.description, 400)
+          }
+        })
+        : undefined
+      const categoryIdMap = new Map((normalizedCategories || []).map(category => [category.rawId, category.id] as const))
+
+      const response = await bffFetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
+        method: 'PUT',
         body: {
           clientId: payload.clientId,
-          categories: Array.isArray(payload.categories)
-            ? payload.categories.map((category) => ({
-              id: normalizeText(category.id, 90),
-              name: normalizeText(category.name, 120),
+          categories: normalizedCategories
+            ? normalizedCategories.map((category) => ({
+              id: category.id,
+              name: category.name,
               kind: category.kind,
-              description: normalizeText(category.description, 400)
+              description: category.description
             }))
             : undefined,
           fixedAccounts: Array.isArray(payload.fixedAccounts)
             ? payload.fixedAccounts.map((account) => ({
-              id: normalizeText(account.id, 90),
+              id: normalizeFinanceEntityId(account.id),
               name: normalizeText(account.name, 120),
               kind: account.kind,
-              categoryId: normalizeText(account.categoryId, 90),
+              categoryId: (() => {
+                const rawCategoryId = normalizeText(account.categoryId, 90)
+                if (!rawCategoryId) return ''
+                if (categoryIdMap.has(rawCategoryId)) return categoryIdMap.get(rawCategoryId) || ''
+                return isFinanceUuid(rawCategoryId) ? rawCategoryId.toLowerCase() : ''
+              })(),
               defaultAmount: normalizeAmount(account.defaultAmount),
               notes: normalizeText(account.notes, 500),
               members: Array.isArray(account.members)
                 ? account.members.map((member) => ({
-                  id: normalizeText(member.id, 90),
+                  id: normalizeFinanceEntityId(member.id),
                   name: normalizeText(member.name, 120),
                   amount: normalizeAmount(member.amount)
                 }))

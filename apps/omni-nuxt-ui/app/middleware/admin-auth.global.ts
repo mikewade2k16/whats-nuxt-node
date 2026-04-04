@@ -10,17 +10,21 @@ export default defineNuxtRouteMiddleware((to) => {
   const loginPath = "/admin/login";
   const homePath = "/admin";
   const { isAuthenticated, hydrate } = useAuth();
+  const { isAuthenticated: isCoreAuthenticated, hydrate: hydrateCoreAuth } = useCoreAuth();
 
   hydrate();
+  hydrateCoreAuth();
+
+  const hasAnyAdminSession = isAuthenticated.value || isCoreAuthenticated.value;
 
   if (to.path === loginPath) {
-    if (isAuthenticated.value) {
+    if (hasAnyAdminSession) {
       return navigateTo(homePath, { replace: true });
     }
     return;
   }
 
-  if (!isAuthenticated.value) {
+  if (!hasAnyAdminSession) {
     return navigateTo(loginPath, { replace: true });
   }
 });

@@ -21,6 +21,8 @@ import { useOmnichannelInboxScroll } from "~/composables/omnichannel/useOmnichan
 import { useOmnichannelInboxState } from "~/composables/omnichannel/useOmnichannelInboxState";
 import { useOmnichannelInboxStateMutators } from "~/composables/omnichannel/useOmnichannelInboxStateMutators";
 import { useOmnichannelInboxMessageActions } from "~/composables/omnichannel/useOmnichannelInboxMessageActions";
+import { useInboxSyncGuard } from "~/composables/omnichannel/useInboxSyncGuard";
+import { useInboxMessageWindow } from "~/composables/omnichannel/useInboxMessageWindow";
 import {
   type AttachmentPickerMode,
   asRecord,
@@ -43,7 +45,7 @@ import {
 
 export function useOmnichannelInbox() {
   const config = useRuntimeConfig();
-  const { user, token, clearSession } = useAuth();
+  const { user, token, clearSession, setSession } = useAuth();
   const { clearSession: clearCoreSession } = useCoreAuth();
   const { apiFetch } = useApi();
 
@@ -53,6 +55,7 @@ export function useOmnichannelInbox() {
     users,
     whatsappInstances,
     messages,
+    visibleMessagesConversationId,
     activeConversationId,
     leftCollapsed,
     rightCollapsed,
@@ -75,6 +78,7 @@ export function useOmnichannelInbox() {
     updatingAssignee,
     hasMoreMessages,
     showLoadOlderMessagesButton,
+    showScrollToLatestButton,
     stickyDateLabel,
     showStickyDate,
     draft,
@@ -871,13 +875,17 @@ export function useOmnichannelInbox() {
     hydrateRealtimeMediaMessage,
     loadConversations,
     loadConversationMessages,
+    refreshConversationMessages,
+    syncConversationHistory,
     loadGroupParticipants,
     loadOlderMessages,
-    scheduleGroupParticipantsRefresh
+    scheduleGroupParticipantsRefresh,
+    updateConversationCacheFromMessage
   } = useOmnichannelInboxHistory({
     apiFetch,
     conversations,
     messages,
+    visibleMessagesConversationId,
     activeConversationId,
     selectedInstanceId: instanceId,
     loadingConversations,
@@ -911,9 +919,32 @@ export function useOmnichannelInbox() {
     updateConversationPreviewFromMessage
   });
 
+  // --- Code 1: Message Window (always max 50 messages) ---
+  const messageWindow = useInboxMessageWindow({
+    messages,
+    hasMoreMessages,
+    chatBodyRef,
+    activeConversationId,
+    apiFetch,
+    normalizeMessage
+  });
+
+  // --- Code 2: Sync Guard (freshness check + send verification) ---
+  const syncGuard = useInboxSyncGuard({
+    activeConversationId,
+    messages,
+    apiFetch,
+    refreshConversationMessages,
+    syncConversationHistory,
+    normalizeMessage,
+    mergeMessages,
+    updateConversationPreviewFromMessage
+  });
+
   const {
     scheduleStickyDateRefresh,
     scrollToBottom,
+    scrollToLatest,
     selectConversation,
     onChatScroll,
     onChatBodyMounted,
@@ -925,6 +956,7 @@ export function useOmnichannelInbox() {
     hasMoreMessages,
     loadingOlderMessages,
     showLoadOlderMessagesButton,
+    showScrollToLatestButton,
     showStickyDate,
     stickyDateLabel,
     firstUnreadMessageId,
@@ -982,6 +1014,10 @@ export function useOmnichannelInbox() {
     persistInstanceFilterPreference(nextValue);
     activeConversationId.value = null;
     messages.value = [];
+    visibleMessagesConversationId.value = null;
+    hasMoreMessages.value = false;
+    showLoadOlderMessagesButton.value = false;
+    showScrollToLatestButton.value = false;
     await Promise.allSettled([
       loadWhatsAppStatus({ force: true }),
       loadConversations({ skipOpenSync: true })
@@ -1040,7 +1076,10 @@ export function useOmnichannelInbox() {
     scrollToBottom,
     markConversationAsRead,
     scheduleStickyDateRefresh,
-    reconcilePendingMessageStatus
+    reconcilePendingMessageStatus: (conversationId: string, messageId: string) => {
+      syncGuard.verifySend(conversationId, messageId);
+      return reconcilePendingMessageStatus(conversationId, messageId);
+    }
   });
 
   const { reactToMessage } = useOmnichannelInboxMessageReactions({
@@ -1074,6 +1113,7 @@ export function useOmnichannelInbox() {
   });
 
   const {
+    realtimeConnectionState,
     connectSocket,
     disconnectSocket,
     startWhatsAppStatusPolling,
@@ -1084,15 +1124,17 @@ export function useOmnichannelInbox() {
     conversations,
     messages,
     activeConversationId,
+    visibleMessagesConversationId,
     selectedInstanceId: instanceId,
     chatBodyRef,
     loadConversations,
-    loadConversationMessages,
+    refreshConversationMessages,
     loadWhatsAppStatus,
     upsertConversation,
     normalizeMessage,
     mergeMessages,
     updateConversationPreviewFromMessage,
+    updateConversationCacheFromMessage,
     scheduleGroupParticipantsRefresh,
     shouldFlagMentionAlert,
     incrementMentionAlert,
@@ -1100,7 +1142,8 @@ export function useOmnichannelInbox() {
     markConversationAsRead,
     messageNeedsMediaHydration,
     hydrateRealtimeMediaMessage,
-    scheduleStickyDateRefresh
+    scheduleStickyDateRefresh,
+    enforceMessageWindow: () => messageWindow.enforceWindow()
   });
 
   const {
@@ -1120,6 +1163,75 @@ export function useOmnichannelInbox() {
     scheduleStickyDateRefresh,
     loadConversationMessages
   });
+
+  const switchingTenant = ref(false);
+  const switchTenantError = ref("");
+
+  async function switchTenant(clientId: number) {
+    if (switchingTenant.value) {
+      return;
+    }
+
+    switchingTenant.value = true;
+    switchTenantError.value = "";
+    try {
+      syncGuard.stopSync();
+      disconnectSocket();
+      stopWhatsAppStatusPolling();
+
+      const response = await apiFetch<{
+        token: string;
+        user: {
+          id: string;
+          tenantId: string;
+          tenantSlug: string;
+          email: string;
+          name: string;
+          role: string;
+        };
+      }>("/auth/switch-tenant", {
+        method: "POST",
+        body: { clientId }
+      });
+
+      setSession(response.token, response.user as Parameters<typeof setSession>[1]);
+
+      activeConversationId.value = null;
+      messages.value = [];
+      visibleMessagesConversationId.value = null;
+      hasMoreMessages.value = false;
+      showLoadOlderMessagesButton.value = false;
+      showScrollToLatestButton.value = false;
+      conversations.value = [];
+      contacts.value = [];
+      users.value = [];
+      whatsappInstances.value = [];
+
+      await Promise.allSettled([
+        loadTenantUploadLimit(),
+        loadAccessibleWhatsAppInstances()
+      ]);
+      loadInstanceFilterPreference();
+
+      await Promise.allSettled([
+        loadWhatsAppStatus({ force: true }),
+        loadConversations()
+      ]);
+      void loadUsers();
+      void loadContacts();
+      startWhatsAppStatusPolling();
+      connectSocket();
+      syncGuard.startSync();
+    } catch (error) {
+      switchTenantError.value = error instanceof Error
+        ? error.message
+        : "Falha ao trocar de tenant. Verifique se a API esta rodando.";
+      startWhatsAppStatusPolling();
+      connectSocket();
+    } finally {
+      switchingTenant.value = false;
+    }
+  }
 
   function logout() {
     disconnectSocket();
@@ -1151,9 +1263,11 @@ export function useOmnichannelInbox() {
     void loadContacts();
     startWhatsAppStatusPolling();
     connectSocket();
+    syncGuard.startSync();
   });
 
   onBeforeUnmount(() => {
+    syncGuard.stopSync();
     disconnectSocket();
     stopWhatsAppStatusPolling();
     groupParticipantsRefreshAtByConversation.clear();
@@ -1193,6 +1307,7 @@ export function useOmnichannelInbox() {
     loadingGroupParticipants,
     hasMoreMessages,
     showLoadOlderMessagesButton,
+    showScrollToLatestButton,
     savingContact,
     creatingContact,
     importingContacts,
@@ -1203,6 +1318,7 @@ export function useOmnichannelInbox() {
     contactActionError,
     contactImportPreview,
     contactImportResult,
+    realtimeConnectionState,
     whatsappStatus,
     whatsappConnectionState,
     isWhatsAppConfigured,
@@ -1252,6 +1368,7 @@ export function useOmnichannelInbox() {
     showOutboundOperatorLabel,
     onChatBodyMounted,
     onChatScroll,
+    scrollToLatest,
     requestOlderMessages,
     setReplyTarget,
     clearReplyTarget,
@@ -1290,7 +1407,9 @@ export function useOmnichannelInbox() {
     loadGroupParticipants,
     openMentionConversation,
     openSandboxTestConversation,
+    switchTenant,
+    switchingTenant,
+    switchTenantError,
     logout
   };
 }
-

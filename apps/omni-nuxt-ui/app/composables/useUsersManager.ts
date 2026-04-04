@@ -13,6 +13,7 @@ interface UserCreatePayload {
   clientId: number | null
   level: string
   userType: string
+  isPlatformAdmin: boolean
 }
 
 const UPDATE_DELAY_MS = 360
@@ -441,7 +442,8 @@ export function useUsersManager() {
           phone: normalizeText(payload?.phone ?? '', 20),
           clientId: normalizeClientId(payload?.clientId),
           level: normalizeLevel(payload?.level),
-          userType: normalizeUserType(payload?.userType)
+          userType: normalizeUserType(payload?.userType),
+          isPlatformAdmin: Boolean(payload?.isPlatformAdmin)
         }
       })
 

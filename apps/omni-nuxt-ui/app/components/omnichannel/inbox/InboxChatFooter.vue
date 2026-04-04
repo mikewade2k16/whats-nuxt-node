@@ -321,8 +321,11 @@ const {
 
 <style scoped>
 .chat-page__panel-footer {
-  display: grid;
-  gap: 0.55rem;
+  /*display: grid;
+  gap: 0.55rem;*/
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .chat-composer {
@@ -334,5 +337,6 @@ const {
   border: 1px solid rgb(var(--border));
   border-radius: 999px;
   background: rgb(var(--surface));
+  width:  95% !important;
 }
 </style>

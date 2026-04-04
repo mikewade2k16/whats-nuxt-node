@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { parseAdminPreferences } from '~/utils/admin-access'
+import { useAuthStore } from '~/stores/auth'
 import { useCoreAuthStore } from '~/stores/core-auth'
 
 export type SessionSimulationUserType = 'admin' | 'client'
@@ -105,6 +106,24 @@ function dedupeClientOptions(options: SessionSimulationClientOption[]) {
   return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
 }
 
+function extractFetchStatusCode(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return 0
+  }
+
+  if ('statusCode' in error) {
+    const statusCode = Number((error as { statusCode?: unknown }).statusCode)
+    return Number.isFinite(statusCode) ? statusCode : 0
+  }
+
+  if ('status' in error) {
+    const statusCode = Number((error as { status?: unknown }).status)
+    return Number.isFinite(statusCode) ? statusCode : 0
+  }
+
+  return 0
+}
+
 export const useSessionSimulationStore = defineStore('sessionSimulation', () => {
   const initialized = ref(false)
   const loadingClientOptions = ref(false)
@@ -159,7 +178,7 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
   const activeClientLabel = computed(() => {
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
     if (found) return found.label
-    return `Cliente #${effectiveClientId.value}`
+    return 'Cliente'
   })
   const activeClientModuleCodes = computed(() => {
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
@@ -176,6 +195,11 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
       clientId: clientId.value
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  }
+
+  function clearPersistedState() {
+    if (!import.meta.client) return
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   function ensureClientOptionForCurrentContext() {
@@ -263,9 +287,16 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     profileIsPlatformAdmin.value = false
     profileModuleCodes.value = []
     profileAtendimentoAccess.value = false
+    clientOptions.value = dedupeClientOptions(DEFAULT_CLIENT_OPTIONS)
+    lastClientOptionsSyncAt.value = ''
     modulesHydrated.value = false
-    ensureClientOptionForCurrentContext()
-    persist()
+    clearPersistedState()
+  }
+
+  function clearAllSessions() {
+    useAuthStore().clearSession()
+    useCoreAuthStore().clearSession()
+    reset()
   }
 
   function mergeClientOptions(next: SessionSimulationClientOption[]) {
@@ -328,15 +359,29 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
       const coreToken = String(coreAuth.token ?? '').trim()
 
       if (!coreToken) {
-        ensureClientOptionForCurrentContext()
         return
       }
 
-      const profileResponse = await $fetch<AdminProfileResponse>('/api/admin/profile', {
-        headers: {
-          'x-core-token': coreToken
+      let profileResponse: AdminProfileResponse | null = null
+      try {
+        profileResponse = await $fetch<AdminProfileResponse>('/api/admin/profile', {
+          headers: {
+            'x-core-token': coreToken
+          }
+        })
+      } catch (error) {
+        const statusCode = extractFetchStatusCode(error)
+        if (statusCode === 401 || statusCode === 403) {
+          clearAllSessions()
+          return
         }
-      }).catch(() => null)
+        return
+      }
+
+      if (!profileResponse?.data) {
+        clearAllSessions()
+        return
+      }
 
       profileUserType.value = normalizeUserType(profileResponse?.data?.userType ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'client'))
       profileUserLevel.value = normalizeUserLevel(profileResponse?.data?.level ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'marketing'))
@@ -358,22 +403,32 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
       if (!isPlatformAdmin) {
         const tenantId = String(coreAuth.user?.tenantId ?? '').trim()
         if (!tenantId) {
-          ensureClientOptionForCurrentContext()
+          clearAllSessions()
           return
         }
 
-        const [tenantResponse, tenantModulesResponse] = await Promise.all([
-          $fetch<CoreTenantResponse>(`/api/core-bff/core/tenants/${tenantId}`, {
-            headers: {
-              'x-core-token': coreToken
-            }
-          }).catch(() => null),
-          $fetch<CoreTenantModulesResponse>(`/api/core-bff/core/tenants/${tenantId}/modules`, {
-            headers: {
-              'x-core-token': coreToken
-            }
-          }).catch(() => null)
-        ])
+        let tenantResponse: CoreTenantResponse | null = null
+        let tenantModulesResponse: CoreTenantModulesResponse | null = null
+        try {
+          [tenantResponse, tenantModulesResponse] = await Promise.all([
+            $fetch<CoreTenantResponse>(`/api/core-bff/core/tenants/${tenantId}`, {
+              headers: {
+                'x-core-token': coreToken
+              }
+            }),
+            $fetch<CoreTenantModulesResponse>(`/api/core-bff/core/tenants/${tenantId}/modules`, {
+              headers: {
+                'x-core-token': coreToken
+              }
+            })
+          ])
+        } catch (error) {
+          const statusCode = extractFetchStatusCode(error)
+          if (statusCode === 401 || statusCode === 403) {
+            clearAllSessions()
+          }
+          return
+        }
 
         const resolvedClientId = normalizeClientId(profileClientId.value)
         const resolvedTenantName = String(tenantResponse?.name ?? '').trim() || `Cliente #${resolvedClientId}`
@@ -421,8 +476,11 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
       replaceClientOptions(mapped)
       modulesHydrated.value = true
       lastClientOptionsSyncAt.value = new Date().toISOString()
-    } catch {
-      ensureClientOptionForCurrentContext()
+    } catch (error) {
+      const statusCode = extractFetchStatusCode(error)
+      if (statusCode === 401 || statusCode === 403) {
+        clearAllSessions()
+      }
     } finally {
       loadingClientOptions.value = false
     }

@@ -97,6 +97,9 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginOutput, err
 	if tenantID != "" {
 		outputUser.TenantID = &tenantID
 	}
+	if meOutput, meErr := s.Me(ctx, claims); meErr == nil {
+		outputUser = meOutput.User
+	}
 
 	return LoginOutput{
 		AccessToken: tokenString,

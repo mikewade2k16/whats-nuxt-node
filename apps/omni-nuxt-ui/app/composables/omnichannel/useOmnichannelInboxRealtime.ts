@@ -6,21 +6,25 @@ import {
   isNearBottom
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
 
+export type RealtimeConnectionState = "disconnected" | "connecting" | "connected" | "module_denied" | "auth_error";
+
 export function useOmnichannelInboxRealtime(options: {
   publicApiBase: string;
   token: Ref<string | null>;
   conversations: Ref<Conversation[]>;
   messages: Ref<Message[]>;
   activeConversationId: Ref<string | null>;
+  visibleMessagesConversationId: Ref<string | null>;
   selectedInstanceId: Ref<string>;
   chatBodyRef: Ref<HTMLElement | null>;
   loadConversations: () => Promise<void>;
-  loadConversationMessages: (conversationId: string) => Promise<void>;
+  refreshConversationMessages: (conversationId: string) => Promise<void>;
   loadWhatsAppStatus: () => Promise<void>;
   upsertConversation: (conversationEntry: Conversation) => void;
   normalizeMessage: (messageEntry: Message) => Message;
   mergeMessages: (...chunks: Message[][]) => Message[];
   updateConversationPreviewFromMessage: (messageEntry: Message) => void;
+  updateConversationCacheFromMessage: (messageEntry: Message) => void;
   scheduleGroupParticipantsRefresh: (messageEntry: Message, force?: boolean) => void;
   shouldFlagMentionAlert: (messageEntry: Message) => boolean;
   incrementMentionAlert: (conversationId: string, amount?: number) => void;
@@ -29,9 +33,11 @@ export function useOmnichannelInboxRealtime(options: {
   messageNeedsMediaHydration: (messageEntry: Message) => boolean;
   hydrateRealtimeMediaMessage: (conversationId: string, messageId: string) => Promise<void>;
   scheduleStickyDateRefresh: () => void;
+  enforceMessageWindow?: () => void;
 }) {
   let socket: Socket | null = null;
   let socketManuallyClosed = false;
+  const realtimeConnectionState = ref<RealtimeConnectionState>("disconnected");
   let reconnectSyncInFlight = false;
   let conversationsRefreshInFlight: Promise<void> | null = null;
   let lastConversationsRefreshAt = 0;
@@ -41,10 +47,15 @@ export function useOmnichannelInboxRealtime(options: {
   let staleFallbackPollTimer: ReturnType<typeof setTimeout> | null = null;
   let staleFallbackPollingActive = false;
   let staleFallbackPollingInFlight = false;
+  let connectedHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectedHeartbeatActive = false;
+  let visibilityChangeHandler: (() => void) | null = null;
   const WHATSAPP_STATUS_POLL_INTERVAL_MS = 45_000;
   const CONVERSATIONS_REFRESH_COOLDOWN_MS = 5_000;
   const STALE_FALLBACK_POLL_INTERVAL_MS = 20_000;
   const STALE_FALLBACK_POLL_START_DELAY_MS = 4_000;
+  const CONNECTED_HEARTBEAT_INTERVAL_MS = 5 * 60_000;
+  const PAGE_VISIBILITY_STALE_THRESHOLD_MS = 5 * 60_000;
 
   function conversationMatchesSelectedInstance(conversation: {
     id: string;
@@ -187,7 +198,7 @@ export function useOmnichannelInboxRealtime(options: {
 
       const activeConversationId = options.activeConversationId.value;
       if (activeConversationId) {
-        await options.loadConversationMessages(activeConversationId);
+        await options.refreshConversationMessages(activeConversationId);
       }
     })();
 
@@ -202,12 +213,71 @@ export function useOmnichannelInboxRealtime(options: {
     }
   }
 
+  function clearConnectedHeartbeatTimer() {
+    if (!connectedHeartbeatTimer) return;
+    clearTimeout(connectedHeartbeatTimer);
+    connectedHeartbeatTimer = null;
+  }
+
+  function scheduleConnectedHeartbeat() {
+    if (!connectedHeartbeatActive) return;
+    clearConnectedHeartbeatTimer();
+    connectedHeartbeatTimer = setTimeout(() => {
+      void runConnectedHeartbeatCycle();
+    }, CONNECTED_HEARTBEAT_INTERVAL_MS);
+  }
+
+  async function runConnectedHeartbeatCycle() {
+    if (!connectedHeartbeatActive) return;
+
+    if (import.meta.client && document.visibilityState === "hidden") {
+      scheduleConnectedHeartbeat();
+      return;
+    }
+
+    const reloadActive = Boolean(options.activeConversationId.value);
+    await refreshConversationsFromRealtime({ force: true, reloadActive });
+    scheduleConnectedHeartbeat();
+  }
+
+  function startConnectedHeartbeat() {
+    connectedHeartbeatActive = true;
+    scheduleConnectedHeartbeat();
+  }
+
+  function stopConnectedHeartbeat() {
+    connectedHeartbeatActive = false;
+    clearConnectedHeartbeatTimer();
+  }
+
+  function handleVisibilityChange() {
+    if (!import.meta.client || document.visibilityState !== "visible") return;
+    const timeSinceLastSync = Date.now() - lastConversationsRefreshAt;
+    if (timeSinceLastSync < PAGE_VISIBILITY_STALE_THRESHOLD_MS) return;
+    const reloadActive = Boolean(options.activeConversationId.value);
+    void refreshConversationsFromRealtime({ force: true, reloadActive });
+  }
+
+  function addVisibilityChangeListener() {
+    if (!import.meta.client) return;
+    removeVisibilityChangeListener();
+    visibilityChangeHandler = handleVisibilityChange;
+    document.addEventListener("visibilitychange", visibilityChangeHandler);
+  }
+
+  function removeVisibilityChangeListener() {
+    if (!visibilityChangeHandler) return;
+    document.removeEventListener("visibilitychange", visibilityChangeHandler);
+    visibilityChangeHandler = null;
+  }
+
   function connectSocket() {
     if (!options.token.value || socket) {
       return;
     }
 
     socketManuallyClosed = false;
+    realtimeConnectionState.value = "connecting";
 
     socket = io(options.publicApiBase, {
       transports: ["websocket"],
@@ -217,7 +287,10 @@ export function useOmnichannelInboxRealtime(options: {
     });
 
     socket.on("connect", () => {
+      realtimeConnectionState.value = "connected";
       stopStaleFallbackPolling();
+      startConnectedHeartbeat();
+      addVisibilityChangeListener();
 
       if (reconnectSyncInFlight) {
         return;
@@ -234,11 +307,27 @@ export function useOmnichannelInboxRealtime(options: {
       });
     });
 
-    socket.on("connect_error", () => {
+    socket.on("connect_error", (error) => {
       if (socketManuallyClosed) {
         return;
       }
 
+      const errorMessage = error?.message ?? "";
+      if (errorMessage === "ModuleAccessDenied") {
+        realtimeConnectionState.value = "module_denied";
+        socket?.disconnect();
+        socket = null;
+        startStaleFallbackPolling();
+        return;
+      }
+
+      if (errorMessage === "Unauthorized") {
+        realtimeConnectionState.value = "auth_error";
+        startStaleFallbackPolling();
+        return;
+      }
+
+      realtimeConnectionState.value = "disconnected";
       startStaleFallbackPolling();
     });
 
@@ -247,6 +336,9 @@ export function useOmnichannelInboxRealtime(options: {
         return;
       }
 
+      realtimeConnectionState.value = "disconnected";
+      stopConnectedHeartbeat();
+      removeVisibilityChangeListener();
       startStaleFallbackPolling();
     });
 
@@ -282,11 +374,17 @@ export function useOmnichannelInboxRealtime(options: {
       options.updateConversationPreviewFromMessage(normalizedPayload);
       options.scheduleGroupParticipantsRefresh(normalizedPayload);
       const hasMentionAlert = options.shouldFlagMentionAlert(normalizedPayload);
+      const isVisibleActiveConversation =
+        normalizedPayload.conversationId === options.activeConversationId.value &&
+        options.visibleMessagesConversationId.value === normalizedPayload.conversationId;
 
-      if (normalizedPayload.conversationId === options.activeConversationId.value) {
+      if (isVisibleActiveConversation) {
         const shouldStickToBottom = isNearBottom(options.chatBodyRef.value);
 
         options.messages.value = options.mergeMessages(options.messages.value, [normalizedPayload]);
+        if (options.enforceMessageWindow) {
+          options.enforceMessageWindow();
+        }
         await nextTick();
 
         if (normalizedPayload.direction === "OUTBOUND" || shouldStickToBottom) {
@@ -308,6 +406,8 @@ export function useOmnichannelInboxRealtime(options: {
         options.scheduleStickyDateRefresh();
         return;
       }
+
+      options.updateConversationCacheFromMessage(normalizedPayload);
 
       if (!options.conversations.value.find((entry) => entry.id === normalizedPayload.conversationId)) {
         await refreshConversationsFromRealtime();
@@ -350,10 +450,15 @@ export function useOmnichannelInboxRealtime(options: {
 
       if (isFullMessagePayload) {
         const normalizedPayload = options.normalizeMessage(payload as Message);
+        const isVisibleActiveConversation =
+          normalizedPayload.conversationId === options.activeConversationId.value &&
+          options.visibleMessagesConversationId.value === normalizedPayload.conversationId;
         options.scheduleGroupParticipantsRefresh(normalizedPayload);
-        if (normalizedPayload.conversationId === options.activeConversationId.value) {
+        if (isVisibleActiveConversation) {
           options.messages.value = options.mergeMessages(options.messages.value, [normalizedPayload]);
         }
+
+        options.updateConversationCacheFromMessage(normalizedPayload);
 
         if (!isHistoryBackfillEvent) {
           options.updateConversationPreviewFromMessage(normalizedPayload);
@@ -409,7 +514,10 @@ export function useOmnichannelInboxRealtime(options: {
   function disconnectSocket() {
     socketManuallyClosed = true;
     reconnectSyncInFlight = false;
+    realtimeConnectionState.value = "disconnected";
     stopStaleFallbackPolling();
+    stopConnectedHeartbeat();
+    removeVisibilityChangeListener();
 
     if (!socket) {
       return;
@@ -431,6 +539,7 @@ export function useOmnichannelInboxRealtime(options: {
   }
 
   return {
+    realtimeConnectionState,
     connectSocket,
     disconnectSocket,
     startWhatsAppStatusPolling,

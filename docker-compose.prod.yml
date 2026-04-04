@@ -1,465 +1,71 @@
+# Override de producao — usar junto com o docker-compose.yml base:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d
+#
+# Este arquivo:
+#   - Adiciona Caddy (HTTPS automatico + reverse proxy)
+#   - Corrige SERVER_URL da Evolution para URL publica
+#   - Remove exposicao de portas que nao devem ser publicas
+#   - Os servicos api/web/worker rodam em dev mode com codigo montado via volume
+#     (adequado para teste; para producao real usar Dockerfile.prod standalone)
+
 name: omnichannel-mvp
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      # Otimizações PostgreSQL
-      POSTGRES_INITDB_ARGS: >
-        -c shared_buffers=512MB
-        -c effective_cache_size=2GB
-        -c maintenance_work_mem=128MB
-        -c checkpoint_completion_target=0.9
-        -c wal_buffers=16MB
-        -c default_statistics_target=100
-        -c random_page_cost=1.1
-        -c effective_io_concurrency=200
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-    stop_grace_period: 30s
-    # Limites de recursos - Tier 1: MVP
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 1.5G
-        reservations:
-          cpus: '1'
-          memory: 1G
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  redis:
-    image: redis:7-alpine
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - "everysec"
-      - --maxmemory
-      - ${REDIS_MAXMEMORY:-512mb}
-      - --maxmemory-policy
-      - ${REDIS_MAXMEMORY_POLICY:-noeviction}
-      - --tcp-keepalive
-      - "300"
-      - --timeout
-      - "300"
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+      ADMINER_USER: ${ADMINER_USER:-dbadmin}
+      ADMINER_PASSWORD_HASH: ${ADMINER_PASSWORD_HASH}
+    depends_on:
+      - api
+      - web
     restart: unless-stopped
-    stop_grace_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   adminer:
     image: adminer:4.8.1
-    profiles: ["ops"]
-    environment:
-      ADMINER_DEFAULT_SERVER: postgres
-    ports:
-      - "8088:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    profiles: ["ops"]
-    environment:
-      REDIS_HOSTS: local:redis:6379
-    ports:
-      - "8089:8081"
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-
-  # ✅ NOVA IMAGEM MULTI-STAGE - API PRODUCTION-READY
-  api:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile.prod
-      target: prod
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      PORT: ${PORT}
-      CORS_ORIGIN: ${CORS_ORIGIN}
-      TRUSTED_PROXY_RANGES: ${TRUSTED_PROXY_RANGES:-loopback,private}
-      JWT_SECRET: ${JWT_SECRET}
-      CORE_API_BASE_URL: ${CORE_API_BASE_URL:-http://platform-core:4100}
-      CORE_API_EMAIL: ${CORE_API_EMAIL:-root@core.local}
-      CORE_API_PASSWORD: ${CORE_API_PASSWORD:-123456}
-      CORE_REQUEST_TIMEOUT_MS: ${CORE_REQUEST_TIMEOUT_MS:-15000}
-      CORE_ATENDIMENTO_MODULE_CODE: ${CORE_ATENDIMENTO_MODULE_CODE:-atendimento}
-      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL}
-      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-      EVOLUTION_SEND_PATH: ${EVOLUTION_SEND_PATH}
-      EVOLUTION_SEND_MEDIA_PATH: ${EVOLUTION_SEND_MEDIA_PATH}
-      EVOLUTION_SEND_AUDIO_PATH: ${EVOLUTION_SEND_AUDIO_PATH}
-      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH:-/message/sendSticker/:instance}
-      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH:-/message/sendReaction/:instance}
-      EVOLUTION_DEFAULT_INSTANCE: ${EVOLUTION_DEFAULT_INSTANCE}
-      EVOLUTION_WEBHOOK_TOKEN: ${EVOLUTION_WEBHOOK_TOKEN}
-      WEBHOOK_IDEMPOTENCY_TTL_SECONDS: ${WEBHOOK_IDEMPOTENCY_TTL_SECONDS:-21600}
-      WEBHOOK_IDEMPOTENCY_PROCESSING_TTL_SECONDS: ${WEBHOOK_IDEMPOTENCY_PROCESSING_TTL_SECONDS:-120}
-      WEBHOOK_RECEIVER_BASE_URL: ${WEBHOOK_RECEIVER_BASE_URL}
-      RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-false}  # ✅ Desabilitado em prod
-      RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
-      # ✅ Otimizações Node.js
-      NODE_ENV: production
-      NODE_OPTIONS: >
-        --max-old-space-size=512
-        --max-semi-space-size=256
-        --initial-old-space-size=256
-        --use-strict-mode
-    ports:
-      - "4000:4000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - api_node_modules:/app/node_modules
-    restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  platform-core:
-    build:
-      context: ./apps/platform-core
-      dockerfile: Dockerfile
-    environment:
-      CORE_DATABASE_URL: ${CORE_DATABASE_URL:-postgresql://omnichannel:omnichannel@postgres:5432/omnichannel}
-      CORE_DB_SCHEMA: ${CORE_DB_SCHEMA:-platform_core}
-      CORE_REDIS_URL: ${CORE_REDIS_URL:-redis://redis:6379}
-      CORE_HTTP_ADDR: ${CORE_HTTP_ADDR:-:4100}
-      CORE_JWT_SECRET: ${CORE_JWT_SECRET:-change-this-core-secret}
-      CORE_JWT_ISSUER: ${CORE_JWT_ISSUER:-platform-core}
-      CORE_JWT_TTL_MINUTES: ${CORE_JWT_TTL_MINUTES:-60}
-      CORE_DEFAULT_USERS_LIMIT: ${CORE_DEFAULT_USERS_LIMIT:-3}
-      CORE_ALLOWED_ORIGINS: ${CORE_ALLOWED_ORIGINS:-http://localhost:3000}
-      CORE_TRUSTED_PROXY_RANGES: ${CORE_TRUSTED_PROXY_RANGES:-loopback,private}
-      CORE_AUTO_MIGRATE: ${CORE_AUTO_MIGRATE:-false}  # ✅ Desabilitado em prod
-    ports:
-      - "4100:4100"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    stop_grace_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4100/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  # ✅ WORKER - BUILD OTIMIZADO
-  worker:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile.prod
-      target: worker
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL}
-      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-      EVOLUTION_SEND_PATH: ${EVOLUTION_SEND_PATH}
-      EVOLUTION_SEND_MEDIA_PATH: ${EVOLUTION_SEND_MEDIA_PATH}
-      EVOLUTION_SEND_AUDIO_PATH: ${EVOLUTION_SEND_AUDIO_PATH}
-      EVOLUTION_SEND_STICKER_PATH: ${EVOLUTION_SEND_STICKER_PATH:-/message/sendSticker/:instance}
-      EVOLUTION_SEND_REACTION_PATH: ${EVOLUTION_SEND_REACTION_PATH:-/message/sendReaction/:instance}
-      EVOLUTION_DEFAULT_INSTANCE: ${EVOLUTION_DEFAULT_INSTANCE}
-      RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-false}
-      RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
-      NODE_ENV: production
-      NODE_OPTIONS: >
-        --max-old-space-size=512
-        --max-semi-space-size=256
-        --initial-old-space-size=256
-        --use-strict-mode
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 768M
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "ps", "aux"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  # ✅ RETENTION WORKER - BUILD OTIMIZADO
-  retention-worker:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile.prod
-      target: retention
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      RETENTION_SWEEP_ON_BOOT: ${RETENTION_SWEEP_ON_BOOT:-false}
-      RETENTION_SWEEP_INTERVAL_MINUTES: ${RETENTION_SWEEP_INTERVAL_MINUTES:-1440}
-      NODE_ENV: production
-      NODE_OPTIONS: >
-        --max-old-space-size=256
-        --max-semi-space-size=128
-        --initial-old-space-size=128
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "ps", "aux"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  # ✅ WEB - NUXT PRODUCTION READY
-  web:
-    build:
-      context: ./apps/omni-nuxt-ui
-      dockerfile: Dockerfile.prod
-    environment:
-      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
-      NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE}
-      NUXT_CORE_API_INTERNAL_BASE: ${NUXT_CORE_API_INTERNAL_BASE:-http://platform-core:4100}
-      NUXT_REDIS_URL: ${NUXT_REDIS_URL:-redis://redis:6379}
-      NUXT_TRUSTED_PROXY_RANGES: ${NUXT_TRUSTED_PROXY_RANGES:-loopback,private}
-      NUXT_GIF_PROVIDER: ${NUXT_GIF_PROVIDER:-tenor}
-      NUXT_TENOR_API_KEY: ${NUXT_TENOR_API_KEY:-}
-      NUXT_TENOR_BASE_URL: ${NUXT_TENOR_BASE_URL:-https://tenor.googleapis.com/v2}
-      PROJECT_DOCS_DIR: /project-docs
-      NODE_ENV: production
-      # ✅ Otimizado: reduzido de 1024MB para 512MB
-      NODE_OPTIONS: >
-        --max-old-space-size=512
-        --max-semi-space-size=256
-        --initial-old-space-size=256
-    ports:
-      - "3000:3000"
-    depends_on:
-      api:
-        condition: service_healthy
-      platform-core:
-        condition: service_healthy
-    volumes:
-      - ./docs:/project-docs:ro
-    restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  # ✅ EVOLUTION - COM LIMITES
-  evolution:
-    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     profiles: ["channels"]
     environment:
-      SERVER_URL: http://localhost:8080
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_CONFIG_SESSION_PHONE_VERSION:-2,3000,1025205472}
-      DATABASE_ENABLED: "true"
-      DATABASE_PROVIDER: "postgresql"
-      DATABASE_CONNECTION_URI: ${EVOLUTION_DATABASE_URL}
-      DATABASE_CONNECTION_CLIENT_NAME: evolution_api
-      DATABASE_SAVE_DATA_INSTANCE: "true"
-      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
-      DATABASE_SAVE_MESSAGE_UPDATE: "true"
-      DATABASE_SAVE_DATA_CONTACTS: "true"
-      DATABASE_SAVE_DATA_CHATS: "true"
-      DATABASE_SAVE_DATA_LABELS: "true"
-      DATABASE_SAVE_DATA_HISTORIC: "true"
-      CACHE_REDIS_ENABLED: "true"
-      CACHE_REDIS_URI: ${REDIS_URL}
-      WEBSOCKET_ENABLED: "true"
-    ports:
-      - "8080:8080"
+      ADMINER_DEFAULT_SERVER: postgres
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - evolution_instances:/evolution/instances
     restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
-        reservations:
-          cpus: '1'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "5"
+
+  api:
+    ports: []
+
+  web:
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
+      npm run build &&
+      node .output/server/index.mjs"
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+    ports: []
+
+  postgres:
+    ports: []
+
+  redis:
+    ports: []
+
+  evolution:
+    ports: []
+    environment:
+      SERVER_URL: https://evo.${DOMAIN}
 
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  api_node_modules:
-    driver: local
-  worker_node_modules:
-    driver: local
-  retention_worker_node_modules:
-    driver: local
-  web_node_modules:
-    driver: local
-  evolution_instances:
-    driver: local
-
-networks:
-  default:
-    name: omnichannel-network
-    driver: bridge
+  caddy_data:
+  caddy_config:

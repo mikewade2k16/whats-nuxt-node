@@ -41,17 +41,21 @@ export function normalizeCreateUserPayloadForScope(
   payload: Record<string, unknown>
 ) {
   if (access.canCrossClientAccess) {
+    const isPlatformAdmin = Boolean(payload.isPlatformAdmin)
     return {
       ...payload,
-      clientId: payload.clientId ?? null,
-      userType: payload.userType
+      clientId: isPlatformAdmin ? null : payload.clientId ?? null,
+      level: isPlatformAdmin ? 'admin' : payload.level,
+      userType: isPlatformAdmin ? 'admin' : payload.userType,
+      isPlatformAdmin
     }
   }
 
   return {
     ...payload,
     clientId: access.clientId > 0 ? access.clientId : null,
-    userType: 'client'
+    userType: 'client',
+    isPlatformAdmin: false
   }
 }
 

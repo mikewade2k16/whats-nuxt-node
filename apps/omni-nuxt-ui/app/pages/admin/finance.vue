@@ -2,6 +2,13 @@
 import OmniSelectMenuInput from '~/components/inputs/OmniSelectMenuInput.vue'
 import OmniMoneyInput from '~/components/omni/inputs/OmniMoneyInput.vue'
 import FinanceLineCard from '~/components/admin/finance/FinanceLineCard.vue'
+import {
+  createFinanceUuid,
+  financeRecurringRowId,
+  normalizeFinanceEntityId,
+  normalizeFinanceLinkedUuid,
+  parseFinanceRecurringClientId
+} from '~/utils/finance-ids'
 import type {
   FinanceCategoryConfig,
   FinanceConfigKind,
@@ -22,6 +29,10 @@ const STATUS_OPTIONS = [
   { label: 'Conferencia', value: 'conferencia' },
   { label: 'Fechada', value: 'fechada' }
 ]
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo'
+const SHEET_AUTOSAVE_DEBOUNCE_MS = 1200
+const CONFIG_AUTOSAVE_DEBOUNCE_MS = 900
+const SHEET_SAVE_INDICATOR_DELAY_MS = 220
 const LINE_CARD_INTERACTIVE_SELECTOR = [
   'button',
   'input',
@@ -39,7 +50,20 @@ const KIND_OPTIONS = [
 
 const sessionSimulation = useSessionSimulationStore()
 const { bffFetch } = useBffFetch()
-const { createSheet, deleteSheet, fetchSheets, creating, deletingId, errorMessage, savingMap, sheets, updateSheet } = useFinancesManager()
+const {
+  activeSheet,
+  createSheet,
+  deleteSheet,
+  detailLoading,
+  fetchSheetDetail,
+  fetchSheets,
+  creating,
+  deletingId,
+  errorMessage,
+  sheets,
+  updateSheet,
+  updateSheetLine
+} = useFinancesManager()
 const {
   config,
   loading: configLoading,
@@ -49,7 +73,7 @@ const {
   saveConfig
 } = useFinancesConfigManager()
 
-const selectedSheetId = ref<number | null>(null)
+const selectedSheetId = ref<string | null>(null)
 const configOpen = ref(false)
 const lineDetailsOpen = reactive<Record<string, boolean>>({})
 const lineAdjustmentHistoryOpen = reactive<Record<string, boolean>>({})
@@ -61,6 +85,7 @@ const adjustmentDraftByKey = reactive<Record<string, {
   date: string
 }>>({})
 const saveConfigTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const activeSheetSaveIndicator = ref(false)
 const editingCategoryId = ref<string | null>(null)
 const editingFixedId = ref<string | null>(null)
 const categoryEditDraft = reactive<{
@@ -143,11 +168,38 @@ const newFixed = reactive<{
 })
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let saveIndicatorTimer: ReturnType<typeof setTimeout> | null = null
+let sheetPersistInFlight = false
+let sheetPersistQueued = false
+let configPersistInFlight = false
+let configPersistQueued = false
 const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
+function financeBrazilDateParts(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BRAZIL_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(value)
+
+  const mapped = parts.reduce<Record<string, string>>((acc, part) => {
+    if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+      acc[part.type] = part.value
+    }
+    return acc
+  }, {})
+
+  return {
+    year: mapped.year || '0000',
+    month: mapped.month || '01',
+    day: mapped.day || '01'
+  }
+}
+
 function currentPeriod() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const parts = financeBrazilDateParts()
+  return `${parts.year}-${parts.month}`
 }
 
 function formatMoney(value: unknown) {
@@ -159,13 +211,11 @@ function normalizeText(value: unknown, max = 240) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
-function makeId(prefix: string, index: number) {
-  return `${prefix}-${Date.now()}-${index + 1}`
-}
-
 function makeLine(kind: 'entrada' | 'saida', index = 0): FinanceLineItem {
+  void kind
+  void index
   return {
-    id: `${kind}-${Date.now()}-${index + 1}`,
+    id: createFinanceUuid(),
     description: '',
     category: '',
     effective: false,
@@ -179,7 +229,8 @@ function makeLine(kind: 'entrada' | 'saida', index = 0): FinanceLineItem {
 }
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
+  const parts = financeBrazilDateParts()
+  return `${parts.year}-${parts.month}-${parts.day}`
 }
 
 function normalizeAdjustmentDate(value: unknown) {
@@ -194,7 +245,7 @@ function normalizeAdjustmentEntry(value: unknown, index = 0): FinanceLineAdjustm
     : {}
 
   return {
-    id: normalizeText(source.id, 80) || makeId('adj', index),
+    id: normalizeFinanceEntityId(source.id),
     amount: Number(Number(source.amount || 0).toFixed(2)),
     note: normalizeText(source.note, 240),
     date: normalizeAdjustmentDate(source.date)
@@ -208,7 +259,7 @@ function ensureLineAdjustments(row: FinanceLineItem) {
 
   if (row.adjustments.length === 0 && Number(row.adjustmentAmount || 0) !== 0) {
     row.adjustments.push({
-      id: makeId('adj', 0),
+      id: createFinanceUuid(),
       amount: Number(Number(row.adjustmentAmount || 0).toFixed(2)),
       note: 'Ajuste legado',
       date: todayIsoDate()
@@ -246,11 +297,11 @@ function fixedAccountsByKind(kind: 'entrada' | 'saida') {
 }
 
 function recurringRowId(clientId: number) {
-  return `recurring-client-${clientId}`
+  return financeRecurringRowId(clientId)
 }
 
 function isRecurringFixedRowId(value: string) {
-  return value.startsWith('recurring-client-')
+  return parseFinanceRecurringClientId(value) > 0
 }
 
 function recurringEntryForClient(clientId: number) {
@@ -311,7 +362,7 @@ function syncRecurringRowsWithDraft(shouldPersist = false) {
   for (let index = list.length - 1; index >= 0; index -= 1) {
     const row = list[index]
     if (!row?.fixedAccountId || !isRecurringFixedRowId(row.fixedAccountId)) continue
-    const clientId = Number.parseInt(row.fixedAccountId.replace('recurring-client-', ''), 10)
+    const clientId = parseFinanceRecurringClientId(row.fixedAccountId)
     if (!Number.isFinite(clientId) || !recurringMap.has(clientId)) {
       list.splice(index, 1)
     }
@@ -379,7 +430,7 @@ function hydrate(sheet: FinanceSheetItem | null) {
     adjustments: Array.isArray(row.adjustments)
       ? row.adjustments.map((adjustment, index) => normalizeAdjustmentEntry(adjustment, index))
       : [],
-    fixedAccountId: row.fixedAccountId || '',
+    fixedAccountId: normalizeFinanceLinkedUuid(row.fixedAccountId),
     details: row.details || ''
   }))
   draft.saidas = (sheet.saidas || []).map(row => ({
@@ -387,7 +438,7 @@ function hydrate(sheet: FinanceSheetItem | null) {
     adjustments: Array.isArray(row.adjustments)
       ? row.adjustments.map((adjustment, index) => normalizeAdjustmentEntry(adjustment, index))
       : [],
-    fixedAccountId: row.fixedAccountId || '',
+    fixedAccountId: normalizeFinanceLinkedUuid(row.fixedAccountId),
     details: row.details || ''
   }))
   ensureRows()
@@ -505,22 +556,25 @@ function setEffectiveDateModalOpen(kind: 'entrada' | 'saida', row: FinanceLineIt
   effectiveDateModalOpen[lineScopedKey('effective-date', kind, row, index)] = Boolean(open)
 }
 
-function setEffectiveToday(row: FinanceLineItem) {
+async function setEffectiveToday(row: FinanceLineItem) {
+  const previous = snapshotLine(row)
   row.effectiveDate = todayIsoDate()
-  queuePersist()
+  await persistLineEffective(row, previous)
 }
 
-function clearEffectiveDate(row: FinanceLineItem) {
+async function clearEffectiveDate(row: FinanceLineItem) {
+  const previous = snapshotLine(row)
   row.effectiveDate = ''
-  queuePersist()
+  await persistLineEffective(row, previous)
 }
 
 function closeEffectiveDateModal(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number) {
   setEffectiveDateModalOpen(kind, row, index, false)
 }
 
-function onEffectiveDateSubmitShortcut(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number, event: KeyboardEvent) {
+async function onEffectiveDateSubmitShortcut(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number, event: KeyboardEvent) {
   event.preventDefault()
+  const previous = snapshotLine(row)
 
   const normalized = normalizeAdjustmentDate(row.effectiveDate)
   if (normalized) {
@@ -529,7 +583,7 @@ function onEffectiveDateSubmitShortcut(kind: 'entrada' | 'saida', row: FinanceLi
     row.effectiveDate = todayIsoDate()
   }
 
-  queuePersist()
+  await persistLineEffective(row, previous)
   closeEffectiveDateModal(kind, row, index)
 }
 
@@ -537,20 +591,31 @@ function onEffectiveDateCancelShortcut(kind: 'entrada' | 'saida', row: FinanceLi
   closeEffectiveDateModal(kind, row, index)
 }
 
-function onEffectiveToggle(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number, next: boolean) {
+async function onEffectiveDateChanged(row: FinanceLineItem) {
+  const previous = snapshotLine(row)
+  const normalized = normalizeAdjustmentDate(row.effectiveDate)
+  row.effectiveDate = normalized || todayIsoDate()
+  await persistLineEffective(row, previous)
+}
+
+async function onEffectiveToggle(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number, next: boolean) {
+  const previous = snapshotLine(row)
   row.effective = Boolean(next)
   if (!row.effective) {
     row.effectiveDate = ''
     closeEffectiveDateModal(kind, row, index)
-    queuePersist()
+    await persistLineEffective(row, previous)
     return
   }
 
   if (!normalizeAdjustmentDate(row.effectiveDate)) {
-    row.effectiveDate = ''
+    row.effectiveDate = todayIsoDate()
   }
   setEffectiveDateModalOpen(kind, row, index, true)
-  queuePersist()
+  const saved = await persistLineEffective(row, previous)
+  if (!saved) {
+    closeEffectiveDateModal(kind, row, index)
+  }
 }
 
 function isAdjustmentModalOpen(kind: 'entrada' | 'saida', row: FinanceLineItem, index: number) {
@@ -589,7 +654,7 @@ function addLineAdjustment(kind: 'entrada' | 'saida', row: FinanceLineItem, inde
 
   ensureLineAdjustments(row)
   row.adjustments.push({
-    id: makeId('adj', row.adjustments.length),
+    id: createFinanceUuid(),
     amount,
     note: normalizeText(draftEntry.note, 240),
     date: normalizeAdjustmentDate(draftEntry.date) || todayIsoDate()
@@ -666,39 +731,168 @@ const exitsExpected = computed(() => draft.saidas.reduce((sum, row) => sum + Num
 const exitsEffective = computed(() => draft.saidas.reduce((sum, row) => row.effective ? sum + Number(row.amount || 0) + Number(row.adjustmentAmount || 0) : sum, 0))
 const balanceExpected = computed(() => entriesExpected.value - exitsExpected.value)
 const balanceEffective = computed(() => entriesEffective.value - exitsEffective.value)
-const activeSheetSaving = computed(() => {
-  const id = Number(selectedSheetId.value || 0)
-  if (!id) return false
-  return Boolean(savingMap.value[`${id}:update`])
-})
+const activeSheetSaving = computed(() => activeSheetSaveIndicator.value)
 
-async function persist() {
-  const id = Number(selectedSheetId.value || 0)
-  if (!id) return
-  await updateSheet(id, { ...draft, clientId: Number(sessionSimulation.clientId || draft.clientId || DEFAULT_ADMIN_CLIENT_ID) })
+function snapshotAdjustment(adjustment: FinanceLineAdjustment): FinanceLineAdjustment {
+  return {
+    id: adjustment.id,
+    amount: Number(adjustment.amount || 0),
+    note: adjustment.note || '',
+    date: adjustment.date || ''
+  }
 }
 
-function queuePersist() {
+function snapshotLine(row: FinanceLineItem): FinanceLineItem {
+  return {
+    id: row.id,
+    kind: row.kind,
+    description: row.description || '',
+    category: row.category || '',
+    effective: Boolean(row.effective),
+    effectiveDate: row.effectiveDate || '',
+    amount: Number(row.amount || 0),
+    adjustmentAmount: Number(row.adjustmentAmount || 0),
+    adjustments: Array.isArray(row.adjustments) ? row.adjustments.map(snapshotAdjustment) : [],
+    fixedAccountId: row.fixedAccountId || '',
+    details: row.details || ''
+  }
+}
+
+function applySnapshotLine(target: FinanceLineItem, source: FinanceLineItem) {
+  target.id = source.id
+  target.kind = source.kind
+  target.description = source.description || ''
+  target.category = source.category || ''
+  target.effective = Boolean(source.effective)
+  target.effectiveDate = source.effectiveDate || ''
+  target.amount = Number(source.amount || 0)
+  target.adjustmentAmount = Number(source.adjustmentAmount || 0)
+  target.adjustments = Array.isArray(source.adjustments) ? source.adjustments.map(snapshotAdjustment) : []
+  target.fixedAccountId = source.fixedAccountId || ''
+  target.details = source.details || ''
+}
+
+async function persistLineEffective(row: FinanceLineItem, previous: FinanceLineItem) {
+  const id = String(selectedSheetId.value || '').trim().toLowerCase()
+  if (!id || !row.id) return false
+
+  const response = await updateSheetLine(id, row.id, {
+    effective: row.effective,
+    effectiveDate: row.effectiveDate
+  })
+
+  if (!response) {
+    applySnapshotLine(row, previous)
+    return false
+  }
+
+  applySnapshotLine(row, response.line)
+  return true
+}
+
+function buildSheetPersistPayload() {
+  return {
+    title: draft.title,
+    period: draft.period,
+    status: draft.status,
+    notes: draft.notes,
+    clientId: Number(sessionSimulation.clientId || draft.clientId || DEFAULT_ADMIN_CLIENT_ID),
+    entradas: draft.entradas.map(snapshotLine),
+    saidas: draft.saidas.map(snapshotLine)
+  }
+}
+
+function buildConfigPersistPayload() {
+  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
+  return {
+    clientId: targetClientId,
+    categories: configDraft.categories.map(category => ({ ...category })),
+    fixedAccounts: configDraft.fixedAccounts.map(account => ({
+      ...account,
+      members: (account.members || []).map(member => ({ ...member }))
+    })),
+    recurringEntries: configDraft.recurringEntries.map(entry => ({ ...entry }))
+  }
+}
+
+function scheduleSheetSaveIndicator() {
+  if (saveIndicatorTimer) clearTimeout(saveIndicatorTimer)
+  saveIndicatorTimer = setTimeout(() => {
+    if (sheetPersistInFlight) {
+      activeSheetSaveIndicator.value = true
+    }
+  }, SHEET_SAVE_INDICATOR_DELAY_MS)
+}
+
+function clearSheetSaveIndicator() {
+  if (saveIndicatorTimer) {
+    clearTimeout(saveIndicatorTimer)
+    saveIndicatorTimer = null
+  }
+  activeSheetSaveIndicator.value = false
+}
+
+async function persist() {
+  const id = String(selectedSheetId.value || '').trim().toLowerCase()
+  if (!id) return
+
+  if (sheetPersistInFlight) {
+    sheetPersistQueued = true
+    return
+  }
+
+  sheetPersistInFlight = true
+  sheetPersistQueued = false
+  scheduleSheetSaveIndicator()
+
+  try {
+    await updateSheet(id, buildSheetPersistPayload())
+  } finally {
+    sheetPersistInFlight = false
+    clearSheetSaveIndicator()
+
+    if (sheetPersistQueued) {
+      sheetPersistQueued = false
+      void persist()
+    }
+  }
+}
+
+function queuePersist(delayMs = SHEET_AUTOSAVE_DEBOUNCE_MS) {
   if (!selectedSheetId.value) return
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => { void persist() }, 380)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    void persist()
+  }, Math.max(0, delayMs))
 }
 
 async function persistConfig() {
-  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
-  await saveConfig({
-    clientId: targetClientId,
-    categories: configDraft.categories,
-    fixedAccounts: configDraft.fixedAccounts,
-    recurringEntries: configDraft.recurringEntries
-  })
+  if (configPersistInFlight) {
+    configPersistQueued = true
+    return
+  }
+
+  configPersistInFlight = true
+  configPersistQueued = false
+
+  try {
+    await saveConfig(buildConfigPersistPayload())
+  } finally {
+    configPersistInFlight = false
+    if (configPersistQueued) {
+      configPersistQueued = false
+      void persistConfig()
+    }
+  }
 }
 
 function queueConfigPersist() {
   if (saveConfigTimer.value) clearTimeout(saveConfigTimer.value)
   saveConfigTimer.value = setTimeout(() => {
+    saveConfigTimer.value = null
     void persistConfig()
-  }, 380)
+  }, CONFIG_AUTOSAVE_DEBOUNCE_MS)
 }
 
 function addCategory() {
@@ -709,7 +903,7 @@ function addCategory() {
   if (alreadyExists) return
 
   configDraft.categories.push({
-    id: makeId('cat', configDraft.categories.length),
+    id: createFinanceUuid(),
     name,
     kind: newCategory.kind,
     description: normalizeText(newCategory.description, 400)
@@ -771,10 +965,10 @@ function addFixedAccount() {
   if (!name) return
 
   configDraft.fixedAccounts.push({
-    id: makeId('fixed', configDraft.fixedAccounts.length),
+    id: createFinanceUuid(),
     name,
     kind: newFixed.kind,
-    categoryId: normalizeText(newFixed.categoryId, 90),
+    categoryId: normalizeFinanceLinkedUuid(newFixed.categoryId),
     defaultAmount: Number(newFixed.defaultAmount || 0),
     notes: normalizeText(newFixed.notes, 500),
     members: []
@@ -810,7 +1004,7 @@ function finishEditFixed() {
 
   target.name = nextName
   target.kind = fixedEditDraft.kind
-  target.categoryId = normalizeText(fixedEditDraft.categoryId, 90)
+  target.categoryId = normalizeFinanceLinkedUuid(fixedEditDraft.categoryId)
   editingFixedId.value = null
   fixedEditDraft.id = ''
   fixedEditDraft.name = ''
@@ -843,7 +1037,7 @@ function removeFixedAccount(id: string) {
 
 function addFixedMember(account: FinanceFixedAccountConfig) {
   account.members.push({
-    id: makeId('member', account.members.length),
+    id: createFinanceUuid(),
     name: `Item ${account.members.length + 1}`,
     amount: 0
   })
@@ -916,7 +1110,7 @@ async function fetchClientRecurringEntries() {
         monthlyPaymentAmount: number
         paymentDueDay: string
       }>
-    }>('/api/admin/finances/recurring-clients', {
+    }>('/api/admin/finance-config/recurring-clients', {
       query: {
         limit: 300
       }
@@ -957,7 +1151,7 @@ async function onCreateSheet() {
   hydrate(created)
 }
 
-async function onDeleteSheet(id: number) {
+async function onDeleteSheet(id: string) {
   if (!import.meta.client || !window.confirm('Excluir esta planilha?')) return
   const deleted = await deleteSheet(id)
   if (!deleted) return
@@ -985,9 +1179,21 @@ watch(filteredSheets, () => {
   }
 }, { immediate: true, deep: true })
 
-watch(selectedSheetId, (id) => {
-  const found = sheets.value.find(sheet => sheet.id === id) ?? null
-  hydrate(found)
+watch(selectedSheetId, async (id) => {
+  if (!id) {
+    hydrate(null)
+    return
+  }
+
+  if (activeSheet.value?.id === id) {
+    hydrate(activeSheet.value)
+    return
+  }
+
+  hydrate(null)
+  const detail = await fetchSheetDetail(id)
+  if (selectedSheetId.value !== id) return
+  hydrate(detail)
 }, { immediate: true })
 
 watch(
@@ -1036,6 +1242,12 @@ watch(() => sessionSimulation.requestContextHash, () => {
   void fetchSheets()
   void fetchConfig(targetClientId)
   void fetchClientRecurringEntries()
+})
+
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+  if (saveConfigTimer.value) clearTimeout(saveConfigTimer.value)
+  clearSheetSaveIndicator()
 })
 
 onMounted(async () => {
@@ -1088,6 +1300,10 @@ onMounted(async () => {
             Selecione uma planilha ou crie uma nova.
           </div>
 
+          <div v-else-if="detailLoading" class="py-14 text-center text-sm text-[rgb(var(--muted))]">
+            Carregando planilha...
+          </div>
+
           <template v-else>
             <div class="finances-page__editor-header mb-4 flex flex-wrap items-start justify-between gap-3">
               <input v-model="draft.title" class="finances-page__title finances-page__title-input w-full max-w-[620px]" placeholder="Titulo da planilha" @input="queuePersist">
@@ -1111,7 +1327,7 @@ onMounted(async () => {
                 <UButton class="finances-page__editor-action finances-page__editor-action--config" icon="i-lucide-settings-2" color="neutral" variant="soft" :loading="configLoading" @click="openConfigPanel">
                   Configuracao
                 </UButton>
-                <UButton class="finances-page__editor-action finances-page__editor-action--delete" icon="i-lucide-trash-2" color="error" variant="soft" :loading="deletingId === selectedSheetId" @click="onDeleteSheet(Number(selectedSheetId))" />
+                <UButton class="finances-page__editor-action finances-page__editor-action--delete" icon="i-lucide-trash-2" color="error" variant="soft" :loading="deletingId === selectedSheetId" @click="selectedSheetId && onDeleteSheet(selectedSheetId)" />
               </div>
             </div>
 
@@ -1140,6 +1356,7 @@ onMounted(async () => {
                     @persist="queuePersist"
                     @effective-toggle="onEffectiveToggle('entrada', row, index, $event)"
                     @effective-date-open="setEffectiveDateModalOpen('entrada', row, index, $event)"
+                    @effective-date-changed="onEffectiveDateChanged(row)"
                     @effective-date-submit-shortcut="onEffectiveDateSubmitShortcut('entrada', row, index, $event)"
                     @effective-date-cancel-shortcut="onEffectiveDateCancelShortcut('entrada', row, index)"
                     @effective-today="setEffectiveToday(row)"
@@ -1189,6 +1406,7 @@ onMounted(async () => {
                     @persist="queuePersist"
                     @effective-toggle="onEffectiveToggle('saida', row, index, $event)"
                     @effective-date-open="setEffectiveDateModalOpen('saida', row, index, $event)"
+                    @effective-date-changed="onEffectiveDateChanged(row)"
                     @effective-date-submit-shortcut="onEffectiveDateSubmitShortcut('saida', row, index, $event)"
                     @effective-date-cancel-shortcut="onEffectiveDateCancelShortcut('saida', row, index)"
                     @effective-today="setEffectiveToday(row)"

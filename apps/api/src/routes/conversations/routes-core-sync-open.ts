@@ -383,9 +383,7 @@ export function registerConversationSyncOpenWhatsAppRoute(protectedApp: FastifyI
       env.EVOLUTION_DEFAULT_INSTANCE?.trim() ||
       "";
     if (!instanceName) {
-      return reply.code(400).send({
-        message: "Tenant sem instancia WhatsApp configurada"
-      });
+      return reply.code(204).send();
     }
 
     if (
@@ -406,15 +404,20 @@ export function registerConversationSyncOpenWhatsAppRoute(protectedApp: FastifyI
     }
 
     try {
-      const connectionStatePayload = await client.getConnectionState(instanceName);
+      let connectionStatePayload: Record<string, unknown>;
+      try {
+        connectionStatePayload = await client.getConnectionState(instanceName);
+      } catch (error) {
+        if (error instanceof EvolutionApiError && error.statusCode === 404) {
+          return reply.code(204).send();
+        }
+
+        throw error;
+      }
+
       const normalizedState = normalizeConnectionState(connectionStatePayload);
       if (normalizedState !== "open" && normalizedState !== "connected") {
-        return reply.code(409).send({
-          message: "WhatsApp desconectado. Conecte a instancia antes de sincronizar conversas.",
-          details: {
-            connectionState: normalizedState
-          }
-        });
+        return reply.code(204).send();
       }
 
       const chatsPayload = await client.findChats(instanceName, {
@@ -734,6 +737,10 @@ export function registerConversationSyncOpenWhatsAppRoute(protectedApp: FastifyI
       };
     } catch (error) {
       if (error instanceof EvolutionApiError) {
+        if (error.statusCode === 404) {
+          return reply.code(204).send();
+        }
+
         return reply.code(error.statusCode).send({
           message: error.message,
           details: error.details

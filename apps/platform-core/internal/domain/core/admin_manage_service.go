@@ -23,6 +23,167 @@ const (
 
 var slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9]+`)
 
+var managedAdminRoleCodes = []string{
+	"platform_root",
+	"tenant_admin",
+	"module_manager",
+	"module_agent",
+}
+
+func resolveAdminUserRoleCodes(level string, isPlatformAdmin bool) []string {
+	if isPlatformAdmin {
+		return []string{"platform_root"}
+	}
+
+	switch normalizeAccessLevel(level) {
+	case "admin":
+		return []string{"tenant_admin"}
+	case "manager":
+		return []string{"module_manager"}
+	default:
+		return nil
+	}
+}
+
+func (s *Service) resolveRootTenantID(ctx context.Context) (string, error) {
+	var tenantID string
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT id
+		 FROM tenants
+		 WHERE slug = 'root'
+		   AND deleted_at IS NULL
+		 LIMIT 1`,
+	).Scan(&tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("resolve root tenant: %w", err)
+	}
+
+	return tenantID, nil
+}
+
+func (s *Service) syncManagedTenantUserRoles(
+	ctx context.Context,
+	tx pgx.Tx,
+	tenantID, tenantUserID, actorUserID, level string,
+	isPlatformAdmin bool,
+) error {
+	desiredRoleCodes := resolveAdminUserRoleCodes(level, isPlatformAdmin)
+	desired := make(map[string]struct{}, len(desiredRoleCodes))
+	for _, roleCode := range desiredRoleCodes {
+		desired[roleCode] = struct{}{}
+	}
+
+	rows, err := tx.Query(
+		ctx,
+		`SELECT tur.role_id, r.code
+		 FROM tenant_user_roles tur
+		 JOIN roles r ON r.id = tur.role_id
+		 WHERE tur.tenant_user_id = $1
+		   AND r.code = ANY($2)`,
+		tenantUserID,
+		managedAdminRoleCodes,
+	)
+	if err != nil {
+		return fmt.Errorf("load managed tenant user roles: %w", err)
+	}
+	defer rows.Close()
+
+	roleIDsToDelete := make([]string, 0)
+	for rows.Next() {
+		var roleID string
+		var roleCode string
+		if scanErr := rows.Scan(&roleID, &roleCode); scanErr != nil {
+			return fmt.Errorf("scan managed tenant user role: %w", scanErr)
+		}
+
+		if _, keep := desired[roleCode]; keep {
+			delete(desired, roleCode)
+			continue
+		}
+
+		roleIDsToDelete = append(roleIDsToDelete, roleID)
+	}
+	if rows.Err() != nil {
+		return fmt.Errorf("iterate managed tenant user roles: %w", rows.Err())
+	}
+
+	if len(roleIDsToDelete) > 0 {
+		if _, err := tx.Exec(
+			ctx,
+			`DELETE FROM tenant_user_roles
+			 WHERE tenant_user_id = $1
+			   AND role_id = ANY($2)`,
+			tenantUserID,
+			roleIDsToDelete,
+		); err != nil {
+			return fmt.Errorf("delete stale managed tenant user roles: %w", err)
+		}
+	}
+
+	if len(desired) < 1 {
+		return nil
+	}
+
+	missingRoleCodes := make([]string, 0, len(desired))
+	for roleCode := range desired {
+		missingRoleCodes = append(missingRoleCodes, roleCode)
+	}
+
+	if err := assignRoles(ctx, tx, tenantID, tenantUserID, actorUserID, missingRoleCodes); err != nil {
+		return fmt.Errorf("sync managed tenant user roles: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) grantPlatformAdminModules(
+	ctx context.Context,
+	tx pgx.Tx,
+	tenantID, tenantUserID, actorUserID string,
+) error {
+	if _, err := tx.Exec(
+		ctx,
+		`INSERT INTO tenant_user_modules (
+			tenant_id,
+			tenant_user_id,
+			module_id,
+			status,
+			granted_by_user_id,
+			granted_at,
+			metadata
+		)
+		SELECT
+			$1,
+			$2,
+			tm.module_id,
+			'active',
+			$3,
+			now(),
+			'{}'::jsonb
+		FROM tenant_modules tm
+		WHERE tm.tenant_id = $1
+		  AND tm.status = 'active'
+		ON CONFLICT (tenant_user_id, module_id)
+		DO UPDATE SET
+			status = 'active',
+			revoked_at = NULL,
+			granted_at = now(),
+			granted_by_user_id = EXCLUDED.granted_by_user_id,
+			updated_at = now()`,
+		tenantID,
+		tenantUserID,
+		nullableString(strings.TrimSpace(actorUserID)),
+	); err != nil {
+		return fmt.Errorf("grant platform admin modules: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Service) ListAdminClients(ctx context.Context, input ListAdminClientsInput) ([]AdminClient, int, error) {
 	page, limit := normalizePageAndLimit(input.Page, input.Limit, adminDefaultPageLimit, adminMaxPageLimit)
 	offset := (page - 1) * limit
@@ -948,7 +1109,15 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		return AdminUser{}, ErrInvalidInput
 	}
 
-	targetTenantID, err := s.resolveTargetTenantForUserMutation(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	targetIsPlatformAdmin := input.TargetIsPlatformAdmin && input.IsPlatformAdmin
+
+	var targetTenantID string
+	var err error
+	if targetIsPlatformAdmin {
+		targetTenantID, err = s.resolveRootTenantID(ctx)
+	} else {
+		targetTenantID, err = s.resolveTargetTenantForUserMutation(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	}
 	if err != nil {
 		return AdminUser{}, err
 	}
@@ -964,7 +1133,10 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 
 	level := normalizeAccessLevel(input.Level)
 	userType := normalizeUserType(input.UserType)
-	if !input.IsPlatformAdmin {
+	if targetIsPlatformAdmin {
+		level = "admin"
+		userType = "admin"
+	} else if !input.IsPlatformAdmin {
 		userType = "client"
 	}
 
@@ -1002,7 +1174,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			$5,
 			$6,
 			'inactive',
-			false,
+			$7,
 			'{}'::jsonb,
 			'{}'::jsonb
 		)
@@ -1013,6 +1185,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		email,
 		string(passwordHash),
 		trimText(input.Phone, 30),
+		targetIsPlatformAdmin,
 	).Scan(&coreUserID, &legacyID); err != nil {
 		return AdminUser{}, fmt.Errorf("create admin user: %w", err)
 	}
@@ -1032,27 +1205,45 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			$1,
 			$2,
 			'invited',
-			false,
 			$3,
 			$4,
+			$5,
 			'{}'::jsonb
 		)
 		ON CONFLICT (tenant_id, user_id)
 		DO UPDATE SET
 			status = EXCLUDED.status,
+			is_owner = CASE WHEN EXCLUDED.is_owner THEN true ELSE tenant_users.is_owner END,
 			access_level = EXCLUDED.access_level,
 			user_type = EXCLUDED.user_type,
 			updated_at = now()
 		RETURNING id`,
 		targetTenantID,
 		coreUserID,
+		targetIsPlatformAdmin,
 		level,
 		userType,
 	).Scan(&tenantUserID); err != nil {
 		return AdminUser{}, fmt.Errorf("create tenant user membership: %w", err)
 	}
 
-	if level == "admin" && userType == "admin" {
+	if err := s.syncManagedTenantUserRoles(
+		ctx,
+		tx,
+		targetTenantID,
+		tenantUserID,
+		strings.TrimSpace(input.UserID),
+		level,
+		targetIsPlatformAdmin,
+	); err != nil {
+		return AdminUser{}, err
+	}
+
+	if targetIsPlatformAdmin {
+		if err := s.grantPlatformAdminModules(ctx, tx, targetTenantID, tenantUserID, strings.TrimSpace(input.UserID)); err != nil {
+			return AdminUser{}, err
+		}
+	} else if level == "admin" && userType == "admin" {
 		if _, err := tx.Exec(
 			ctx,
 			`INSERT INTO tenant_user_modules (
@@ -1423,6 +1614,73 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 	})
 
 	return updated, nil
+}
+
+// UpdateOwnProfileField updates a single self-serviceable field for the authenticated user,
+// identified by UUID (JWT claims.Subject). Does NOT allow admin-only fields.
+func (s *Service) UpdateOwnProfileField(ctx context.Context, input UpdateOwnProfileFieldInput) error {
+	userCoreID := strings.TrimSpace(input.ActorCoreUserID)
+	if userCoreID == "" {
+		return ErrInvalidInput
+	}
+
+	field := strings.TrimSpace(input.Field)
+
+	var err error
+	switch field {
+	case "name":
+		value := strings.TrimSpace(stringValue(input.Value))
+		if value == "" {
+			return ErrInvalidInput
+		}
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET name = $2, display_name = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, value)
+	case "nick":
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET nick = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, trimText(input.Value, 80))
+	case "email":
+		email := strings.TrimSpace(strings.ToLower(stringValue(input.Value)))
+		if email == "" {
+			return ErrInvalidInput
+		}
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET email = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, email)
+	case "phone":
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET phone = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, trimText(input.Value, 30))
+	case "profileImage":
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET avatar_url = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, trimText(input.Value, 500))
+	case "preferences":
+		preferences := normalizePreferencesJSON(input.Value)
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET preferences = $2::jsonb, updated_at = now() WHERE id = $1`,
+			userCoreID, preferences)
+	case "password":
+		password := strings.TrimSpace(stringValue(input.Value))
+		if len(password) < 6 {
+			return ErrInvalidInput
+		}
+		passwordHash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return fmt.Errorf("hash password for self profile update: %w", hashErr)
+		}
+		_, err = s.pool.Exec(ctx,
+			`UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`,
+			userCoreID, string(passwordHash))
+	default:
+		return ErrInvalidInput
+	}
+
+	if err != nil {
+		return fmt.Errorf("update own profile field: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserInput) (AdminUser, error) {
@@ -1982,6 +2240,8 @@ func normalizeAccessLevel(raw string) string {
 		return "manager"
 	case "finance":
 		return "finance"
+	case "viewer":
+		return "viewer"
 	default:
 		return "marketing"
 	}

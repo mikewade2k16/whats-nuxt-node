@@ -21,7 +21,10 @@ export function useOmnichannelInboxMessageReactions(options: {
   normalizeMessage: (messageEntry: Message) => Message;
   mergeMessages: (...chunks: Message[][]) => Message[];
   updateConversationPreviewFromMessage: (messageEntry: Message) => void;
-  loadConversationMessages: (conversationId: string) => Promise<void>;
+  loadConversationMessages: (
+    conversationId: string,
+    loadOptions?: { forceRefresh?: boolean }
+  ) => Promise<void>;
 }) {
   const SELF_ACTOR_KEY = "wa:self";
 
@@ -137,7 +140,7 @@ export function useOmnichannelInboxMessageReactions(options: {
       options.updateConversationPreviewFromMessage(updated);
     } catch (error) {
       options.sendError.value = formatSendError(error, "Nao foi possivel enviar a reacao.");
-      void options.loadConversationMessages(conversationId);
+      void options.loadConversationMessages(conversationId, { forceRefresh: true });
     }
   }
 

@@ -8,9 +8,9 @@ import { prisma } from "../db.js";
 import { rateLimitRequest } from "../lib/rate-limit.js";
 import { resolveTrustedClientIp } from "../lib/trusted-proxy.js";
 import type { JwtUser } from "../plugins/auth.js";
-import { invalidateCoreAtendimentoAccessCacheByEmail } from "../services/core-atendimento-access.js";
-import { CoreApiError, type CoreTenant, platformCoreClient } from "../services/core-client.js";
-import { mapCoreRoleCodesToLegacyRole, mapLegacyRoleToCoreRoleCodes } from "../services/core-identity.js";
+import { resolveCoreAtendimentoAccessByEmail } from "../services/core-atendimento-access.js";
+import { CoreApiError, type CoreAuthUser, type CoreTenant, platformCoreClient } from "../services/core-client.js";
+import { mapCoreRoleCodesToLegacyRole } from "../services/core-identity.js";
 import { findBestCoreTenantMatch } from "../services/core-tenant-mapping.js";
 
 const loginSchema = z.object({
@@ -84,6 +84,74 @@ async function resolveLegacyRoleByCoreTenant(options: {
   return mapCoreRoleCodesToLegacyRole(roleCodes, matchedUser.isOwner);
 }
 
+function normalizeModuleCodes(value: unknown) {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  for (const entry of source) {
+    const normalized = String(entry ?? "").trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    output.push(normalized);
+  }
+
+  return output;
+}
+
+function mapCoreUserToLegacyRole(coreUser: CoreAuthUser) {
+  if (coreUser.isPlatformAdmin) {
+    return UserRole.ADMIN;
+  }
+
+  const level = String(coreUser.level ?? "").trim().toLowerCase();
+  if (level === "admin") {
+    return UserRole.ADMIN;
+  }
+  if (level === "manager") {
+    return UserRole.SUPERVISOR;
+  }
+
+  const moduleCodes = normalizeModuleCodes(coreUser.moduleCodes);
+  const hasAtendimentoAccess =
+    Boolean(coreUser.atendimentoAccess) ||
+    moduleCodes.includes(env.CORE_ATENDIMENTO_MODULE_CODE.trim().toLowerCase());
+
+  if (hasAtendimentoAccess) {
+    return UserRole.AGENT;
+  }
+
+  return UserRole.VIEWER;
+}
+
+async function resolveLegacyRoleForCoreUser(options: {
+  coreTenantId: string;
+  coreUser: CoreAuthUser;
+}) {
+  const fallbackRole = mapCoreUserToLegacyRole(options.coreUser);
+  if (options.coreUser.isPlatformAdmin) {
+    return fallbackRole;
+  }
+
+  try {
+    const resolvedRole = await resolveLegacyRoleByCoreTenant({
+      coreTenantId: options.coreTenantId,
+      email: normalizeEmail(options.coreUser.email),
+      isPlatformAdmin: options.coreUser.isPlatformAdmin
+    });
+
+    if (resolvedRole !== UserRole.VIEWER || fallbackRole === UserRole.VIEWER) {
+      return resolvedRole;
+    }
+  } catch {
+    // Fallback keeps login functional even if the core RBAC lookup is temporarily inconsistent.
+  }
+
+  return fallbackRole;
+}
+
 async function ensureLocalTenant(coreTenant: CoreTenant, requestedSlug: string) {
   const normalizedRequestedSlug = normalizeTenantSlug(requestedSlug || coreTenant.slug);
 
@@ -117,30 +185,6 @@ async function ensureLocalTenant(coreTenant: CoreTenant, requestedSlug: string) 
       name: coreTenant.name
     }
   });
-}
-
-async function resolveBootstrapTenantSlugByEmail(email: string) {
-  const localUsers = await prisma.user.findMany({
-    where: {
-      email
-    },
-    include: {
-      tenant: true
-    },
-    take: 5
-  });
-
-  const uniqueSlugs = new Set(
-    localUsers
-      .map((entry: (typeof localUsers)[number]) => entry.tenant?.slug?.trim().toLowerCase())
-      .filter((value: string | undefined): value is string => Boolean(value))
-  );
-
-  if (uniqueSlugs.size !== 1) {
-    return "";
-  }
-
-  return Array.from(uniqueSlugs)[0] ?? "";
 }
 
 async function ensureLocalUser(options: {
@@ -185,87 +229,79 @@ async function ensureLocalUser(options: {
   });
 }
 
-function isCoreInviteAlreadyHandled(error: CoreApiError) {
-  if (error.statusCode === 409) {
-    return true;
+async function resolveCoreTenantForUser(coreUser: CoreAuthUser) {
+  if (coreUser.tenantId?.trim()) {
+    return resolveCoreTenantById(coreUser.tenantId);
   }
 
-  const message = error.message?.toLowerCase() ?? "";
-  return (
-    message.includes("already") ||
-    message.includes("exists") ||
-    message.includes("ja existe") ||
-    message.includes("duplic")
-  );
+  if (coreUser.isPlatformAdmin) {
+    return resolveCoreTenantBySlug("root");
+  }
+
+  return null;
 }
 
-async function bootstrapCoreUserFromLegacyCredentials(options: {
-  coreTenantId: string;
-  tenantSlug: string;
-  email: string;
-  password: string;
-  logger: FastifyInstance["log"];
+async function buildLocalSession(app: FastifyInstance, options: {
+  coreTenant: CoreTenant;
+  coreUser: CoreAuthUser;
+  requestedTenantSlug?: string;
 }) {
-  const localTenant = await prisma.tenant.findUnique({
-    where: {
-      slug: options.tenantSlug
-    }
+  const email = normalizeEmail(options.coreUser.email);
+  const role = await resolveLegacyRoleForCoreUser({
+    coreTenantId: options.coreTenant.id,
+    coreUser: options.coreUser
   });
 
-  if (!localTenant) {
-    return false;
-  }
-
-  const localUser = await prisma.user.findUnique({
-    where: {
-      tenantId_email: {
-        tenantId: localTenant.id,
-        email: options.email
-      }
-    }
+  const localTenant = await ensureLocalTenant(options.coreTenant, options.requestedTenantSlug || options.coreTenant.slug);
+  const localUser = await ensureLocalUser({
+    tenantId: localTenant.id,
+    email,
+    name: options.coreUser.name?.trim() || email,
+    role
   });
 
-  if (!localUser) {
-    return false;
-  }
+  const payload: JwtUser = {
+    sub: localUser.id,
+    tenantId: localTenant.id,
+    tenantSlug: localTenant.slug,
+    email: localUser.email,
+    name: localUser.name,
+    role: localUser.role
+  };
 
-  const passwordMatches = await bcrypt.compare(options.password, localUser.passwordHash);
-  if (!passwordMatches) {
-    return false;
-  }
+  const token = app.jwt.sign(payload, {
+    expiresIn: "12h"
+  });
 
-  try {
-    const invited = await platformCoreClient.inviteTenantUser(options.coreTenantId, {
+  return {
+    token,
+    user: {
+      id: localUser.id,
+      tenantId: localTenant.id,
+      tenantSlug: localTenant.slug,
       email: localUser.email,
       name: localUser.name,
-      password: options.password,
-      isOwner: localUser.role === UserRole.ADMIN,
-      roleCodes: mapLegacyRoleToCoreRoleCodes(localUser.role)
-    });
-
-    if (localUser.role === UserRole.ADMIN) {
-      try {
-        await platformCoreClient.assignTenantUserToModule(
-          options.coreTenantId,
-          env.CORE_ATENDIMENTO_MODULE_CODE,
-          invited.tenantUserId
-        );
-        await invalidateCoreAtendimentoAccessCacheByEmail(localUser.email);
-      } catch (assignmentError) {
-        options.logger.warn(
-          { error: assignmentError, coreTenantId: options.coreTenantId, tenantUserId: invited.tenantUserId },
-          "Falha ao vincular usuario bootstrap admin ao modulo atendimento"
-        );
-      }
+      role: localUser.role
     }
+  };
+}
 
-    return true;
-  } catch (error) {
-    if (error instanceof CoreApiError && isCoreInviteAlreadyHandled(error)) {
-      return true;
-    }
-    throw error;
+function extractCoreAccessToken(request: FastifyRequest) {
+  const rawCoreToken = request.headers["x-core-token"];
+  const rawAuthorization = request.headers.authorization;
+  const preferred = Array.isArray(rawCoreToken)
+    ? String(rawCoreToken[0] ?? "").trim()
+    : String(rawCoreToken ?? "").trim();
+  const fallback = Array.isArray(rawAuthorization)
+    ? String(rawAuthorization[0] ?? "").trim()
+    : String(rawAuthorization ?? "").trim();
+  const token = preferred || fallback;
+
+  if (!token) {
+    return "";
   }
+
+  return token.startsWith("Bearer ") ? token.slice("Bearer ".length).trim() : token;
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -326,58 +362,26 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(401).send({ message: "Credenciais invalidas" });
       }
 
-      let coreLogin;
-      try {
-        coreLogin = await platformCoreClient.loginUser(
-          coreTenant
-            ? {
-                email,
-                password,
-                tenantId: coreTenant.id
-              }
-            : {
-                email,
-                password
-              }
-        );
-      } catch (error) {
-        if (!(error instanceof CoreApiError) || (error.statusCode !== 401 && error.statusCode !== 403)) {
-          throw error;
-        }
-
-        const bootstrapTenantSlug: string = tenantSlug || await resolveBootstrapTenantSlugByEmail(email);
-        const bootstrapTenant = bootstrapTenantSlug
-          ? await resolveCoreTenantBySlug(String(bootstrapTenantSlug))
-          : null;
-        const bootstrapApplied = bootstrapTenant && bootstrapTenantSlug
-          ? await bootstrapCoreUserFromLegacyCredentials({
-              coreTenantId: bootstrapTenant.id,
-              tenantSlug: bootstrapTenantSlug,
+      const coreLogin = await platformCoreClient.loginUser(
+        coreTenant
+          ? {
               email,
               password,
-              logger: request.log
-            })
-          : false;
-
-        if (bootstrapApplied && bootstrapTenant) {
-          coreTenant = bootstrapTenant;
-          coreLogin = await platformCoreClient.loginUser({
-            email,
-            password,
-            tenantId: bootstrapTenant.id
-          });
-        } else {
-          throw error;
-        }
-      }
+              tenantId: coreTenant.id
+            }
+          : {
+              email,
+              password
+            }
+      );
 
       const coreUser = coreLogin.user;
       if (!coreUser.email || normalizeEmail(coreUser.email) !== email) {
         return reply.code(401).send({ message: "Credenciais invalidas" });
       }
 
-      if (!coreTenant && coreUser.tenantId) {
-        coreTenant = await resolveCoreTenantById(coreUser.tenantId);
+      if (!coreTenant) {
+        coreTenant = await resolveCoreTenantForUser(coreUser);
       }
 
       if (!coreTenant) {
@@ -388,23 +392,149 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(401).send({ message: "Credenciais invalidas" });
       }
 
-      let role: UserRole = coreUser.isPlatformAdmin ? UserRole.ADMIN : UserRole.VIEWER;
-      try {
-        role = await resolveLegacyRoleByCoreTenant({
-          coreTenantId: coreTenant.id,
-          email,
-          isPlatformAdmin: coreUser.isPlatformAdmin
+      const localSession = await buildLocalSession(app, {
+        coreTenant,
+        coreUser,
+        requestedTenantSlug: tenantSlug
+      });
+
+      return {
+        token: localSession.token,
+        user: localSession.user,
+        coreAccessToken: coreLogin.accessToken,
+        coreUser
+      };
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        if (error.statusCode === 401 || error.statusCode === 403) {
+          return reply.code(401).send({ message: "Credenciais invalidas" });
+        }
+
+        const statusCode = error.statusCode >= 500 ? 502 : error.statusCode;
+        const message = statusCode >= 500 && env.NODE_ENV === "production"
+          ? "Falha ao autenticar"
+          : (error.message?.trim() || "Falha ao autenticar no platform-core");
+
+        return reply.code(statusCode).send({
+          message,
+          details: env.NODE_ENV === "production" ? undefined : error.details ?? null
         });
-      } catch (roleError) {
-        request.log.warn({ error: roleError, email, coreTenantId: coreTenant.id }, "Falha ao resolver role no core");
       }
 
-      const localTenant = await ensureLocalTenant(coreTenant, tenantSlug);
+      request.log.error({ error, tenantSlug: tenantSlug || null, email }, "Falha no login unificado via platform-core");
+      return reply.code(500).send({
+        message: "Falha ao autenticar no platform-core"
+      });
+    }
+  });
+
+  app.post("/auth/session", async (request, reply) => {
+    const coreAccessToken = extractCoreAccessToken(request);
+    if (!coreAccessToken) {
+      return reply.code(401).send({ message: "Sessao core ausente" });
+    }
+
+    try {
+      const coreUser = await platformCoreClient.getMe(coreAccessToken);
+      const coreTenant = await resolveCoreTenantForUser(coreUser);
+      if (!coreTenant) {
+        return reply.code(401).send({ message: "Sessao core invalida" });
+      }
+
+      const localSession = await buildLocalSession(app, {
+        coreTenant,
+        coreUser,
+        requestedTenantSlug: coreTenant.slug
+      });
+
+      return localSession;
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        if (error.statusCode === 401 || error.statusCode === 403) {
+          return reply.code(401).send({ message: "Sessao core invalida" });
+        }
+
+        const statusCode = error.statusCode >= 500 ? 502 : error.statusCode;
+        return reply.code(statusCode).send({
+          message: statusCode >= 500
+            ? "Falha ao criar sessao do modulo"
+            : (error.message?.trim() || "Falha ao criar sessao do modulo")
+        });
+      }
+
+      request.log.error({ error }, "Falha ao criar sessao local a partir do core");
+      return reply.code(500).send({
+        message: "Falha ao criar sessao do modulo"
+      });
+    }
+  });
+
+  const switchTenantSchema = z.object({
+    coreTenantId: z.string().min(1).optional(),
+    clientId: z.number().int().positive().optional()
+  }).refine(
+    (data) => Boolean(data.coreTenantId || data.clientId),
+    { message: "Informe coreTenantId ou clientId" }
+  );
+
+  app.post("/auth/switch-tenant", async (request, reply) => {
+    try {
+      const user = await request.jwtVerify<JwtUser>();
+      request.authUser = user;
+    } catch {
+      return reply.code(401).send({ message: "Nao autorizado" });
+    }
+
+    const access = await resolveCoreAtendimentoAccessByEmail(request.authUser.email);
+    const isSuperRoot = access.isPlatformAdmin
+      && access.userType === "admin"
+      && access.level === "admin";
+
+    if (!isSuperRoot) {
+      return reply.code(403).send({ message: "Apenas platform admins podem trocar de tenant" });
+    }
+
+    const parsed = switchTenantSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Payload invalido",
+        errors: parsed.error.flatten()
+      });
+    }
+
+    try {
+      let coreTenant: CoreTenant | null = null;
+      let clientModuleCodes: string[] = [];
+
+      if (parsed.data.coreTenantId) {
+        coreTenant = await resolveCoreTenantById(parsed.data.coreTenantId);
+      } else if (parsed.data.clientId) {
+        const clients = await platformCoreClient.listAdminClients({ limit: 500 });
+        const matched = clients.find((entry) => entry.id === parsed.data.clientId);
+        if (matched?.coreTenantId) {
+          coreTenant = await resolveCoreTenantById(matched.coreTenantId);
+          clientModuleCodes = (matched.modules ?? [])
+            .map((m) => String(m.code ?? "").trim().toLowerCase())
+            .filter(Boolean);
+        }
+      }
+
+      if (!coreTenant) {
+        return reply.code(404).send({ message: "Tenant nao encontrado" });
+      }
+
+      if (clientModuleCodes.length > 0 && !clientModuleCodes.includes(env.CORE_ATENDIMENTO_MODULE_CODE.toLowerCase())) {
+        return reply.code(403).send({
+          message: "Cliente nao possui o modulo de atendimento ativo"
+        });
+      }
+
+      const localTenant = await ensureLocalTenant(coreTenant, coreTenant.slug);
       const localUser = await ensureLocalUser({
         tenantId: localTenant.id,
-        email,
-        name: coreUser.name?.trim() || email,
-        role
+        email: request.authUser.email,
+        name: request.authUser.name,
+        role: UserRole.ADMIN
       });
 
       const payload: JwtUser = {
@@ -429,30 +559,12 @@ export async function authRoutes(app: FastifyInstance) {
           email: localUser.email,
           name: localUser.name,
           role: localUser.role
-        },
-        coreAccessToken: coreLogin.accessToken,
-        coreUser
+        }
       };
     } catch (error) {
-      if (error instanceof CoreApiError) {
-        if (error.statusCode === 401 || error.statusCode === 403) {
-          return reply.code(401).send({ message: "Credenciais invalidas" });
-        }
-
-        const statusCode = error.statusCode >= 500 ? 502 : error.statusCode;
-        const message = statusCode >= 500 && env.NODE_ENV === "production"
-          ? "Falha ao autenticar"
-          : (error.message?.trim() || "Falha ao autenticar no platform-core");
-
-        return reply.code(statusCode).send({
-          message,
-          details: env.NODE_ENV === "production" ? undefined : error.details ?? null
-        });
-      }
-
-      request.log.error({ error, tenantSlug: tenantSlug || null, email }, "Falha no login unificado via platform-core");
+      request.log.error({ error }, "Falha ao trocar tenant");
       return reply.code(500).send({
-        message: "Falha ao autenticar no platform-core"
+        message: "Falha ao trocar de tenant"
       });
     }
   });

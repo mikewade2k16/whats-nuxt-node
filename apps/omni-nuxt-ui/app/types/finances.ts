@@ -7,6 +7,7 @@ export interface FinanceLineAdjustment {
 
 export interface FinanceLineItem {
   id: string
+  kind?: 'entrada' | 'saida'
   description: string
   category: string
   effective: boolean
@@ -27,20 +28,23 @@ export interface FinanceSheetSummary {
   effectiveBalance: number
 }
 
-export interface FinanceSheetItem {
-  id: number
+export interface FinanceSheetListItem {
+  id: string
   title: string
   period: string
   status: string
   notes: string
   clientId: number
   clientName: string
-  entradas: FinanceLineItem[]
-  saidas: FinanceLineItem[]
   summary: FinanceSheetSummary
   preview: string
   createdAt: string
   updatedAt: string
+}
+
+export interface FinanceSheetItem extends FinanceSheetListItem {
+  entradas: FinanceLineItem[]
+  saidas: FinanceLineItem[]
 }
 
 export interface FinancesListMeta {
@@ -53,13 +57,32 @@ export interface FinancesListMeta {
 
 export interface FinancesListResponse {
   status: 'success'
-  data: FinanceSheetItem[]
+  data: FinanceSheetListItem[]
   meta: FinancesListMeta
 }
 
 export interface FinanceMutationResponse {
   status: 'success'
   data: FinanceSheetItem
+}
+
+export interface FinanceDetailResponse {
+  status: 'success'
+  data: FinanceSheetItem
+}
+
+export interface FinanceLineMutationData {
+  sheetId: string
+  lineId: string
+  line: FinanceLineItem
+  summary: FinanceSheetSummary
+  preview: string
+  updatedAt: string
+}
+
+export interface FinanceLineMutationResponse {
+  status: 'success'
+  data: FinanceLineMutationData
 }
 
 export type FinanceConfigKind = 'entrada' | 'saida' | 'ambas'

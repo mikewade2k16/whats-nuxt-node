@@ -2,7 +2,6 @@
 import {
   UAvatar,
   UButton,
-  UCard,
   UIcon
 } from "#components";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -275,6 +274,23 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disconnectImagePreviewObserver();
 });
+
+function getStatusIcon(status: string): string {
+  switch (status) {
+    case 'PENDING':   return 'i-lucide-clock-3';
+    case 'SENT':      return 'i-lucide-check';
+    case 'FAILED':    return 'i-lucide-x';
+    case 'DELIVERED': return 'i-lucide-check-check';
+    case 'READ':      return 'i-lucide-check-check';
+    default:          return 'i-lucide-clock-3';
+  }
+}
+
+function getStatusClass(status: string): string {
+  if (status === 'FAILED') return 'msg-status-icon--failed';
+  if (status === 'READ')   return 'msg-status-icon--read';
+  return '';
+}
 </script>
 
 <template>
@@ -287,7 +303,7 @@ onBeforeUnmount(() => {
     :data-message-external-id="item.message.externalMessageId || undefined"
   >
     <div class="chat-message" :class="{ 'chat-message--out': item.message.direction === 'OUTBOUND' }">
-      <UCard class="chat-message__bubble">
+      <div class="msg-bubble">
         <div
           v-if="
             (isGroupConversation && (item.message.direction === 'INBOUND' || showOutboundOperatorLabel)) ||
@@ -528,57 +544,132 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="chat-message__meta">
-          <time>{{ formatTime(item.message.createdAt) }}</time>
-          <span>{{ item.message.status }}</span>
+          <time class="msg-time">{{ formatTime(item.message.createdAt) }}</time>
+          <UIcon
+            v-if="item.message.direction === 'OUTBOUND'"
+            :name="getStatusIcon(item.message.status)"
+            class="msg-status-icon"
+            :class="getStatusClass(item.message.status)"
+            :title="item.message.status"
+          />
           <span v-if="isMentionAlertMessage(item.message)" class="chat-message__mention-indicator">
             <UIcon name="i-lucide-at-sign" />
             Mencao
           </span>
-          <span v-if="resolveOutboundOperatorLabel(item.message)" class="chat-message__operator">
+         <!-- <span v-if="resolveOutboundOperatorLabel(item.message)" class="chat-message__operator">
             {{ resolveOutboundOperatorLabel(item.message) }}
-          </span>
-          <InboxMessageActionMenu
-            :can-manage-conversation="canManageConversation"
-            :is-selected="isMessageSelected(item.message.id)"
-            :can-delete-for-all="item.message.direction === 'OUTBOUND'"
-            :reaction-items="buildReactionMenuItems(item.message)"
-            @reply="onSetReply(item.message)"
-            @toggle-select="selectionMode ? onToggleMessageSelection(item.message.id) : onStartMessageSelection(item.message.id)"
-            @forward="onForwardMessage(item.message.id)"
-            @delete-mine="onDeleteMessageForMe(item.message.id)"
-            @delete-all="onDeleteMessageForAll(item.message.id)"
-          />
+          </span>-->
         </div>
-      </UCard>
+      </div>
+      <div class="msg-bubble-actions">
+        <InboxMessageActionMenu
+          :can-manage-conversation="canManageConversation"
+          :is-selected="isMessageSelected(item.message.id)"
+          :can-delete-for-all="item.message.direction === 'OUTBOUND'"
+          :reaction-items="buildReactionMenuItems(item.message)"
+          @reply="onSetReply(item.message)"
+          @toggle-select="selectionMode ? onToggleMessageSelection(item.message.id) : onStartMessageSelection(item.message.id)"
+          @forward="onForwardMessage(item.message.id)"
+          @delete-mine="onDeleteMessageForMe(item.message.id)"
+          @delete-all="onDeleteMessageForAll(item.message.id)"
+        />
+      </div>
     </div>
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+// ─── Linha da mensagem (wrapper externo) ────────────────────────────────────
+.chat-message-row {
+  &--selected .msg-bubble {
+    outline: 2px solid rgb(var(--primary) / 0.45);
+    outline-offset: 1px;
+  }
+
+  &--reply-focus .msg-bubble {
+    outline: 2px solid rgb(var(--primary) / 0.7);
+    outline-offset: 1px;
+    animation: chat-reply-focus-pulse 1.2s ease;
+  }
+}
+
+// ─── Alinhamento INBOUND (esquerda) / OUTBOUND (direita) ────────────────────
 .chat-message {
   display: flex;
-  margin-bottom: 0.55rem;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+  overflow: hidden; // impede que a cauda ::before/::after cause rolagem lateral
+
+  &--out {
+    justify-content: flex-end;
+  }
 }
 
-.chat-message-row--selected :deep(.chat-message__bubble) {
-  border-color: rgb(var(--primary) / 0.55);
-  box-shadow: 0 0 0 1px rgb(var(--primary) / 0.18);
+// ─── Bubble ───────────────────────────────────────────────────────────────────
+// margin-left: 10px dá espaço para a cauda INBOUND (9px) sem vazar o container
+// overflow: hidden no .chat-message garante que nada cria rolagem lateral
+.msg-bubble {
+  position: relative;
+  max-width: min(540px, 88%);
+  border-radius: 7.5px;
+  border-top-left-radius: 2px; // canto cortado: cauda INBOUND
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--border));
+  padding: 0.42rem 0.62rem 1.5rem; // bottom reservado para meta (hora+check)
+  margin-left: 10px; // espaço para a cauda não ultrapassar o container
+
+  // Cauda INBOUND — camada de borda
+  &::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -9px;
+    border-right: 9px solid rgb(var(--border));
+    border-bottom: 9px solid transparent;
+  }
+
+  // Cauda INBOUND — camada de preenchimento
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -7px;
+    border-right: 7px solid rgb(var(--surface));
+    border-bottom: 7px solid transparent;
+  }
 }
 
-.chat-message-row--reply-focus :deep(.chat-message__bubble) {
-  border-color: rgb(var(--primary) / 0.75);
-  box-shadow: 0 0 0 1px rgb(var(--primary) / 0.28);
-  animation: chat-reply-focus-pulse 1.2s ease;
+.chat-message--out .msg-bubble {
+  margin-left: 0;
+  margin-right: 10px; // espaço para a cauda OUTBOUND
+  border-top-left-radius: 7.5px;
+  border-top-right-radius: 2px; // canto cortado: cauda OUTBOUND
+
+  // Cauda OUTBOUND — camada de borda
+  &::before {
+    top: -1px;
+    left: unset;
+    right: -9px;
+    border-right: none;
+    border-left: 9px solid rgb(var(--border));
+    border-bottom: 9px solid transparent;
+  }
+
+  // Cauda OUTBOUND — camada de preenchimento
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: unset;
+    right: -7px;
+    border-right: none;
+    border-left: 7px solid rgb(var(--surface));
+    border-bottom: 7px solid transparent;
+  }
 }
 
-.chat-message--out {
-  justify-content: flex-end;
-}
-
-.chat-message__bubble {
-  max-width: min(720px, 92%);
-}
-
+// ─── Autor ──────────────────────────────────────────────────────────────────
 .chat-message__author-row {
   display: flex;
   align-items: center;
@@ -593,6 +684,7 @@ onBeforeUnmount(() => {
   color: rgb(var(--muted));
 }
 
+// ─── Texto da mensagem ───────────────────────────────────────────────────────
 .chat-message__text {
   margin: 0;
   line-height: 1.45;
@@ -600,34 +692,221 @@ onBeforeUnmount(() => {
   word-break: break-word;
 }
 
-.chat-message__reply,
-.chat-message__unsupported,
-.chat-message__document,
-.chat-message__media-fallback,
-.chat-message__link-card {
+// ─── Resposta citada ─────────────────────────────────────────────────────────
+.chat-message__reply {
   margin-bottom: 0.4rem;
+  border: 1px solid rgb(var(--border));
+  border-left: 4px solid rgb(var(--primary));
+  border-radius: var(--radius-xs);
+  background: rgb(var(--surface-2));
+  padding: 0.42rem 0.56rem;
+  position: relative;
+  overflow: hidden;
+
+  &--clickable {
+    cursor: pointer;
+  }
+
+  &-content {
+    min-width: 0;
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  &-author {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: rgb(var(--primary));
+  }
+
+  &-type-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  &-type {
+    font-size: 0.72rem;
+    color: rgb(var(--muted));
+    font-weight: 600;
+  }
+
+  &-text {
+    margin: 0;
+    font-size: 0.74rem;
+    color: rgb(var(--muted));
+  }
 }
 
-.chat-message__link-card,
-.chat-message__document,
-.chat-message__reply,
+// ─── Conteúdo não suportado ──────────────────────────────────────────────────
 .chat-message__unsupported {
+  margin-bottom: 0.4rem;
+  border: 1px solid rgb(var(--warning) / 0.5);
+  border-radius: var(--radius-xs);
+  background: rgb(var(--warning) / 0.08);
+  padding: 0.45rem 0.55rem;
+
+  &-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  &-title {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  &-label {
+    margin: 0;
+    font-size: 0.74rem;
+    color: rgb(var(--muted));
+  }
+}
+
+// ─── Mídia (imagem / vídeo / áudio / documento) ──────────────────────────────
+.chat-message__media {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+
+  &-image-shell {
+    max-width: min(360px, 100%);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgb(var(--border) / 0.65);
+    background: linear-gradient(130deg, rgb(var(--surface-2)), rgb(var(--surface-3)));
+    overflow: hidden;
+    min-height: 112px;
+  }
+
+  &-image {
+    max-width: min(360px, 100%);
+    max-height: 420px;
+    width: 100%;
+    border-radius: var(--radius-sm);
+    display: block;
+    transition: filter 0.28s ease, transform 0.28s ease, opacity 0.28s ease;
+
+    &--progressive {
+      filter: blur(14px) saturate(0.88);
+      transform: scale(1.03);
+      opacity: 0.72;
+    }
+  }
+
+  &-video {
+    max-width: min(360px, 100%);
+    border-radius: var(--radius-sm);
+    display: block;
+  }
+
+  &-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: rgb(var(--muted));
+    font-size: 0.74rem;
+    min-height: 112px;
+    padding: 0.5rem 0.55rem;
+  }
+
+  &-fallback {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: rgb(var(--muted));
+    font-size: 0.78rem;
+    padding: 0.45rem;
+    margin-bottom: 0.4rem;
+  }
+
+  &-fallback-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+
+    &--spin {
+      animation: chat-media-spin 0.9s linear infinite;
+    }
+  }
+
+  &-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.75rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid rgb(var(--border));
+    border-radius: var(--radius-xs);
+    font-size: 0.72rem;
+    text-decoration: none;
+    color: rgb(var(--text));
+    background: transparent;
+    cursor: pointer;
+  }
+}
+
+// ─── Documento ───────────────────────────────────────────────────────────────
+.chat-message__document {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.42rem 0.52rem;
+  margin-bottom: 0.4rem;
   border: 1px solid rgb(var(--border));
   border-radius: var(--radius-xs);
   background: rgb(var(--surface-2));
+
+  &-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  &-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    word-break: break-word;
+  }
 }
 
+.chat-message__audio-file-head {
+  display: flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
+// ─── Preview de link ─────────────────────────────────────────────────────────
 .chat-message__link-card {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
   gap: 0.5rem;
   padding: 0.35rem;
+  margin-bottom: 0.4rem;
   text-decoration: none;
   color: inherit;
-}
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-xs);
+  background: rgb(var(--surface-2));
 
-.chat-message__link-card--no-thumb {
-  grid-template-columns: minmax(0, 1fr);
+  &--no-thumb {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .chat-message__link-thumb {
@@ -637,172 +916,26 @@ onBeforeUnmount(() => {
   border-radius: calc(var(--radius-xs) - 2px);
 }
 
-.chat-message__link-content,
-.chat-message__reply-content {
+.chat-message__link-content {
   min-width: 0;
   display: grid;
   gap: 0.2rem;
 }
 
-.chat-message__link-title,
-.chat-message__link-description,
-.chat-message__link-host,
-.chat-message__reply-author,
-.chat-message__reply-text,
-.chat-message__unsupported-title,
-.chat-message__unsupported-label {
-  margin: 0;
-}
-
 .chat-message__link-title {
+  margin: 0;
   font-size: 0.8rem;
   font-weight: 700;
 }
 
 .chat-message__link-description,
-.chat-message__link-host,
-.chat-message__reply-text,
-.chat-message__unsupported-label {
+.chat-message__link-host {
+  margin: 0;
   font-size: 0.74rem;
   color: rgb(var(--muted));
 }
 
-.chat-message__reply {
-  border-left: 4px solid rgb(var(--primary));
-  padding: 0.42rem 0.56rem;
-  position: relative;
-  overflow: hidden;
-}
-
-.chat-message__reply--clickable {
-  cursor: pointer;
-}
-
-.chat-message__reply-author {
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: rgb(var(--primary));
-}
-
-.chat-message__reply-type-row,
-.chat-message__unsupported-head,
-.chat-message__media-actions,
-.chat-message__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.chat-message__reply-icon,
-.chat-message__unsupported-icon,
-.chat-message__media-fallback-icon,
-.chat-message__document-icon {
-  width: 0.95rem;
-  height: 0.95rem;
-}
-
-.chat-message__reply-type {
-  font-size: 0.72rem;
-  color: rgb(var(--muted));
-  font-weight: 600;
-}
-
-.chat-message__unsupported {
-  padding: 0.45rem 0.55rem;
-  border-color: rgb(var(--warning) / 0.5);
-  background: rgb(var(--warning) / 0.08);
-}
-
-.chat-message__media {
-  display: grid;
-  gap: 0.35rem;
-  margin-bottom: 0.4rem;
-}
-
-.chat-message__media-image-shell {
-  max-width: min(360px, 100%);
-  border-radius: var(--radius-sm);
-  border: 1px solid rgb(var(--border) / 0.65);
-  background: linear-gradient(130deg, rgb(var(--surface-2)), rgb(var(--surface-3)));
-  overflow: hidden;
-  min-height: 112px;
-}
-
-.chat-message__media-image,
-.chat-message__media-video {
-  max-width: min(360px, 100%);
-  border-radius: var(--radius-sm);
-  display: block;
-}
-
-.chat-message__media-image {
-  max-height: 420px;
-  width: 100%;
-  transition: filter 0.28s ease, transform 0.28s ease, opacity 0.28s ease;
-}
-
-.chat-message__media-image--progressive {
-  filter: blur(14px) saturate(0.88);
-  transform: scale(1.03);
-  opacity: 0.72;
-}
-
-.chat-message__media-loading {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: rgb(var(--muted));
-  font-size: 0.74rem;
-  min-height: 112px;
-  padding: 0.5rem 0.55rem;
-}
-
-.chat-message__media-fallback {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: rgb(var(--muted));
-  font-size: 0.78rem;
-  padding: 0.45rem;
-}
-
-.chat-message__media-fallback-icon--spin {
-  animation: chat-media-spin 0.9s linear infinite;
-}
-
-.chat-message__media-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.75rem;
-  padding: 0.1rem 0.45rem;
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-xs);
-  font-size: 0.72rem;
-  text-decoration: none;
-  color: rgb(var(--text));
-  background: transparent;
-  cursor: pointer;
-}
-
-.chat-message__document {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.42rem 0.52rem;
-}
-
-.chat-message__audio-file-head {
-  display: flex;
-  align-items: center;
-  gap: 0.36rem;
-}
-
-.chat-message__document-name {
-  font-size: 0.82rem;
-  font-weight: 600;
-  word-break: break-word;
-}
-
+// ─── Reações ─────────────────────────────────────────────────────────────────
 .chat-message__reactions {
   margin-top: 0.45rem;
   display: flex;
@@ -822,19 +955,58 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.22rem;
   cursor: pointer;
+
+  &--active {
+    border-color: rgb(var(--primary) / 0.55);
+    background: rgb(var(--primary) / 0.14);
+    color: rgb(var(--primary));
+  }
 }
 
-.chat-message__reaction-badge--active {
-  border-color: rgb(var(--primary) / 0.55);
-  background: rgb(var(--primary) / 0.14);
-  color: rgb(var(--primary));
-}
-
+// ─── Meta (hora, status, operador, menu) ─────────────────────────────────────
+// position: absolute coloca hora+check no canto inferior direito do bubble
+// sem ocupar linha própria — igual ao WhatsApp
 .chat-message__meta {
-  margin-top: 0.48rem;
-  flex-wrap: wrap;
-  font-size: 0.74rem;
+  position: absolute;
+  bottom: 0.3rem;
+  right: 0.62rem;
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.72rem;
   color: rgb(var(--muted));
+  pointer-events: none; // não bloqueia cliques no texto
+}
+
+.msg-time {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.msg-status-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+
+  &--failed { color: #ef4444; }
+  &--read   { color: #53bdeb; } // azul padrão WhatsApp para lido
+}
+
+.msg-bubble-actions {
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.chat-message--out .msg-bubble-actions {
+  order: -1; // aparece à esquerda do bubble em mensagens enviadas
+}
+
+.chat-message:hover .msg-bubble-actions,
+.chat-message:focus-within .msg-bubble-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .chat-message__operator {
@@ -852,6 +1024,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+// ─── Conteúdo gerado via v-html (menções, links externos) ────────────────────
 :deep(.chat-message__mention) {
   color: rgb(var(--primary));
   font-weight: 700;
@@ -872,23 +1045,15 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+// ─── Animações ───────────────────────────────────────────────────────────────
 @keyframes chat-reply-focus-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgb(var(--primary) / 0.36);
-  }
-
-  100% {
-    box-shadow: 0 0 0 1px rgb(var(--primary) / 0.18);
-  }
+  0%   { outline-color: rgb(var(--primary) / 0.0); }
+  40%  { outline-color: rgb(var(--primary) / 0.8); }
+  100% { outline-color: rgb(var(--primary) / 0.0); }
 }
 
 @keyframes chat-media-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 </style>

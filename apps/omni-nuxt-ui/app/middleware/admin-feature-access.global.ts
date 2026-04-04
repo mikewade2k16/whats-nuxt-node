@@ -16,6 +16,25 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const sessionSimulation = useSessionSimulationStore()
   sessionSimulation.initialize()
 
+  const authReady = Boolean(auth.isAuthenticated)
+  const coreAuthReady = Boolean(coreAuth.isAuthenticated)
+  if (authReady !== coreAuthReady) {
+    auth.clearSession()
+    coreAuth.clearSession()
+    sessionSimulation.reset()
+
+    if (path === '/admin/login') {
+      return
+    }
+
+    return navigateTo({
+      path: '/admin/login',
+      query: isSafeAdminRedirectPath(to.fullPath)
+        ? { redirect: to.fullPath }
+        : undefined
+    }, { replace: true })
+  }
+
   if (coreAuth.token && (!sessionSimulation.modulesHydrated || !sessionSimulation.lastClientOptionsSyncAt)) {
     await sessionSimulation.refreshClientOptions()
   }
@@ -36,6 +55,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (access.reason === 'login-required') {
+    auth.clearSession()
+    coreAuth.clearSession()
+    sessionSimulation.reset()
     return navigateTo({
       path: '/admin/login',
       query: isSafeAdminRedirectPath(to.fullPath)

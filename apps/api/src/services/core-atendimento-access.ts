@@ -151,6 +151,40 @@ export async function resolveCoreAtendimentoAccessByEmail(email: string) {
   return payload;
 }
 
+export async function resolveTenantHasAtendimentoModule(tenantSlug: string): Promise<boolean> {
+  const normalizedSlug = tenantSlug.trim().toLowerCase();
+  if (!normalizedSlug) {
+    return false;
+  }
+
+  const tenantModuleKey = `core:tenant-module:${normalizedSlug}`;
+  const cachedValue = loadFromMemory(tenantModuleKey);
+  if (cachedValue) {
+    return cachedValue.atendimentoAccess;
+  }
+
+  try {
+    const clients = await platformCoreClient.listAdminClients({ limit: 500 });
+    for (const client of clients) {
+      const moduleCodes = (client.modules ?? [])
+        .map((m) => String(m.code ?? "").trim().toLowerCase())
+        .filter(Boolean);
+      const clientSlug = String(client.name ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+      const hasAtendimento = moduleCodes.includes("atendimento");
+
+      if (clientSlug === normalizedSlug || String(client.coreTenantId ?? "").trim() === normalizedSlug) {
+        const payload = normalizeAccessPayload(normalizedSlug, { atendimentoAccess: hasAtendimento, moduleCodes });
+        saveToMemory(tenantModuleKey, payload);
+        return hasAtendimento;
+      }
+    }
+  } catch (error) {
+    console.error("[core-atendimento-access] failed to check tenant module", error);
+  }
+
+  return true;
+}
+
 export async function invalidateCoreAtendimentoAccessCacheByEmail(email: string) {
   const key = cacheKeyForEmail(email);
   getMemoryStore().delete(key);

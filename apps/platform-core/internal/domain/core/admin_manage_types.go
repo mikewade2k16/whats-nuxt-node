@@ -124,17 +124,18 @@ type ListAdminUsersInput struct {
 }
 
 type CreateAdminUserInput struct {
-	UserID          string
-	TenantID        string
-	IsPlatformAdmin bool
-	Name            string
-	Nick            string
-	Email           string
-	Password        string
-	Phone           string
-	ClientID        *int
-	Level           string
-	UserType        string
+	UserID                string
+	TenantID              string
+	IsPlatformAdmin       bool
+	TargetIsPlatformAdmin bool
+	Name                  string
+	Nick                  string
+	Email                 string
+	Password              string
+	Phone                 string
+	ClientID              *int
+	Level                 string
+	UserType              string
 }
 
 type UpdateAdminUserFieldInput struct {
@@ -158,4 +159,10 @@ type DeleteAdminUserInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	UserIDLegacy    int
+}
+
+type UpdateOwnProfileFieldInput struct {
+	ActorCoreUserID string // UUID from JWT claims.Subject
+	Field           string
+	Value           any
 }

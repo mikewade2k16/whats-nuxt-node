@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -460,6 +461,7 @@ func (h *CoreHandler) writeCoreError(w http.ResponseWriter, err error, fallbackM
 	case errors.Is(err, core.ErrLimitNotConfigured):
 		writeError(w, http.StatusUnprocessableEntity, "limit_not_configured", "module users limit is not configured")
 	default:
+		log.Printf("core error [%s]: %v", fallbackMessage, err)
 		writeError(w, http.StatusInternalServerError, "internal_error", fallbackMessage)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"platform-core/internal/domain/auth"
 	"platform-core/internal/domain/core"
+	"platform-core/internal/domain/finance"
 	"platform-core/internal/httpapi/handlers"
 	authmw "platform-core/internal/httpapi/middleware"
 	"platform-core/internal/realtime"
@@ -17,6 +18,7 @@ import (
 type RouterDeps struct {
 	AuthService        *auth.Service
 	CoreService        *core.Service
+	FinanceService     *finance.Service
 	Hub                *realtime.Hub
 	StartedAt          time.Time
 	RedisURL           string
@@ -35,6 +37,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	healthHandler := handlers.NewHealthHandler(deps.StartedAt)
 	authHandler := handlers.NewAuthHandler(deps.AuthService)
 	coreHandler := handlers.NewCoreHandler(deps.CoreService, deps.Hub)
+	financeHandler := handlers.NewFinanceHandler(deps.FinanceService)
 	wsHandler := handlers.NewWSHandler(deps.AuthService, deps.Hub)
 
 	r.Get("/health", healthHandler.Get)
@@ -43,9 +46,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Route("/core", func(r chi.Router) {
 		r.With(authmw.RateLimit(authmw.RateLimitOptions{
 			Scope:    "core.auth.login",
-			Max:      10,
+			Max:      50,
 			Window:   5 * time.Minute,
-			Block:    15 * time.Minute,
+			Block:    2 * time.Minute,
 			Message:  "too many login attempts",
 			RedisURL: deps.RedisURL,
 		})).Post("/auth/login", authHandler.Login)
@@ -55,6 +58,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Use(authmw.RequireAuth(deps.AuthService))
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+			r.Patch("/auth/profile", coreHandler.UpdateSelfProfile)
 			r.Get("/permissions", coreHandler.ListPermissions)
 
 			r.Get("/admin/clients", coreHandler.ListAdminClients)
@@ -69,6 +73,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Patch("/admin/users/{userId}", coreHandler.UpdateAdminUserField)
 			r.Delete("/admin/users/{userId}", coreHandler.DeleteAdminUser)
 			r.Post("/admin/users/{userId}/approve", coreHandler.ApproveAdminUser)
+
+			r.Get("/admin/finance-sheets", financeHandler.ListAdminFinances)
+			r.Post("/admin/finance-sheets", financeHandler.CreateAdminFinance)
+			r.Get("/admin/finance-sheets/{sheetId}", financeHandler.GetAdminFinance)
+			r.Put("/admin/finance-sheets/{sheetId}", financeHandler.ReplaceAdminFinance)
+			r.Patch("/admin/finance-sheets/{sheetId}/lines/{lineId}", financeHandler.UpdateAdminFinanceLine)
+			r.Delete("/admin/finance-sheets/{sheetId}", financeHandler.DeleteAdminFinance)
+			r.Get("/admin/finance-config", financeHandler.GetAdminFinanceConfig)
+			r.Put("/admin/finance-config", financeHandler.ReplaceAdminFinanceConfig)
 
 			r.Get("/tenants", coreHandler.ListTenants)
 			r.Post("/tenants", coreHandler.CreateTenant)

@@ -44,6 +44,7 @@ const {
   endpointValidation,
   infoMessage,
   errorMessage,
+  createdClientAccess,
   pairingCode,
   failureWindowDays,
   tenantForm,
@@ -73,6 +74,7 @@ const {
   deletingUserId,
   editingUserId,
   resetClientForm,
+  dismissCreatedClientAccess,
   startEditClient,
   saveClient,
   deleteClient,
@@ -95,8 +97,145 @@ const {
   generatePairingCode,
   loadFailuresDashboard,
   loadHttpEndpointMetrics,
-  validateEvolutionEndpoints
+  validateEvolutionEndpoints,
+  toggleAtendimentoAccess,
+  togglingAtendimentoAccessUserId,
+  switchTenant,
+  switchingTenant,
+  switchTenantError
 } = useOmnichannelAdmin();
+
+const sessionSimulation = useSessionSimulationStore();
+const canSwitchTenant = computed(() => sessionSimulation.canSimulate && sessionSimulation.clientOptions.length > 1);
+const passwordCharsets = {
+  upper: "ABCDEFGHJKLMNPQRSTUVWXYZ",
+  lower: "abcdefghijkmnopqrstuvwxyz",
+  number: "23456789",
+  symbol: "!@#$%*-_"
+};
+
+function randomIndex(max: number) {
+  if (max <= 0) {
+    return 0;
+  }
+
+  if (import.meta.client && globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint32Array(1);
+    globalThis.crypto.getRandomValues(bytes);
+    const seed = bytes[0] ?? 0;
+    return seed % max;
+  }
+
+  return Math.floor(Math.random() * max);
+}
+
+function pickRandom(charset: string) {
+  return charset[randomIndex(charset.length)] ?? "";
+}
+
+function generateRandomPassword(length = 12) {
+  const pools = [
+    passwordCharsets.upper,
+    passwordCharsets.lower,
+    passwordCharsets.number,
+    passwordCharsets.symbol
+  ];
+
+  const required = pools.map(pickRandom);
+  const allChars = pools.join("");
+  const targetLength = Math.max(length, required.length);
+  const output = [...required];
+
+  while (output.length < targetLength) {
+    output.push(pickRandom(allChars));
+  }
+
+  for (let index = output.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomIndex(index + 1);
+    const current = output[index] ?? "";
+    output[index] = output[swapIndex] ?? "";
+    output[swapIndex] = current;
+  }
+
+  return output.join("");
+}
+
+function fillGeneratedClientPassword() {
+  clientForm.adminPassword = generateRandomPassword(12);
+}
+
+async function copyTextToClipboard(value: string) {
+  const normalized = value.trim();
+  if (!normalized || !import.meta.client || !navigator.clipboard?.writeText) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(normalized);
+  } catch {
+    // no-op
+  }
+}
+
+async function copyClientPassword(value: string) {
+  await copyTextToClipboard(value);
+}
+
+async function copyCreatedClientAccess() {
+  if (!createdClientAccess.value) {
+    return;
+  }
+
+  await copyTextToClipboard(
+    [
+      `Cliente: ${createdClientAccess.value.clientName}`,
+      `Admin: ${createdClientAccess.value.adminName}`,
+      `Email: ${createdClientAccess.value.adminEmail}`,
+      `Senha inicial: ${createdClientAccess.value.adminPassword}`
+    ].join("\n")
+  );
+}
+
+function normalizeModuleCodeLocal(value: unknown) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+const tenantSwitchOptionsAdmin = computed(() =>
+  sessionSimulation.clientOptions.map((option) => {
+    const hasAtendimento = (option.moduleCodes ?? []).some((code) => normalizeModuleCodeLocal(code) === "atendimento");
+    return {
+      label: hasAtendimento ? option.label : `${option.label} (sem atendimento)`,
+      value: option.value,
+      disabled: !hasAtendimento
+    };
+  })
+);
+
+const activeTenantLabelAdmin = computed(() => {
+  const found = sessionSimulation.clientOptions.find(
+    (option) => option.value === sessionSimulation.effectiveClientId
+  );
+  return found?.label ?? user.value?.tenantSlug ?? "Tenant";
+});
+
+const activeClientHasAtendimentoAdmin = computed(() => {
+  if (!sessionSimulation.canSimulate) {
+    return sessionSimulation.profileAtendimentoAccess || sessionSimulation.profileModuleCodes.includes("atendimento");
+  }
+  const found = sessionSimulation.clientOptions.find(
+    (option) => option.value === sessionSimulation.effectiveClientId
+  );
+  if (!found?.moduleCodes) return true;
+  return found.moduleCodes.some((code) => normalizeModuleCodeLocal(code) === "atendimento");
+});
+
+async function handleSwitchTenantAdmin(clientId: number) {
+  if (clientId === sessionSimulation.effectiveClientId) return;
+  const target = sessionSimulation.clientOptions.find((option) => option.value === clientId);
+  if (!(target?.moduleCodes ?? []).some((code) => normalizeModuleCodeLocal(code) === "atendimento")) return;
+  sessionSimulation.setClientId(clientId);
+  await switchTenant(clientId);
+}
 
 const clientItems = computed(() =>
   clients.value.map((client) => ({
@@ -197,11 +336,58 @@ function toggleWhatsAppInstanceUser(userId: string) {
 </script>
 <template>
   <div class="admin-console">
+    <div v-if="canSwitchTenant" class="admin-console__tenant-switch">
+      <span class="admin-console__tenant-label">Atendimento:</span>
+      <UDropdownMenu
+        :items="[tenantSwitchOptionsAdmin.map((option) => ({
+          label: option.label,
+          disabled: option.disabled,
+          onSelect: () => !option.disabled && handleSwitchTenantAdmin(option.value)
+        }))]"
+        :content="{ align: 'start' }"
+        :ui="{ content: 'w-60' }"
+      >
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          trailing-icon="i-lucide-chevron-down"
+          :loading="switchingTenant"
+          :label="activeTenantLabelAdmin"
+        />
+      </UDropdownMenu>
+    </div>
+
+    <UAlert
+      v-if="switchTenantError"
+      color="error"
+      variant="soft"
+      :title="switchTenantError"
+      class="admin-console__alert"
+    />
+
+    <UAlert
+      v-if="!activeClientHasAtendimentoAdmin"
+      color="warning"
+      variant="soft"
+      icon="i-lucide-shield-alert"
+      title="Modulo Atendimento nao disponivel"
+      :description="`O cliente ${activeTenantLabelAdmin} nao possui o modulo de Atendimento ativo.`"
+      class="admin-console__alert"
+    >
+      <template #actions>
+        <UButton size="xs" color="neutral" variant="outline" to="/admin/manage/clientes">
+          Gestao de clientes
+        </UButton>
+      </template>
+    </UAlert>
+
+    <template v-if="activeClientHasAtendimentoAdmin">
     <div class="admin-console__header">
       <div class="admin-console__headline">
         <h1 class="admin-console__title">Admin de Operacao</h1>
         <p class="admin-console__subtitle">
-          Cliente <strong>{{ user?.tenantSlug }}</strong> | Fluxo de conexao WhatsApp por QR
+          Cliente <strong>{{ activeTenantLabelAdmin }}</strong> | Fluxo de conexao WhatsApp por QR
         </p>
       </div>
       <div class="admin-console__header-actions">
@@ -216,13 +402,43 @@ function toggleWhatsAppInstanceUser(userId: string) {
 
     <UAlert v-if="errorMessage" color="error" variant="soft" :title="errorMessage" />
     <UAlert v-if="infoMessage" color="primary" variant="soft" :title="infoMessage" />
-    <UAlert
-      v-if="statusResult"
-      :color="connectionAlertColor"
-      variant="soft"
-      :title="connectionAlertTitle"
-      :description="connectionAlertDescription"
-    />
+    <UCard v-if="createdClientAccess" class="admin-access-card">
+      <template #header>
+        <div class="admin-card__header">
+          <div>
+            <h2 class="admin-card__title">Acesso inicial do cliente</h2>
+            <p class="tenant-form__hint">Guarde essa senha agora. Depois disso, o fluxo esperado e o cliente trocar no perfil.</p>
+          </div>
+          <div class="admin-actions-row">
+            <UButton size="xs" color="primary" variant="soft" @click="copyCreatedClientAccess">
+              Copiar acesso
+            </UButton>
+            <UButton size="xs" color="neutral" variant="ghost" @click="dismissCreatedClientAccess">
+              Fechar
+            </UButton>
+          </div>
+        </div>
+      </template>
+
+      <div class="admin-access-card__grid">
+        <div class="admin-access-card__item">
+          <span class="admin-access-card__label">Cliente</span>
+          <strong>{{ createdClientAccess.clientName }}</strong>
+        </div>
+        <div class="admin-access-card__item">
+          <span class="admin-access-card__label">Admin</span>
+          <strong>{{ createdClientAccess.adminName }}</strong>
+        </div>
+        <div class="admin-access-card__item">
+          <span class="admin-access-card__label">Email</span>
+          <strong>{{ createdClientAccess.adminEmail }}</strong>
+        </div>
+        <div class="admin-access-card__item">
+          <span class="admin-access-card__label">Senha inicial</span>
+          <strong>{{ createdClientAccess.adminPassword }}</strong>
+        </div>
+      </div>
+    </UCard>
     <UAlert
       v-if="!canManageTenant"
       color="warning"
@@ -236,6 +452,125 @@ function toggleWhatsAppInstanceUser(userId: string) {
     </div>
 
     <template v-else>
+      <UCard>
+        <template #header>
+          <h2 class="admin-card__title">Conexao WhatsApp</h2>
+        </template>
+
+        <UAlert
+          class="admin-card__status-alert"
+          :color="connectionAlertColor"
+          variant="soft"
+          :title="connectionAlertTitle"
+          :description="connectionAlertDescription"
+        />
+
+        <div class="admin-grid-two">
+          <div class="admin-stack">
+            <UAlert
+              color="neutral"
+              variant="soft"
+              title="Fluxo recomendado"
+              description="Use Bootstrap uma vez e depois Conectar por QR sempre que precisar."
+            />
+
+            <UFormField v-if="canSwitchTenant" label="Instance name">
+              <UInput v-model="whatsappForm.instanceName" :disabled="!canManageTenant" placeholder="demo-instance" />
+            </UFormField>
+
+            <div class="admin-actions-row">
+              <UButton :loading="bootstrapping" :disabled="!canManageTenant" @click="bootstrapWhatsApp">
+                Bootstrap
+              </UButton>
+              <UButton :loading="connectingQr" :disabled="!canManageTenant" color="primary" variant="outline" @click="connectWithQr">
+                Conectar por QR
+              </UButton>
+              <UButton
+                :loading="disconnectingWhatsApp"
+                :disabled="!canManageTenant"
+                color="warning"
+                variant="soft"
+                @click="disconnectWhatsAppSession"
+              >
+                Desconectar sessao
+              </UButton>
+              <UButton
+                :loading="refreshingStatus"
+                color="neutral"
+                variant="soft"
+                @click="refreshWhatsAppStatus()"
+              >
+                Atualizar status
+              </UButton>
+              <UButton
+                :loading="fetchingQr"
+                color="neutral"
+                variant="soft"
+                @click="fetchQrCode({ force: true })"
+              >
+                Atualizar QR
+              </UButton>
+            </div>
+
+            <USeparator label="Opcional: Pairing Code" />
+
+            <UFormField label="Numero para pairing code (opcional)">
+              <UInput v-model="whatsappForm.number" :disabled="!canManageTenant" placeholder="5511999999999" />
+            </UFormField>
+
+            <div class="admin-actions-row admin-actions-row--align-center">
+              <UButton
+                :loading="connectingPairing"
+                :disabled="!canManageTenant"
+                color="neutral"
+                variant="outline"
+                @click="generatePairingCode"
+              >
+                Gerar pairing code
+              </UButton>
+              <UBadge v-if="pairingCode" color="warning" variant="subtle">
+                Codigo: {{ pairingCode }}
+              </UBadge>
+            </div>
+          </div>
+
+          <UCard class="qr-panel">
+            <template #header>
+              <div class="admin-card__header">
+                <h3 class="admin-card__title">QR Code Atual</h3>
+                <UBadge color="neutral" variant="soft">
+                  {{ qrResult?.source || "pending" }}
+                </UBadge>
+              </div>
+            </template>
+
+            <div class="qr-stage">
+              <img
+                v-if="qrImageSrc"
+                :src="qrImageSrc"
+                alt="QR Code WhatsApp"
+                class="qr-image"
+              />
+              <div v-else class="qr-empty">
+                {{ qrUnavailableMessage }}
+              </div>
+            </div>
+
+            <template #footer>
+              <p class="qr-hint">
+                Estado atual: <strong>{{ connectionStateLabel }}</strong> (<code>{{ connectionState }}</code>).
+                <span v-if="hasQrCode">
+                  Escaneie o QR no app WhatsApp.
+                </span>
+                <span v-else>
+                  Se estiver <code>open</code>, use <strong>Desconectar sessao</strong> para gerar um novo QR.
+                </span>
+              </p>
+            </template>
+          </UCard>
+        </div>
+      </UCard>
+
       <UCard>
         <template #header>
           <div class="admin-card__header">
@@ -252,23 +587,23 @@ function toggleWhatsAppInstanceUser(userId: string) {
             <p v-if="tenantFieldErrors.name" class="admin-field-error">{{ tenantFieldErrors.name }}</p>
           </UFormField>
 
-          <UFormField label="Instancia default (compatibilidade legado)">
+          <UFormField v-if="canSwitchTenant" label="Instancia default (compatibilidade legado)">
             <UInput v-model="tenantForm.whatsappInstance" :disabled="!canManageTenant" placeholder="demo-instance" />
             <p v-if="tenantFieldErrors.whatsappInstance" class="admin-field-error">{{ tenantFieldErrors.whatsappInstance }}</p>
           </UFormField>
 
-          <UFormField label="Evolution API Key (opcional por tenant)">
+          <UFormField v-if="canSwitchTenant" label="Evolution API Key (opcional por tenant)">
             <UInput v-model="tenantForm.evolutionApiKey" :disabled="!canManageTenant" placeholder="apikey-tenant" />
             <p v-if="tenantFieldErrors.evolutionApiKey" class="admin-field-error">{{ tenantFieldErrors.evolutionApiKey }}</p>
           </UFormField>
 
-          <UFormField label="Max canais">
-            <UInput v-model.number="tenantForm.maxChannels" :disabled="!canManageTenant || !tenant?.canManageAtendimentoLimits" type="number" min="0" max="50" />
+          <UFormField v-if="canSwitchTenant" label="Max canais">
+            <UInput v-model.number="tenantForm.maxChannels" :disabled="!canManageTenant" type="number" min="0" max="50" />
             <p v-if="tenantFieldErrors.maxChannels" class="admin-field-error">{{ tenantFieldErrors.maxChannels }}</p>
           </UFormField>
 
-          <UFormField label="Max usuarios">
-            <UInput v-model.number="tenantForm.maxUsers" :disabled="!canManageTenant || !tenant?.canManageAtendimentoLimits" type="number" min="1" max="500" />
+          <UFormField v-if="canSwitchTenant" label="Max usuarios">
+            <UInput v-model.number="tenantForm.maxUsers" :disabled="!canManageTenant" type="number" min="1" max="500" />
             <p v-if="tenantFieldErrors.maxUsers" class="admin-field-error">{{ tenantFieldErrors.maxUsers }}</p>
           </UFormField>
 
@@ -287,8 +622,10 @@ function toggleWhatsAppInstanceUser(userId: string) {
               Uso atual: <strong>{{ tenant?.currentChannels ?? 0 }}</strong>/<strong>{{ tenant?.maxChannels ?? 0 }}</strong> canais,
               <strong>{{ tenant?.currentUsers ?? 0 }}</strong>/<strong>{{ tenant?.maxUsers ?? 0 }}</strong> usuarios.
               Limite de upload: <strong>{{ tenant?.maxUploadMb ?? 500 }}MB</strong> por arquivo.
-              <br>
-              Webhook: <code>{{ tenant?.webhookUrl }}</code>
+              <template v-if="canSwitchTenant">
+                <br>
+                Webhook: <code>{{ tenant?.webhookUrl }}</code>
+              </template>
               <br v-if="tenant && !tenant.canManageAtendimentoLimits">
               <span v-if="tenant && !tenant.canManageAtendimentoLimits">
                 Limites de canais e usuarios sao controlados pelo painel central.
@@ -328,7 +665,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
             />
           </UFormField>
 
-          <UFormField label="Nome tecnico da instancia">
+          <UFormField v-if="canSwitchTenant" label="Nome tecnico da instancia">
             <UInput v-model="whatsappInstanceForm.instanceName" placeholder="cliente-01-wa" />
           </UFormField>
 
@@ -340,7 +677,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
             <UInput v-model="whatsappInstanceForm.phoneNumber" placeholder="5511999999999" />
           </UFormField>
 
-          <UFormField label="API Key dedicada (opcional)">
+          <UFormField v-if="canSwitchTenant" label="API Key dedicada (opcional)">
             <UInput v-model="whatsappInstanceForm.evolutionApiKey" placeholder="apikey-instancia" />
           </UFormField>
 
@@ -357,7 +694,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
             />
           </UFormField>
 
-          <UFormField label="Politica de acesso dos usuarios">
+          <UFormField v-if="canSwitchTenant" label="Politica de acesso dos usuarios">
             <USelect
               v-model="whatsappInstanceForm.userScopePolicy"
               :items="instanceUserScopePolicyItems"
@@ -368,7 +705,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
             </p>
           </UFormField>
 
-          <UFormField label="Flags">
+          <UFormField v-if="canSwitchTenant" label="Flags">
             <div class="admin-flags">
               <label class="admin-flag">
                 <input v-model="whatsappInstanceForm.isDefault" type="checkbox">
@@ -474,6 +811,70 @@ function toggleWhatsAppInstanceUser(userId: string) {
       <UCard v-if="canManageTenant">
         <template #header>
           <div class="admin-card__header">
+            <h2 class="admin-card__title">Acesso ao Modulo Atendimento</h2>
+            <div class="admin-actions-row admin-actions-row--align-center">
+              <UBadge color="neutral" variant="soft">
+                {{ eligibleAtendimentoUsers.length }}/{{ tenant?.maxUsers ?? 0 }} com acesso
+              </UBadge>
+              <UButton color="neutral" variant="soft" :loading="loadingWhatsAppInstances" @click="loadWhatsAppInstances()">
+                Atualizar
+              </UButton>
+            </div>
+          </div>
+        </template>
+
+        <p class="tenant-form__hint">
+          Controle quais usuarios do cliente <strong>{{ activeTenantLabelAdmin }}</strong> tem acesso ao modulo de atendimento.
+          Limite do plano: <strong>{{ tenant?.currentUsers ?? 0 }}/{{ tenant?.maxUsers ?? 0 }}</strong> usuarios alocados.
+        </p>
+        <p class="tenant-form__hint">Usuarios com perfil <strong>Admin</strong> tem acesso automatico ao modulo de atendimento.</p>
+
+        <div class="users-table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr class="users-table__row users-table__row--head">
+                <th class="users-table__cell users-table__cell--head">Nome</th>
+                <th class="users-table__cell users-table__cell--head">Email</th>
+                <th class="users-table__cell users-table__cell--head">Role</th>
+                <th class="users-table__cell users-table__cell--head">Status</th>
+                <th class="users-table__cell users-table__cell--head">Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in whatsappInstanceUsers.filter(u => u.role !== 'ADMIN')" :key="u.id" class="users-table__row">
+                <td class="users-table__cell">{{ u.name }}</td>
+                <td class="users-table__cell">{{ u.email }}</td>
+                <td class="users-table__cell">{{ u.role }}</td>
+                <td class="users-table__cell">
+                  <UBadge :color="u.atendimentoAccess ? 'success' : 'neutral'" variant="soft">
+                    {{ u.atendimentoAccess ? 'Com acesso' : 'Sem acesso' }}
+                  </UBadge>
+                </td>
+                <td class="users-table__cell">
+                  <UButton
+                    size="xs"
+                    :color="u.atendimentoAccess ? 'warning' : 'primary'"
+                    variant="soft"
+                    :loading="togglingAtendimentoAccessUserId === u.id"
+                    @click="toggleAtendimentoAccess(u.id, !u.atendimentoAccess)"
+                  >
+                    {{ u.atendimentoAccess ? 'Revogar' : 'Conceder acesso' }}
+                  </UButton>
+                </td>
+              </tr>
+              <tr v-if="!whatsappInstanceUsers.length" class="users-table__row">
+                <td class="users-table__cell" colspan="5">
+                  Nenhum usuario encontrado para este cliente.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </UCard>
+
+      <UCard v-if="canManageTenant && canSwitchTenant">
+        <template #header>
+          <div class="admin-card__header">
             <h2 class="admin-card__title">Clientes</h2>
             <div class="admin-actions-row">
               <UBadge color="neutral" variant="soft">
@@ -534,7 +935,22 @@ function toggleWhatsAppInstanceUser(userId: string) {
             </UFormField>
 
             <UFormField label="Senha do admin inicial">
-              <UInput v-model="clientForm.adminPassword" type="password" placeholder="******" />
+              <UInput v-model="clientForm.adminPassword" type="text" placeholder="******" />
+              <div class="admin-actions-row admin-actions-row--field">
+                <UButton size="xs" color="neutral" variant="soft" @click="fillGeneratedClientPassword">
+                  Gerar senha
+                </UButton>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  :disabled="!clientForm.adminPassword.trim()"
+                  @click="copyClientPassword(clientForm.adminPassword)"
+                >
+                  Copiar
+                </UButton>
+              </div>
+              <p class="tenant-form__hint">Essa senha e usada para o primeiro acesso do admin do cliente.</p>
               <p v-if="clientFieldErrors.adminPassword" class="admin-field-error">{{ clientFieldErrors.adminPassword }}</p>
             </UFormField>
           </template>
@@ -599,294 +1015,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
         </div>
       </UCard>
 
-      <UCard>
-        <template #header>
-          <h2 class="admin-card__title">Conexao WhatsApp</h2>
-        </template>
-
-        <UAlert
-          class="admin-card__status-alert"
-          :color="connectionAlertColor"
-          variant="soft"
-          :title="connectionAlertTitle"
-          :description="connectionAlertDescription"
-        />
-
-        <div class="admin-grid-two">
-          <div class="admin-stack">
-            <UAlert
-              color="neutral"
-              variant="soft"
-              title="Fluxo recomendado"
-              description="Use Bootstrap uma vez e depois Conectar por QR sempre que precisar."
-            />
-
-            <UFormField label="Instance name">
-              <UInput v-model="whatsappForm.instanceName" :disabled="!canManageTenant" placeholder="demo-instance" />
-            </UFormField>
-
-            <div class="admin-actions-row">
-              <UButton :loading="bootstrapping" :disabled="!canManageTenant" @click="bootstrapWhatsApp">
-                Bootstrap
-              </UButton>
-              <UButton :loading="connectingQr" :disabled="!canManageTenant" color="primary" variant="outline" @click="connectWithQr">
-                Conectar por QR
-              </UButton>
-              <UButton
-                :loading="disconnectingWhatsApp"
-                :disabled="!canManageTenant"
-                color="warning"
-                variant="soft"
-                @click="disconnectWhatsAppSession"
-              >
-                Desconectar sessao
-              </UButton>
-              <UButton
-                :loading="refreshingStatus"
-                color="neutral"
-                variant="soft"
-                @click="refreshWhatsAppStatus()"
-              >
-                Atualizar status
-              </UButton>
-              <UButton
-                :loading="fetchingQr"
-                color="neutral"
-                variant="soft"
-                @click="fetchQrCode({ force: true })"
-              >
-                Atualizar QR
-              </UButton>
-            </div>
-
-            <USeparator label="Opcional: Pairing Code" />
-
-            <UFormField label="Numero para pairing code (opcional)">
-              <UInput v-model="whatsappForm.number" :disabled="!canManageTenant" placeholder="5511999999999" />
-            </UFormField>
-
-            <div class="admin-actions-row admin-actions-row--align-center">
-              <UButton
-                :loading="connectingPairing"
-                :disabled="!canManageTenant"
-                color="neutral"
-                variant="outline"
-                @click="generatePairingCode"
-              >
-                Gerar pairing code
-              </UButton>
-              <UBadge v-if="pairingCode" color="warning" variant="subtle">
-                Codigo: {{ pairingCode }}
-              </UBadge>
-            </div>
-          </div>
-
-          <UCard class="qr-panel">
-            <template #header>
-              <div class="admin-card__header">
-                <h3 class="admin-card__title">QR Code Atual</h3>
-                <UBadge color="neutral" variant="soft">
-                  {{ qrResult?.source || "pending" }}
-                </UBadge>
-              </div>
-            </template>
-
-            <div class="qr-stage">
-              <img
-                v-if="qrImageSrc"
-                :src="qrImageSrc"
-                alt="QR Code WhatsApp"
-                class="qr-image"
-              />
-              <div v-else class="qr-empty">
-                {{ qrUnavailableMessage }}
-              </div>
-            </div>
-
-            <template #footer>
-              <p class="qr-hint">
-                Estado atual: <strong>{{ connectionStateLabel }}</strong> (<code>{{ connectionState }}</code>).
-                <span v-if="hasQrCode">
-                  Escaneie o QR no app WhatsApp.
-                </span>
-                <span v-else>
-                  Se estiver <code>open</code>, use <strong>Desconectar sessao</strong> para gerar um novo QR.
-                </span>
-              </p>
-            </template>
-          </UCard>
-        </div>
-      </UCard>
-
-      <UCard>
-        <template #header>
-          <div class="admin-card__header">
-            <h2 class="admin-card__title">Validacao de endpoints Evolution</h2>
-            <div class="admin-actions-row admin-actions-row--align-center">
-              <UBadge v-if="endpointValidation" color="neutral" variant="soft">
-                {{ endpointValidation.summary.available }}/{{ endpointValidation.summary.total }} disponiveis
-              </UBadge>
-              <UButton
-                color="neutral"
-                variant="soft"
-                :loading="validatingEndpoints"
-                @click="validateEvolutionEndpoints()"
-              >
-                Validar endpoints
-              </UButton>
-            </div>
-          </div>
-        </template>
-
-        <div v-if="validatingEndpoints" class="admin-console__loading">
-          Validando endpoints da Evolution...
-        </div>
-        <div v-else-if="!endpointValidation" class="admin-console__loading">
-          Nenhuma validacao executada ainda.
-        </div>
-        <template v-else>
-          <p class="tenant-form__hint">
-            Base: <code>{{ endpointValidation.baseUrl }}</code> |
-            Instancia: <code>{{ endpointValidation.instanceName }}</code> |
-            Timeout: <code>{{ endpointValidation.timeoutMs }}ms</code>
-            <br>
-            Atualizado em {{ new Date(endpointValidation.generatedAt).toLocaleString() }}.
-          </p>
-
-          <div class="users-table-wrap">
-            <table class="users-table">
-              <thead>
-                <tr class="users-table__row users-table__row--head">
-                  <th class="users-table__cell users-table__cell--head">Endpoint</th>
-                  <th class="users-table__cell users-table__cell--head">Path</th>
-                  <th class="users-table__cell users-table__cell--head">HTTP</th>
-                  <th class="users-table__cell users-table__cell--head">Status</th>
-                  <th class="users-table__cell users-table__cell--head">Detalhe</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="entry in endpointValidation.endpoints" :key="entry.key" class="users-table__row">
-                  <td class="users-table__cell">{{ entry.label }}</td>
-                  <td class="users-table__cell admin-code-cell">
-                    <code>{{ entry.pathTemplate }}</code>
-                  </td>
-                  <td class="users-table__cell">{{ entry.httpStatus ?? "-" }}</td>
-                  <td class="users-table__cell">
-                    <UBadge :color="endpointStatusColor(entry.status)" variant="soft">
-                      {{ formatEndpointStatusLabel(entry.status) }}
-                    </UBadge>
-                  </td>
-                  <td class="users-table__cell admin-message-cell">{{ entry.message }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-      </UCard>
-
-      <UCard>
-        <template #header>
-          <div class="admin-card__header">
-            <h2 class="admin-card__title">Usuarios do cliente</h2>
-            <div class="admin-actions-row admin-actions-row--align-center">
-              <USelect
-                :model-value="selectedClientId"
-                :items="clientItems"
-                value-key="value"
-                class="failures-window-select"
-                :disabled="!canManageTenant || !clientItems.length"
-                @update:model-value="value => value && selectClient(String(value))"
-              />
-              <UBadge color="neutral" variant="soft">
-                {{ selectedClient?.name || tenant?.name || "Cliente atual" }}
-              </UBadge>
-            </div>
-          </div>
-        </template>
-
-        <form class="users-form" @submit.prevent="saveUser">
-          <UFormField label="Nome">
-            <UInput v-model="userForm.name" :disabled="!canManageTenant" placeholder="Novo agente" />
-            <p v-if="userFieldErrors.name" class="admin-field-error">{{ userFieldErrors.name }}</p>
-          </UFormField>
-
-          <UFormField label="Email">
-            <UInput v-model="userForm.email" :disabled="!canManageTenant" type="email" placeholder="agente@empresa.com" />
-            <p v-if="userFieldErrors.email" class="admin-field-error">{{ userFieldErrors.email }}</p>
-          </UFormField>
-
-          <UFormField :label="editingUserId ? 'Nova senha (opcional)' : 'Senha inicial'">
-            <UInput
-              v-model="userForm.password"
-              :disabled="!canManageTenant"
-              type="password"
-              :placeholder="editingUserId ? 'Deixe vazio para manter' : '******'"
-            />
-            <p v-if="userFieldErrors.password" class="admin-field-error">{{ userFieldErrors.password }}</p>
-          </UFormField>
-
-          <UFormField label="Role">
-            <USelect
-              v-model="userForm.role"
-              :items="roleItems"
-              value-key="value"
-              :disabled="!canManageTenant"
-            />
-            <p v-if="userFieldErrors.role" class="admin-field-error">{{ userFieldErrors.role }}</p>
-          </UFormField>
-
-          <div class="users-form__footer">
-            <div class="admin-actions-row">
-              <UButton type="submit" :loading="savingUser" :disabled="!canManageTenant">
-                {{ editingUserId ? "Salvar usuario" : "Criar usuario" }}
-              </UButton>
-              <UButton v-if="editingUserId" type="button" color="neutral" variant="soft" @click="resetUserForm">
-                Cancelar edicao
-              </UButton>
-            </div>
-          </div>
-        </form>
-
-        <div class="users-table-wrap">
-          <table class="users-table">
-            <thead>
-              <tr class="users-table__row users-table__row--head">
-                <th class="users-table__cell users-table__cell--head">Nome</th>
-                <th class="users-table__cell users-table__cell--head">Email</th>
-                <th class="users-table__cell users-table__cell--head">Role</th>
-                <th class="users-table__cell users-table__cell--head">Criado em</th>
-                <th class="users-table__cell users-table__cell--head">Acoes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="tenantUser in users" :key="tenantUser.id" class="users-table__row">
-                <td class="users-table__cell">{{ tenantUser.name }}</td>
-                <td class="users-table__cell">{{ tenantUser.email }}</td>
-                <td class="users-table__cell">{{ tenantUser.role }}</td>
-                <td class="users-table__cell">{{ new Date(tenantUser.createdAt).toLocaleString() }}</td>
-                <td class="users-table__cell">
-                  <div class="admin-actions-row">
-                    <UButton color="neutral" variant="soft" :disabled="!canManageTenant" @click="startEditUser(tenantUser)">
-                      Editar
-                    </UButton>
-                    <UButton
-                      color="error"
-                      variant="soft"
-                      :disabled="!canManageTenant"
-                      :loading="deletingUserId === tenantUser.id"
-                      @click="deleteUser(tenantUser.id)"
-                    >
-                      Excluir
-                    </UButton>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </UCard>
-
-      <UCard>
+      <UCard v-if="canSwitchTenant">
         <template #header>
           <div class="admin-card__header">
             <h2 class="admin-card__title">Dashboard de falhas outbound</h2>
@@ -1004,7 +1133,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
         </template>
       </UCard>
 
-      <UCard>
+      <UCard v-if="canSwitchTenant">
         <template #header>
           <div class="admin-card__header">
             <h2 class="admin-card__title">Latencia e erros por endpoint</h2>
@@ -1120,7 +1249,7 @@ function toggleWhatsAppInstanceUser(userId: string) {
         </template>
       </UCard>
 
-      <details class="admin-debug">
+      <details v-if="canSwitchTenant" class="admin-debug">
         <summary class="admin-debug__summary">Debug tecnico (bootstrap/status/qr)</summary>
         <div class="admin-debug__grid">
           <pre class="admin-debug__code">{{ bootstrapResult ? JSON.stringify(bootstrapResult, null, 2) : "Sem bootstrap ainda." }}</pre>
@@ -1129,10 +1258,29 @@ function toggleWhatsAppInstanceUser(userId: string) {
         </div>
       </details>
     </template>
+    </template>
   </div>
 </template>
 
 <style scoped>
+.admin-console__tenant-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.admin-console__tenant-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: rgb(var(--muted));
+  white-space: nowrap;
+}
+
+.admin-console__alert {
+  margin: 0;
+}
+
 .admin-console {
   min-height: 100vh;
   padding: 1rem;
@@ -1185,6 +1333,28 @@ function toggleWhatsAppInstanceUser(userId: string) {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
+}
+
+.admin-access-card__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-access-card__item {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-xs);
+  background: rgb(var(--surface-2));
+}
+
+.admin-access-card__label {
+  font-size: 0.75rem;
+  color: rgb(var(--muted));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .tenant-form,
@@ -1255,6 +1425,10 @@ function toggleWhatsAppInstanceUser(userId: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.admin-actions-row--field {
+  margin-top: 0.5rem;
 }
 
 .admin-actions-row--align-center {
@@ -1511,4 +1685,3 @@ function toggleWhatsAppInstanceUser(userId: string) {
   }
 }
 </style>
-

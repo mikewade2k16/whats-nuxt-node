@@ -8,6 +8,7 @@ export function useOmnichannelInboxScroll(options: {
   hasMoreMessages: Ref<boolean>;
   loadingOlderMessages: Ref<boolean>;
   showLoadOlderMessagesButton: Ref<boolean>;
+  showScrollToLatestButton: Ref<boolean>;
   showStickyDate: Ref<boolean>;
   stickyDateLabel: Ref<string>;
   firstUnreadMessageId: ComputedRef<string | null>;
@@ -24,6 +25,12 @@ export function useOmnichannelInboxScroll(options: {
   messageRowId: (messageId: string) => string;
 }) {
   let scrollRaf: number | null = null;
+  const conversationScrollStateById = new Map<string, {
+    anchorMessageId: string | null;
+    anchorOffsetTop: number;
+    scrollTop: number;
+    nearBottom: boolean;
+  }>();
 
   function scheduleStickyDateRefresh() {
     if (scrollRaf !== null) {
@@ -48,6 +55,7 @@ export function useOmnichannelInboxScroll(options: {
     if (!container) {
       options.showStickyDate.value = false;
       options.stickyDateLabel.value = "";
+      options.showScrollToLatestButton.value = false;
       return;
     }
 
@@ -72,68 +80,26 @@ export function useOmnichannelInboxScroll(options: {
     }
 
     if (!selectedRow) {
-      selectedRow = rows[0];
+      selectedRow = rows[0] ?? null;
+    }
+
+    if (!selectedRow) {
+      options.showStickyDate.value = false;
+      options.stickyDateLabel.value = "";
+      return;
     }
 
     options.stickyDateLabel.value = selectedRow.dataset.dateLabel ?? "";
     options.showStickyDate.value = container.scrollTop > 24 && options.stickyDateLabel.value.length > 0;
   }
 
-  function scrollToBottom() {
+  function refreshScrollAffordances() {
     const container = options.chatBodyRef.value;
     if (!container) {
-      return;
-    }
-
-    container.scrollTop = container.scrollHeight;
-  }
-
-  async function positionConversationOnOpen() {
-    await nextTick();
-
-    const container = options.chatBodyRef.value;
-    if (!container) {
-      return;
-    }
-
-    const unreadId = options.firstUnreadMessageId.value;
-
-    if (unreadId) {
-      const marker = document.getElementById("chat-unread-anchor");
-      if (marker) {
-        container.scrollTop = Math.max(marker.offsetTop - 24, 0);
-      } else {
-        const messageRow = document.getElementById(options.messageRowId(unreadId));
-        if (messageRow) {
-          container.scrollTop = Math.max(messageRow.offsetTop - 24, 0);
-        } else {
-          scrollToBottom();
-        }
-      }
-    } else {
-      scrollToBottom();
-      options.markConversationAsRead();
-    }
-
-    scheduleStickyDateRefresh();
-  }
-
-  async function selectConversation(conversationId: string) {
-    options.activeConversationId.value = conversationId;
-    options.draft.value = "";
-    options.replyTarget.value = null;
-    options.showLoadOlderMessagesButton.value = false;
-    options.clearAttachment();
-    options.assigneeModel.value = options.conversations.value.find((entry) => entry.id === conversationId)?.assignedToId ?? UNASSIGNED_VALUE;
-
-    await options.loadConversationMessages(conversationId);
-    void options.loadGroupParticipants(conversationId);
-    await positionConversationOnOpen();
-  }
-
-  function onChatScroll() {
-    const container = options.chatBodyRef.value;
-    if (!container) {
+      options.showLoadOlderMessagesButton.value = false;
+      options.showScrollToLatestButton.value = false;
+      options.showStickyDate.value = false;
+      options.stickyDateLabel.value = "";
       return;
     }
 
@@ -145,15 +111,163 @@ export function useOmnichannelInboxScroll(options: {
       options.showLoadOlderMessagesButton.value = false;
     }
 
+    options.showScrollToLatestButton.value = !isNearBottom(container) && container.scrollTop > 180;
+    refreshStickyDate();
+  }
+
+  function extractMessageIdFromRow(row: HTMLElement) {
+    const rowId = row.id.trim();
+    const prefix = "chat-message-";
+    if (!rowId.startsWith(prefix)) {
+      return null;
+    }
+
+    const messageId = rowId.slice(prefix.length).trim();
+    return messageId.length > 0 ? messageId : null;
+  }
+
+  function captureConversationScrollState(conversationId = options.activeConversationId.value) {
+    const container = options.chatBodyRef.value;
+    if (!container || !conversationId) {
+      return;
+    }
+
+    const nearBottom = isNearBottom(container);
+    if (nearBottom) {
+      conversationScrollStateById.set(conversationId, {
+        anchorMessageId: null,
+        anchorOffsetTop: 0,
+        scrollTop: container.scrollTop,
+        nearBottom: true
+      });
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const rows = [...container.querySelectorAll<HTMLElement>(".chat-message-row")];
+    const anchorRow = rows.find((row) => row.getBoundingClientRect().bottom > containerRect.top + 12) ?? rows[0] ?? null;
+    const anchorMessageId = anchorRow ? extractMessageIdFromRow(anchorRow) : null;
+    const anchorOffsetTop = anchorRow ? anchorRow.offsetTop - container.scrollTop : 0;
+
+    conversationScrollStateById.set(conversationId, {
+      anchorMessageId,
+      anchorOffsetTop,
+      scrollTop: container.scrollTop,
+      nearBottom: false
+    });
+  }
+
+  function restoreConversationScrollState(conversationId: string) {
+    const container = options.chatBodyRef.value;
+    const snapshot = conversationScrollStateById.get(conversationId);
+    if (!container || !snapshot) {
+      return false;
+    }
+
+    if (snapshot.nearBottom) {
+      scrollToBottom();
+      return true;
+    }
+
+    if (snapshot.anchorMessageId) {
+      const anchorRow = document.getElementById(options.messageRowId(snapshot.anchorMessageId));
+      if (anchorRow instanceof HTMLElement) {
+        container.scrollTop = Math.max(anchorRow.offsetTop - snapshot.anchorOffsetTop, 0);
+        return true;
+      }
+    }
+
+    container.scrollTop = Math.max(snapshot.scrollTop, 0);
+    return true;
+  }
+
+  function scrollToBottom() {
+    const container = options.chatBodyRef.value;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+    options.showScrollToLatestButton.value = false;
+  }
+
+  function scrollToLatest() {
+    scrollToBottom();
+    options.markConversationAsRead();
+    captureConversationScrollState();
+    scheduleStickyDateRefresh();
+  }
+
+  async function positionConversationOnOpen(conversationId: string) {
+    await nextTick();
+
+    const container = options.chatBodyRef.value;
+    if (!container) {
+      return;
+    }
+
+    const unreadId = options.firstUnreadMessageId.value;
+    const scrollState = conversationScrollStateById.get(conversationId) ?? null;
+
+    if (unreadId && (!scrollState || scrollState.nearBottom)) {
+      const marker = document.getElementById("chat-unread-anchor");
+      if (marker) {
+        container.scrollTop = Math.max(marker.offsetTop - 24, 0);
+      } else {
+        const messageRow = document.getElementById(options.messageRowId(unreadId));
+        if (messageRow) {
+          container.scrollTop = Math.max(messageRow.offsetTop - 24, 0);
+        } else {
+          scrollToBottom();
+        }
+      }
+    } else if (restoreConversationScrollState(conversationId)) {
+      if (scrollState?.nearBottom) {
+        options.markConversationAsRead();
+      }
+    } else {
+      scrollToBottom();
+      options.markConversationAsRead();
+    }
+
+    captureConversationScrollState(conversationId);
+    refreshScrollAffordances();
+    scheduleStickyDateRefresh();
+  }
+
+  async function selectConversation(conversationId: string) {
+    captureConversationScrollState();
+    options.activeConversationId.value = conversationId;
+    options.draft.value = "";
+    options.replyTarget.value = null;
+    options.showLoadOlderMessagesButton.value = false;
+    options.showScrollToLatestButton.value = false;
+    options.clearAttachment();
+    options.assigneeModel.value = options.conversations.value.find((entry) => entry.id === conversationId)?.assignedToId ?? UNASSIGNED_VALUE;
+
+    await options.loadConversationMessages(conversationId);
+    void options.loadGroupParticipants(conversationId);
+    await positionConversationOnOpen(conversationId);
+  }
+
+  function onChatScroll() {
+    const container = options.chatBodyRef.value;
+    if (!container) {
+      return;
+    }
+
     if (isNearBottom(container)) {
       options.markConversationAsRead();
     }
 
+    captureConversationScrollState();
+    refreshScrollAffordances();
     scheduleStickyDateRefresh();
   }
 
   function onChatBodyMounted(element: HTMLElement | null) {
     options.chatBodyRef.value = element;
+    refreshScrollAffordances();
   }
 
   async function requestOlderMessages() {
@@ -174,11 +288,15 @@ export function useOmnichannelInboxScroll(options: {
     ) {
       options.showLoadOlderMessagesButton.value = true;
     }
+
+    captureConversationScrollState();
+    refreshScrollAffordances();
   }
 
   return {
     scheduleStickyDateRefresh,
     scrollToBottom,
+    scrollToLatest,
     selectConversation,
     onChatScroll,
     onChatBodyMounted,

@@ -37,14 +37,15 @@ type createAdminClientRequest struct {
 }
 
 type createAdminUserRequest struct {
-	Name     string `json:"name"`
-	Nick     string `json:"nick,omitempty"`
-	Email    string `json:"email"`
-	Password string `json:"password,omitempty"`
-	Phone    string `json:"phone,omitempty"`
-	ClientID *int   `json:"clientId,omitempty"`
-	Level    string `json:"level,omitempty"`
-	UserType string `json:"userType,omitempty"`
+	Name            string `json:"name"`
+	Nick            string `json:"nick,omitempty"`
+	Email           string `json:"email"`
+	Password        string `json:"password,omitempty"`
+	Phone           string `json:"phone,omitempty"`
+	ClientID        *int   `json:"clientId,omitempty"`
+	Level           string `json:"level,omitempty"`
+	UserType        string `json:"userType,omitempty"`
+	IsPlatformAdmin bool   `json:"isPlatformAdmin,omitempty"`
 }
 
 func (h *CoreHandler) ListAdminClients(w http.ResponseWriter, r *http.Request) {
@@ -281,17 +282,18 @@ func (h *CoreHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.service.CreateAdminUser(r.Context(), core.CreateAdminUserInput{
-		UserID:          claims.Subject,
-		TenantID:        claims.TenantID,
-		IsPlatformAdmin: claims.IsPlatformAdmin,
-		Name:            strings.TrimSpace(request.Name),
-		Nick:            strings.TrimSpace(request.Nick),
-		Email:           strings.TrimSpace(strings.ToLower(request.Email)),
-		Password:        strings.TrimSpace(request.Password),
-		Phone:           strings.TrimSpace(request.Phone),
-		ClientID:        request.ClientID,
-		Level:           strings.TrimSpace(request.Level),
-		UserType:        strings.TrimSpace(request.UserType),
+		UserID:                claims.Subject,
+		TenantID:              claims.TenantID,
+		IsPlatformAdmin:       claims.IsPlatformAdmin,
+		TargetIsPlatformAdmin: request.IsPlatformAdmin,
+		Name:                  strings.TrimSpace(request.Name),
+		Nick:                  strings.TrimSpace(request.Nick),
+		Email:                 strings.TrimSpace(strings.ToLower(request.Email)),
+		Password:              strings.TrimSpace(request.Password),
+		Phone:                 strings.TrimSpace(request.Phone),
+		ClientID:              request.ClientID,
+		Level:                 strings.TrimSpace(request.Level),
+		UserType:              strings.TrimSpace(request.UserType),
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to create admin user")
@@ -434,6 +436,33 @@ func parseOptionalLegacyIDQueryParam(r *http.Request, key string) (*int, error) 
 	}
 
 	return &parsed, nil
+}
+
+// UpdateSelfProfile handles PATCH /core/auth/profile — updates a single field
+// for the authenticated user using their JWT UUID, no legacy_id required.
+func (h *CoreHandler) UpdateSelfProfile(w http.ResponseWriter, r *http.Request) {
+	claims, ok := authmw.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing auth context")
+		return
+	}
+
+	var req updateFieldRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	if err := h.service.UpdateOwnProfileField(r.Context(), core.UpdateOwnProfileFieldInput{
+		ActorCoreUserID: claims.Subject,
+		Field:           req.Field,
+		Value:           req.Value,
+	}); err != nil {
+		h.writeCoreError(w, err, "failed to update profile")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func buildListMeta(page, limit, total int) adminListMeta {

@@ -7,6 +7,12 @@ import {
 
 type ClientFormState = ReturnType<typeof createClientFormState>;
 type UserFormState = ReturnType<typeof createUserFormState>;
+type CreatedClientAccess = {
+  clientName: string;
+  adminName: string;
+  adminEmail: string;
+  adminPassword: string;
+};
 
 export function useOmnichannelAdminClientOps(options: {
   user: Ref<AuthUser | null>;
@@ -31,6 +37,7 @@ export function useOmnichannelAdminClientOps(options: {
   const deletingClientId = ref<string | null>(null);
   const editingClientId = ref<string | null>(null);
   const selectedClientId = ref<string | null>(null);
+  const createdClientAccess = ref<CreatedClientAccess | null>(null);
 
   const savingUser = ref(false);
   const deletingUserId = ref<string | null>(null);
@@ -62,6 +69,10 @@ export function useOmnichannelAdminClientOps(options: {
     Object.assign(options.clientForm, createClientFormState());
     editingClientId.value = null;
     options.clearFieldErrors(options.clientFieldErrors);
+  }
+
+  function dismissCreatedClientAccess() {
+    createdClientAccess.value = null;
   }
 
   function startEditClient(client: ClientRecord) {
@@ -125,7 +136,13 @@ export function useOmnichannelAdminClientOps(options: {
 
       await loadClientUsers(selectedClientId.value);
     } catch (error) {
-      options.setError(options.extractError(error));
+      // 403 = not a platform admin — silently skip client list (client admin sees own tenant only)
+      const statusCode = (error as { statusCode?: number; data?: { statusCode?: number } })?.statusCode
+        ?? (error as { data?: { statusCode?: number } })?.data?.statusCode;
+      if (statusCode !== 403) {
+        options.setError(options.extractError(error));
+      }
+      clients.value = [];
     } finally {
       loadingClients.value = false;
     }
@@ -143,6 +160,13 @@ export function useOmnichannelAdminClientOps(options: {
 
     try {
       const isEditing = Boolean(editingClientId.value);
+      const initialAdminAccess = !isEditing
+        ? {
+            adminName: options.clientForm.adminName.trim(),
+            adminEmail: options.clientForm.adminEmail.trim(),
+            adminPassword: options.clientForm.adminPassword.trim()
+          }
+        : null;
       const payload: Record<string, unknown> = {
         slug: options.clientForm.slug.trim() || undefined,
         name: options.clientForm.name,
@@ -172,6 +196,14 @@ export function useOmnichannelAdminClientOps(options: {
       await loadClients();
       selectedClientId.value = savedClient.id;
       await loadClientUsers(savedClient.id);
+      createdClientAccess.value = !isEditing && initialAdminAccess
+        ? {
+            clientName: savedClient.name,
+            adminName: initialAdminAccess.adminName,
+            adminEmail: initialAdminAccess.adminEmail,
+            adminPassword: initialAdminAccess.adminPassword
+          }
+        : null;
       resetClientForm();
       options.infoMessage.value = isEditing
         ? "Cliente atualizado com sucesso."
@@ -323,12 +355,14 @@ export function useOmnichannelAdminClientOps(options: {
     editingClientId,
     selectedClientId,
     selectedClient,
+    createdClientAccess,
     savingUser,
     deletingUserId,
     editingUserId,
     loadClients,
     loadClientUsers,
     resetClientForm,
+    dismissCreatedClientAccess,
     startEditClient,
     saveClient,
     deleteClient,

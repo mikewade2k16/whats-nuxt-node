@@ -11,6 +11,45 @@ import {
   normalizePhoneDigits
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
 
+const sessionSimulation = useSessionSimulationStore();
+const canSwitchTenant = computed(() => sessionSimulation.canSimulate && sessionSimulation.clientOptions.length > 1);
+
+function normalizeModuleCode(value: unknown) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+const activeClientHasAtendimento = computed(() => {
+  if (!sessionSimulation.canSimulate) {
+    return sessionSimulation.profileAtendimentoAccess || sessionSimulation.profileModuleCodes.includes("atendimento");
+  }
+
+  const found = sessionSimulation.clientOptions.find(
+    (option) => option.value === sessionSimulation.effectiveClientId
+  );
+  if (!found?.moduleCodes) {
+    return true;
+  }
+
+  return found.moduleCodes.some((code) => normalizeModuleCode(code) === "atendimento");
+});
+
+const tenantSwitchOptions = computed(() =>
+  sessionSimulation.clientOptions.map((option) => {
+    const hasAtendimento = (option.moduleCodes ?? []).some((code) => normalizeModuleCode(code) === "atendimento");
+    return {
+      label: hasAtendimento ? option.label : `${option.label} (sem atendimento)`,
+      value: option.value,
+      disabled: !hasAtendimento
+    };
+  })
+);
+const activeTenantLabel = computed(() => {
+  const found = sessionSimulation.clientOptions.find(
+    (option) => option.value === sessionSimulation.effectiveClientId
+  );
+  return found?.label ?? user.value?.tenantSlug ?? "Tenant";
+});
+
 const {
   user,
   leftCollapsed,
@@ -21,12 +60,14 @@ const {
   loadingContacts,
   loadingUsers,
   loadingWhatsAppStatus,
+  realtimeConnectionState,
   whatsappConnectionState,
   loadingMessages,
   loadingOlderMessages,
   loadingGroupParticipants,
   hasMoreMessages,
   showLoadOlderMessagesButton,
+  showScrollToLatestButton,
   savingContact,
   creatingContact,
   importingContacts,
@@ -81,6 +122,7 @@ const {
   showOutboundOperatorLabel,
   onChatBodyMounted,
   onChatScroll,
+  scrollToLatest,
   requestOlderMessages,
   setReplyTarget,
   clearReplyTarget,
@@ -117,6 +159,9 @@ const {
   updateConversationAssignee,
   openMentionConversation,
   openSandboxTestConversation,
+  switchTenant,
+  switchingTenant,
+  switchTenantError,
   logout
 } = useOmnichannelInbox();
 
@@ -141,14 +186,14 @@ const showWhatsAppConnectionAlert = computed(() => {
 
 const whatsappConnectionAlertTitle = computed(() => {
   if (!isWhatsAppConfigured.value) {
-    return "Nenhum WhatsApp conectado para este tenant";
+    return "Nenhum WhatsApp configurado para este cliente";
   }
 
   if (whatsappConnectionState.value === "connecting") {
-    return "WhatsApp desconectado (aguardando leitura do QR)";
+    return "WhatsApp aguardando conexao (leitura do QR Code)";
   }
 
-  return "WhatsApp desconectado";
+  return "WhatsApp desconectado - reconecte para enviar e receber mensagens";
 });
 
 const whatsappConnectionAlertColor = computed(() => {
@@ -165,6 +210,14 @@ const sidebarWhatsappBannerMessage = computed(() => {
   }
 
   return whatsappBannerMessage.value;
+});
+
+const showInboxDashboard = computed(() => {
+  if (loadingWhatsAppStatus.value) {
+    return true;
+  }
+
+  return isWhatsAppConnected.value;
 });
 
 const existingContactForDraft = computed(() => {
@@ -288,6 +341,21 @@ async function handleOpenExistingContact(contactId: string) {
   await openContactConversation(contactId);
   handleCloseSaveContactModal();
 }
+
+async function handleSwitchTenant(clientId: number) {
+  if (clientId === sessionSimulation.effectiveClientId) {
+    return;
+  }
+
+  const target = sessionSimulation.clientOptions.find((option) => option.value === clientId);
+  const hasAtendimento = (target?.moduleCodes ?? []).some((code) => normalizeModuleCode(code) === "atendimento");
+  if (!hasAtendimento) {
+    return;
+  }
+
+  sessionSimulation.setClientId(clientId);
+  await switchTenant(clientId);
+}
 </script>
 <template>
   <div class="chat-page">
@@ -303,22 +371,81 @@ async function handleOpenExistingContact(contactId: string) {
       @open-existing="handleOpenExistingContact"
     />
 
+    <div v-if="canSwitchTenant" class="chat-page__tenant-switch">
+      <span class="chat-page__tenant-label">Atendimento:</span>
+      <UDropdownMenu
+        :items="[tenantSwitchOptions.map((option) => ({
+          label: option.label,
+          disabled: option.disabled,
+          onSelect: () => !option.disabled && handleSwitchTenant(option.value)
+        }))]"
+        :content="{ align: 'start' }"
+        :ui="{ content: 'w-60' }"
+      >
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          trailing-icon="i-lucide-chevron-down"
+          :loading="switchingTenant"
+          :label="activeTenantLabel"
+        />
+      </UDropdownMenu>
+    </div>
+
+    <UAlert
+      v-if="switchTenantError"
+      class="chat-page__status-alert"
+      color="error"
+      variant="soft"
+      :title="switchTenantError"
+    />
+
+    <UAlert
+      v-if="realtimeConnectionState === 'module_denied'"
+      class="chat-page__status-alert"
+      color="warning"
+      variant="soft"
+      title="Realtime desativado: modulo Atendimento nao vinculado"
+      description="Seu usuario nao tem acesso ao modulo de atendimento no platform-core. Mensagens serao atualizadas por polling. Solicite ao admin para vincular o modulo."
+    />
+
     <UAlert
       v-if="showWhatsAppConnectionAlert"
       class="chat-page__status-alert"
       :color="whatsappConnectionAlertColor"
       variant="soft"
       :title="whatsappConnectionAlertTitle"
-      :description="whatsappBannerMessage"
+      :description="whatsappBannerMessage || (isWhatsAppConfigured ? 'Acesse a pagina de operacao para reconectar o WhatsApp via QR Code.' : 'Configure uma instancia WhatsApp na pagina de operacao para comecar a receber mensagens.')"
     >
       <template #actions>
         <UButton size="xs" color="neutral" variant="outline" to="/admin/omnichannel/operacao">
-          Abrir Admin
+          {{ isWhatsAppConfigured ? 'Reconectar WhatsApp' : 'Configurar WhatsApp' }}
         </UButton>
       </template>
     </UAlert>
 
+    <div v-if="!activeClientHasAtendimento" class="chat-page__no-module">
+      <UAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-shield-alert"
+        title="Modulo Atendimento nao disponivel"
+        :description="`O cliente ${activeTenantLabel} nao possui o modulo de Atendimento ativo. Solicite a ativacao do modulo na gestao de clientes.`"
+      >
+        <template #actions>
+          <UButton v-if="canSwitchTenant" size="xs" color="neutral" variant="outline" @click="() => {}">
+            Trocar cliente
+          </UButton>
+          <UButton size="xs" color="neutral" variant="outline" to="/admin/manage/clientes">
+            Gestao de clientes
+          </UButton>
+        </template>
+      </UAlert>
+    </div>
+
     <UDashboardGroup
+      v-else-if="showInboxDashboard"
       storage="local"
       storage-key="omni-inbox-layout-v3"
       class="chat-page__dashboard !static !inset-auto !h-auto !w-full !min-h-0"
@@ -382,6 +509,7 @@ async function handleOpenExistingContact(contactId: string) {
         :loading-older-messages="loadingOlderMessages"
         :has-more-messages="hasMoreMessages"
         :show-load-older-messages-button="showLoadOlderMessagesButton"
+        :show-scroll-to-latest-button="showScrollToLatestButton"
         :message-render-items="messageRenderItems"
         :show-sticky-date="showStickyDate"
         :sticky-date-label="stickyDateLabel"
@@ -406,6 +534,7 @@ async function handleOpenExistingContact(contactId: string) {
         @body-mounted="onChatBodyMounted"
         @chat-scroll="onChatScroll"
         @load-older-messages="requestOlderMessages"
+        @scroll-to-latest="scrollToLatest"
         @send="sendMessage"
         @send-contact="sendContactCard"
         @save-contact-card="handleOpenSaveContactModal"
@@ -453,9 +582,32 @@ async function handleOpenExistingContact(contactId: string) {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+}
+
+.chat-page__no-module {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 2rem;
+}
+
+.chat-page__tenant-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+}
+
+.chat-page__tenant-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: rgb(var(--muted));
+  white-space: nowrap;
 }
 
 .chat-page__status-alert {
@@ -464,8 +616,8 @@ async function handleOpenExistingContact(contactId: string) {
 
 .chat-page__dashboard {
   display: flex;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 </style>
-

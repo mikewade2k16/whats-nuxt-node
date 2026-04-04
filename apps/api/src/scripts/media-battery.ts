@@ -7,6 +7,8 @@ type AuthResponse = {
 type ConversationResponse = {
   id: string;
   externalId: string;
+  contactName?: string | null;
+  channel?: string | null;
 };
 
 type MessageResponse = {
@@ -50,6 +52,11 @@ const USER_EMAIL = process.env.BATTERY_EMAIL ?? "admin@demo.local";
 const USER_PASSWORD = process.env.BATTERY_PASSWORD ?? "123456";
 const DESTINATION =
   process.env.BATTERY_DESTINATION_EXTERNAL_ID ?? `mvp-media-battery-${Date.now()}@invalid`;
+const TARGET_CONVERSATION_ID = process.env.BATTERY_CONVERSATION_ID?.trim() ?? "";
+const TARGET_EXTERNAL_ID = process.env.BATTERY_EXISTING_EXTERNAL_ID?.trim() ?? "";
+const TARGET_CONTACT_NAME = process.env.BATTERY_EXISTING_CONTACT_NAME?.trim() ?? "";
+const LABEL_PREFIX =
+  process.env.BATTERY_LABEL_PREFIX?.trim() || `Media battery ${new Date().toISOString()}`;
 const POLL_TIMEOUT_MS = Number(process.env.BATTERY_POLL_TIMEOUT_MS ?? 75_000);
 const POLL_INTERVAL_MS = Number(process.env.BATTERY_POLL_INTERVAL_MS ?? 2_000);
 
@@ -104,7 +111,7 @@ function buildCases(): BatteryCase[] {
       label: "Texto",
       payload: {
         type: "TEXT",
-        content: "Media battery: texto"
+        content: `${LABEL_PREFIX}: texto`
       }
     },
     {
@@ -112,8 +119,8 @@ function buildCases(): BatteryCase[] {
       label: "Imagem",
       payload: {
         type: "IMAGE",
-        content: "Media battery: imagem",
-        mediaCaption: "Media battery: imagem",
+        content: `${LABEL_PREFIX}: imagem`,
+        mediaCaption: `${LABEL_PREFIX}: imagem`,
         mediaUrl: imageDataUrl,
         mediaMimeType: "image/png",
         mediaFileName: "battery-image.png",
@@ -125,8 +132,8 @@ function buildCases(): BatteryCase[] {
       label: "Video",
       payload: {
         type: "VIDEO",
-        content: "Media battery: video",
-        mediaCaption: "Media battery: video",
+        content: `${LABEL_PREFIX}: video`,
+        mediaCaption: `${LABEL_PREFIX}: video`,
         mediaUrl: videoDataUrl,
         mediaMimeType: "video/mp4",
         mediaFileName: "battery-video.mp4",
@@ -138,7 +145,7 @@ function buildCases(): BatteryCase[] {
       label: "Audio",
       payload: {
         type: "AUDIO",
-        content: "Media battery: audio",
+        content: `${LABEL_PREFIX}: audio`,
         mediaUrl: audioDataUrl,
         mediaMimeType: "audio/wav",
         mediaFileName: "battery-audio.wav",
@@ -150,8 +157,8 @@ function buildCases(): BatteryCase[] {
       label: "Documento",
       payload: {
         type: "DOCUMENT",
-        content: "Media battery: documento",
-        mediaCaption: "Media battery: documento",
+        content: `${LABEL_PREFIX}: documento`,
+        mediaCaption: `${LABEL_PREFIX}: documento`,
         mediaUrl: documentDataUrl,
         mediaMimeType: "text/plain",
         mediaFileName: "battery-document.txt",
@@ -203,6 +210,44 @@ async function login() {
     password: USER_PASSWORD
   });
   return auth.token;
+}
+
+async function listConversations(token: string) {
+  return apiRequest<ConversationResponse[]>("GET", "/conversations", token);
+}
+
+function normalizeText(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+async function resolveBatteryConversation(token: string) {
+  if (!TARGET_CONVERSATION_ID && !TARGET_EXTERNAL_ID && !TARGET_CONTACT_NAME) {
+    return createBatteryConversation(token);
+  }
+
+  const conversations = await listConversations(token);
+
+  const match = conversations.find((conversation) => {
+    if (TARGET_CONVERSATION_ID && conversation.id === TARGET_CONVERSATION_ID) {
+      return true;
+    }
+
+    if (TARGET_EXTERNAL_ID && conversation.externalId === TARGET_EXTERNAL_ID) {
+      return true;
+    }
+
+    if (TARGET_CONTACT_NAME && normalizeText(conversation.contactName).includes(normalizeText(TARGET_CONTACT_NAME))) {
+      return true;
+    }
+
+    return false;
+  });
+
+  if (!match) {
+    throw new Error("Conversa alvo nao encontrada para o media battery");
+  }
+
+  return match;
 }
 
 async function createBatteryConversation(token: string) {
@@ -260,8 +305,10 @@ function printReport(
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
-    destination: DESTINATION,
+    destination: conversation.externalId || DESTINATION,
     conversationId: conversation.id,
+    contactName: conversation.contactName ?? null,
+    channel: conversation.channel ?? null,
     finalStatusCounts,
     results
   };
@@ -273,7 +320,7 @@ async function main() {
   const startedAt = new Date();
   const cases = buildCases();
   const token = await login();
-  const conversation = await createBatteryConversation(token);
+  const conversation = await resolveBatteryConversation(token);
   const results: BatteryResult[] = [];
 
   for (const testCase of cases) {

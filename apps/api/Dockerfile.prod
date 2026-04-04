@@ -7,14 +7,14 @@ WORKDIR /app
 # Copiar dependências
 COPY package*.json ./
 
-# Install com otimizações
-RUN npm ci --no-audit --no-fund --omit=dev 
+# Instala TODAS as deps (incluindo devDeps para o TypeScript compilar)
+RUN npm ci --no-audit --no-fund
 
 # Copiar código
 COPY . .
 
-# Gerar Prisma client
-RUN npm run prisma:generate
+# Gerar Prisma client e compilar TypeScript
+RUN npm run prisma:generate && npm run build
 
 # ==================== API PRODUCTION ====================
 FROM node:22-alpine AS prod

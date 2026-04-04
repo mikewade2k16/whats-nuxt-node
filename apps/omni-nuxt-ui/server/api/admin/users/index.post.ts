@@ -21,7 +21,8 @@ export default defineEventHandler(async (event) => {
         phone: normalizedBody.phone as string,
         clientId: normalizedBody.clientId as number | string | null,
         level: normalizedBody.level as string,
-        userType: normalizedBody.userType as string
+        userType: normalizedBody.userType as string,
+        isPlatformAdmin: Boolean(normalizedBody.isPlatformAdmin)
       }
     }
   )

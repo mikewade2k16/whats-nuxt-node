@@ -80,6 +80,7 @@ const draftModel = computed({
 .chat-composer__input-wrap {
   position: relative;
   min-width: 0;
+  width: 100% !important;
 }
 
 .chat-composer__input {
