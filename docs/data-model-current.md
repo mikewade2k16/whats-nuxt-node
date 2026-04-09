@@ -1,6 +1,6 @@
 # Modelo de Dados Atual
 
-Fonte de verdade: `apps/api/prisma/schema.prisma`
+Fonte de verdade: `apps/atendimento-online-api/prisma/schema.prisma`
 
 ## Visao geral
 

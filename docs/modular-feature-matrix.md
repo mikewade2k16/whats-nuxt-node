@@ -4,7 +4,7 @@ Objetivo: definir ownership por modulo para evitar acoplamento e permitir evoluc
 
 ## Regra de ownership
 
-1. `platform-core`: auth, RBAC, tenants, usuarios, planos, limites e auditoria global.
+1. `plataforma-api`: auth, RBAC, tenants, usuarios, planos, limites e auditoria global.
 2. `omnichannel`: inbox, conversas, mensagens, roteamento operacional e conectores de canais.
 3. `crm`: entidades de lead/cliente, funil e vinculacao comercial.
 4. `automation`: bots, fluxos, campanhas, templates e handoff.
@@ -24,12 +24,12 @@ Objetivo: definir ownership por modulo para evitar acoplamento e permitir evoluc
 - [-] Relatorios basicos de volume e tempo de resposta -> base tecnica em `analytics`; falta consolidar SLA/tempo medio operacional.
 - [ ] Chatbot/menu inicial -> `automation`.
 - [ ] Handoff bot -> humano -> `automation` + `omnichannel`.
-- [-] Integracoes basicas com CRM/webhook/API -> webhook/API base em `platform-core` + `omnichannel`; conectores CRM dedicados em `crm`.
+- [-] Integracoes basicas com CRM/webhook/API -> webhook/API base em `plataforma-api` + `omnichannel`; conectores CRM dedicados em `crm`.
 
 ## Nivel mercado maduro
 
 - [ ] SLA e gestao de tickets -> `analytics` + `omnichannel`.
-- [ ] Filas/equipes/departamentos -> `omnichannel` + `platform-core`.
+- [ ] Filas/equipes/departamentos -> `omnichannel` + `plataforma-api`.
 - [ ] Roteamento por assunto/canal/horario/competencia -> `automation`.
 - [ ] Base de conhecimento -> `automation` + `ai-assistant`.
 - [ ] Campanhas ativas/templates -> `automation`.
@@ -37,7 +37,7 @@ Objetivo: definir ownership por modulo para evitar acoplamento e permitir evoluc
 - [ ] Painel de produtividade por atendente -> `analytics`.
 - [ ] Pesquisa de satisfacao -> `analytics` + `automation`.
 - [ ] Dashboard gerencial -> `analytics`.
-- [ ] Auditoria/governanca avancada -> `platform-core`.
+- [ ] Auditoria/governanca avancada -> `plataforma-api`.
 
 ## Nivel top players 2026
 

@@ -23,35 +23,43 @@ Jobs:
 
 Gates atuais:
 
-1. `apps/api`: `npm ci`, `npm run prisma:generate`, `npm run build`
-2. `apps/omni-nuxt-ui`: `npm ci`, `npm run test:composables`, `npm run build`
+1. `apps/atendimento-online-api`: `npm ci`, `npm run prisma:generate`, `npm run build`
+2. `apps/painel-web`: `npm ci`, `npm run build`
 3. seguranca multi-tenant: sobe API com Postgres/Redis efemeros e executa `npm run test:tenant:isolation`
 4. integracao de midia: sobe API + worker com Postgres/Redis efemeros e executa `npm run test:media:integration`
 5. gate MVP: no job `media-integration-audit`, executa `npm run test:gate:mvp` para validar texto/midia inbound+outbound + dedupe
 6. jornada principal: no job `media-integration-audit`, executa `npm run test:journey:e2e` (login + inbox + outbound + inbound)
 
+Observacao atual:
+
+1. o harness de `test:composables` agora mora em `apps/painel-web`
+2. o job `web-quality` hoje valida build do front ativo; os testes de composables ainda nao foram plugados nesse workflow
+
 ## Comandos locais equivalentes
 
 1. API:
-   - `cd apps/api`
+   - `cd apps/atendimento-online-api`
    - `npm ci`
    - `npm run prisma:generate`
    - `npm run build`
 2. Web:
-   - `cd apps/omni-nuxt-ui`
+   - `cd apps/painel-web`
+   - `npm ci`
+   - `npm run build`
+3. Testes de composables do front ativo:
+   - `cd apps/painel-web`
    - `npm ci`
    - `npm run test:composables`
-   - `npm run build`
 
 ## Automacao de bateria de midia
 
 Script:
 
-1. `apps/api/src/scripts/media-battery.ts`
+1. `apps/atendimento-online-api/src/scripts/media-battery.ts`
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:media:battery`
 
 Modo seguro (default):
@@ -69,7 +77,7 @@ Exemplo PowerShell:
 
 ```powershell
 $env:BATTERY_DESTINATION_EXTERNAL_ID='5511999999999@s.whatsapp.net'
-cd apps/api
+cd apps/atendimento-online-api
 npm run test:media:battery
 ```
 
@@ -77,11 +85,11 @@ npm run test:media:battery
 
 Script:
 
-1. `apps/api/src/scripts/media-integration.ts`
+1. `apps/atendimento-online-api/src/scripts/media-integration.ts`
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:media:integration`
 
 O que valida:
@@ -99,11 +107,11 @@ Modo padrao:
 
 Script:
 
-1. `apps/api/src/scripts/mvp-gate-audit.ts`
+1. `apps/atendimento-online-api/src/scripts/mvp-gate-audit.ts`
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:gate:mvp`
 
 O que valida:
@@ -117,11 +125,11 @@ O que valida:
 
 Script:
 
-1. `apps/api/src/scripts/journey-e2e.ts`
+1. `apps/atendimento-online-api/src/scripts/journey-e2e.ts`
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:journey:e2e`
 
 O que valida:
@@ -136,11 +144,11 @@ O que valida:
 
 Script:
 
-1. `apps/api/src/scripts/tenant-isolation-audit.ts`
+1. `apps/atendimento-online-api/src/scripts/tenant-isolation-audit.ts`
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:tenant:isolation`
 
 Cobertura atual:
@@ -155,4 +163,7 @@ Cobertura atual:
 
 Nota:
 
-1. Este audit roda contra API local (`http://localhost:4000`) e exige seed com tenants `demo` e `acme`.
+1. Este audit roda contra API local (`http://localhost:4000`) e exige seed coerente entre `apps/atendimento-online-api` e `plataforma-api` para `demo` e `acme`.
+2. O estado oficial esperado no repo agora e:
+   - `plataforma-api`: `root`, `demo-core`, `acme-core`
+   - aliases de login do painel: `demo` e `acme`

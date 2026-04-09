@@ -1,4 +1,4 @@
-﻿## Stack DEV Atual (2026-03-13)
+## Stack DEV Atual (2026-03-13)
 
 - Arquivo principal: `docker-compose.dev.yml`
 - Evolution agora sobe por padrao no DEV (sem profile `channels`).
@@ -35,7 +35,7 @@ Esse saneamento cobre duplicata por telefone e tambem "conversa sombra" (mesmo n
 
 ## Atualizacao Core/Manage (2026-03-14)
 
-- Fonte unica de auth do painel: `platform-core` (Go).
+- Fonte unica de auth do painel: `plataforma-api` (Go).
 - Telas legadas removidas: `/admin/core` e `/admin/core/cadastro`.
 - Gestao de clientes e usuarios continua em:
   - `/admin/manage/clientes`
@@ -100,7 +100,7 @@ Esse saneamento cobre duplicata por telefone e tambem "conversa sombra" (mesmo n
   - script: `node scripts/security-access-audit.mjs`
   - relatorio gerado: `docs/metrics/security-access-audit-latest.json`
 - Migração nova no core:
-  - `apps/platform-core/migrations/0007_backfill_client_defaults_and_admin_bootstrap.sql`
+  - `apps/plataforma-api/migrations/0007_backfill_client_defaults_and_admin_bootstrap.sql`
   - inclui backfill para clientes antigos: `user_count=10` quando vazio, admin bootstrap por tenant sem admin, modulo `finance`, e reforco de limites/modulos padrao.
 
 ## Atualizacao QA Roadmap (2026-03-14)
@@ -183,11 +183,11 @@ Esse saneamento cobre duplicata por telefone e tambem "conversa sombra" (mesmo n
   - relatorio atual: `docs/metrics/security-access-audit-latest.json`
 - Pendencias tecnicas registradas para proximo bloco de infra:
   - corrigir `oxc-transform` no host Windows para voltar a usar `nuxi prepare` local sem workaround
-  - limpar os erros antigos de tipagem/Prisma em `apps/api` para voltar a ter `npm run build` completo como gate real
+  - limpar os erros antigos de tipagem/Prisma em `apps/atendimento-online-api` para voltar a ter `npm run build` completo como gate real
 
 ## Regra Arquitetural Consolidada: Auth Unico no Core (2026-03-15)
 
-- Fonte unica de autenticacao e autorizacao da plataforma: `platform-core` (Go).
+- Fonte unica de autenticacao e autorizacao da plataforma: `plataforma-api` (Go).
 - O modulo de atendimento `nao` deve manter auth proprio, tela de login propria ou sessao paralela.
 - Todo acesso ao atendimento deve acontecer a partir da sessao autenticada no core:
   - login
@@ -224,7 +224,7 @@ Esse saneamento cobre duplicata por telefone e tambem "conversa sombra" (mesmo n
 ## Atualizacao Atendimento Multi-tenant (2026-03-15)
 
 - O modulo de atendimento continua sem auth proprio:
-  - login, sessao, tenant ativo e contexto do usuario seguem vindo do `platform-core`
+  - login, sessao, tenant ativo e contexto do usuario seguem vindo do `plataforma-api`
   - qualquer gate do atendimento deve confiar no core e nao em auth local do modulo
 - Defaults consolidados desta fase:
   - `atendimento.instances = 1` por cliente

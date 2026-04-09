@@ -1,33 +1,33 @@
-# 👋 BEM-VINDO! SUA ANÁLISE ESTÁ PRONTA
+# ðŸ‘‹ BEM-VINDO! SUA ANÃLISE ESTÃ PRONTA
 
 **Sua infraestrutura foi completamente analisada e otimizada!**
 
 ---
 
-## ⚡ RÁPIDO RESUMO
+## âš¡ RÃPIDO RESUMO
 
-**Problema:** Containers caindo, sem limites de recursos, impossível escalar  
-**Solução:** Tudo diagnosticado, documentado e pronto para usar  
-**Resultado:** 99% uptime, -70% custo, escalável  
-**Tempo para começar:** 30 minutos
-
----
-
-## 📂 O QUE VOCÊ TEM AGORA
-
-```
-✅ Diagnóstico Técnico Completo
-✅ Docker-Compose Otimizado  
-✅ 4 Scripts de Automação
-✅ 6 Documentos Profissionais
-✅ Tudo Pronto para Produção
-```
+**Problema:** Containers caindo, sem limites de recursos, impossÃ­vel escalar  
+**SoluÃ§Ã£o:** Tudo diagnosticado, documentado e pronto para usar  
+**Resultado:** 99% uptime, -70% custo, escalÃ¡vel  
+**Tempo para comeÃ§ar:** 30 minutos
 
 ---
 
-## 🚀 COMECE AGORA (3 PASSOS)
+## ðŸ“‚ O QUE VOCÃŠ TEM AGORA
 
-### 1. Leia o guia rápido (5 min)
+```
+âœ… DiagnÃ³stico TÃ©cnico Completo
+âœ… Docker-Compose Otimizado  
+âœ… 4 Scripts de AutomaÃ§Ã£o
+âœ… 6 Documentos Profissionais
+âœ… Tudo Pronto para ProduÃ§Ã£o
+```
+
+---
+
+## ðŸš€ COMECE AGORA (3 PASSOS)
+
+### 1. Leia o guia rÃ¡pido (5 min)
 ```bash
 cat COMECE-AQUI.md
 ```
@@ -35,7 +35,7 @@ cat COMECE-AQUI.md
 ### 2. Configure (10 min)
 ```bash
 cp .env.example .env
-nano .env  # editar conforme necessário
+nano .env  # editar conforme necessÃ¡rio
 ```
 
 ### 3. Execute (5 min)
@@ -44,61 +44,61 @@ chmod +x scripts/*.sh
 ./scripts/startup.sh
 ```
 
-**Pronto! Sistema rodando com otimizações aplicadas! 🎉**
+**Pronto! Sistema rodando com otimizaÃ§Ãµes aplicadas! ðŸŽ‰**
 
 ---
 
-## 📚 DOCUMENTAÇÃO ONDE PRECISO
+## ðŸ“š DOCUMENTAÃ‡ÃƒO ONDE PRECISO
 
 ```
-Para começar:              COMECE-AQUI.md
+Para comeÃ§ar:              COMECE-AQUI.md
 Para entender problema:    docs/infra-diagnostico-otimizacao.md
 Para usar scripts:         docs/scripts-guia-uso.md
 Para troubleshooting:      docs/troubleshooting-infra.md
-Para deploy produção:      docs/deploy-producao-checklist.md
+Para deploy produÃ§Ã£o:      docs/deploy-producao-checklist.md
 Para stakeholders:         docs/RESUMO-EXECUTIVO.md
 ```
 
 ---
 
-## 🎯 ARQUIVOS CRIADOS
+## ðŸŽ¯ ARQUIVOS CRIADOS
 
 ```
-✅ docker-compose.prod.yml        ← Use este em produção
-✅ apps/api/Dockerfile.prod
-✅ apps/omni-nuxt-ui/Dockerfile.prod
-✅ scripts/startup.sh
-✅ scripts/monitor-containers.sh
-✅ scripts/health-check.sh
-✅ scripts/docker-stats.sh
-✅ 6 documentos de guia completo
+âœ… docker-compose.prod.yml        â† Use este em produÃ§Ã£o
+âœ… apps/atendimento-online-api/Dockerfile.prod
+âœ… apps/painel-web/Dockerfile.prod
+âœ… scripts/startup.sh
+âœ… scripts/monitor-containers.sh
+âœ… scripts/health-check.sh
+âœ… scripts/docker-stats.sh
+âœ… 6 documentos de guia completo
 ```
 
 ---
 
-## 💡 ANTES vs DEPOIS
+## ðŸ’¡ ANTES vs DEPOIS
 
-| Métrica | Antes | Depois |
+| MÃ©trica | Antes | Depois |
 |---------|-------|--------|
 | Crashes/dia | 5-10x | < 1x |
 | Downtime | 10-20% | < 1% |
 | VPS Custo | R$ 200+ | R$ 50-100 |
-| Scalável | ❌ | ✅ |
-| Pronto Prod | ❌ | ✅ |
+| ScalÃ¡vel | âŒ | âœ… |
+| Pronto Prod | âŒ | âœ… |
 
 ---
 
-## 🎓 CONHECIMENTO PRESERVADO
+## ðŸŽ“ CONHECIMENTO PRESERVADO
 
-Tudo que foi analisado está documentado. Seu time pode:
-- ✅ Entender os gargalos
-- ✅ Monitorar o sistema  
-- ✅ Resolver problemas rápido
-- ✅ Fazer deploy com confiança
+Tudo que foi analisado estÃ¡ documentado. Seu time pode:
+- âœ… Entender os gargalos
+- âœ… Monitorar o sistema  
+- âœ… Resolver problemas rÃ¡pido
+- âœ… Fazer deploy com confianÃ§a
 
 ---
 
-## 🔥 PRÓXIMA AÇÃO
+## ðŸ”¥ PRÃ“XIMA AÃ‡ÃƒO
 
 ```bash
 cat COMECE-AQUI.md
@@ -108,8 +108,8 @@ Depois execute `./scripts/startup.sh`
 
 ---
 
-**Status:** ✅ Completo e Pronto  
-**Data:** 13 de Março, 2026
+**Status:** âœ… Completo e Pronto  
+**Data:** 13 de MarÃ§o, 2026
 
-**🚀 Vamos começar!**
+**ðŸš€ Vamos comeÃ§ar!**
 

@@ -4,7 +4,7 @@ Objetivo: manter uma fonte unica para decidir quem pode acessar cada pagina/modu
 
 ## Regra estrutural de auth
 
-1. O `platform-core` e a unica fonte de autenticacao/autorizacao da aplicacao.
+1. O `plataforma-api` e a unica fonte de autenticacao/autorizacao da aplicacao.
 - qualquer modulo plugavel deve confiar no contexto vindo do core
 - nao pode existir login paralelo por modulo em runtime
 - nao pode existir sessao paralela por modulo em runtime
@@ -72,7 +72,7 @@ Objetivo: manter uma fonte unica para decidir quem pode acessar cada pagina/modu
 
 1. Auth e contexto:
 - o atendimento nao possui auth proprio.
-- todo acesso ao modulo usa a sessao autenticada no `platform-core`.
+- todo acesso ao modulo usa a sessao autenticada no `plataforma-api`.
 - o escopo do tenant e do usuario e sempre herdado do core.
 
 2. Defaults por cliente:
@@ -183,8 +183,8 @@ Objetivo: permitir excecoes sem quebrar padrao.
 
 ## Estado atual implementado (backend BFF)
 
-- `resolveAccessContext` agora resolve permissao por token valido no `platform-core` (`/core/auth/me` + perfil em `/core/admin/users`).
-- `level` e `user_type` de `platform admin` agora respeitam o valor real do banco; nao sao mais forçados para `admin/admin`.
+- `resolveAccessContext` agora resolve permissao por token valido no `plataforma-api` (`/core/auth/me` + perfil em `/core/admin/users`).
+- `level` e `user_type` de `platform admin` agora respeitam o valor real do banco; nao sao mais forÃ§ados para `admin/admin`.
 - headers `x-user-type/x-user-level/x-client-id` so sao aceitos para simulacao quando o ator e `super root`.
 - para qualquer outro perfil, esses headers sao ignorados (fail-closed), evitando bypass por manipulacao do frontend.
 - `tenant admin` continua com poder de gerenciar usuarios, mas segue tenant-scoped no BFF.

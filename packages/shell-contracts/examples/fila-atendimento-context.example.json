@@ -1,0 +1,37 @@
+{
+  "required": {
+    "actor": {
+      "actorId": "usr_123",
+      "actorType": "user"
+    },
+    "tenant": {
+      "tenantId": "ten_123",
+      "tenantSlug": "acme"
+    },
+    "policy": {
+      "allowed": true
+    },
+    "storeScope": {
+      "allowedStoreRefs": [
+        "store_001",
+        "store_002"
+      ]
+    }
+  },
+  "optionalIntegrations": {
+    "usersDirectory": {
+      "enabled": true,
+      "mode": "reference-plus-summary",
+      "availableFields": [
+        "userRef",
+        "displayName",
+        "avatarUrl"
+      ]
+    },
+    "customersFeed": {
+      "enabled": false,
+      "mode": "disabled",
+      "availableFields": []
+    }
+  }
+}

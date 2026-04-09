@@ -1,10 +1,10 @@
-# Omnichannel MVP (Nuxt 4 + Node Stateless + Docker)
+# Whats Test Platform (Painel Web + Atendimento Online + Plataforma API)
 
 MVP multi-tenant de atendimento com:
 
 - Frontend proprio em `Nuxt 4 + Nuxt UI`
 - Backend `Node.js + TypeScript` stateless
-- Core de plataforma em `Go` (`apps/platform-core`)
+- Core de plataforma em `Go` (`apps/plataforma-api`)
 - Realtime com `Socket.IO + Redis adapter`
 - Banco `PostgreSQL` (Prisma)
 - Fila de envio `BullMQ + Redis`
@@ -15,10 +15,9 @@ MVP multi-tenant de atendimento com:
 ```txt
 .
 |- apps/
-|  |- api/     # API + worker + Prisma
-|  |- platform-core/ # Core de plataforma (auth, limites, modulos)
-|  |- omni-nuxt-ui/ # Front Nuxt 4 principal (painel + modulo omnichannel)
-|  `- web/     # Front legado do modulo (referencia)
+|  |- atendimento-online-api/ # Backend HTTP do modulo de atendimento online + workers + Prisma
+|  |- plataforma-api/ # Core de plataforma (auth, limites, modulos)
+|  |- painel-web/ # Front Nuxt 4 principal (painel + modulo de atendimento online)
 |- docs/       # documentacao tecnica e operacional
 |- docker-compose.yml
 `- .env.example
@@ -44,13 +43,29 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-O servico `web` roda em modo desenvolvimento (`npm run dev`) com hot reload.
-Ao editar arquivos em `apps/omni-nuxt-ui`, o Nuxt aplica HMR automaticamente.
+O servico `painel-web` roda em modo desenvolvimento (`npm run dev`) com hot reload.
+Ao editar arquivos em `apps/painel-web`, o Nuxt aplica HMR automaticamente.
 Na primeira abertura apos subir os containers, a compilacao inicial pode levar alguns segundos.
+
+## Modo oficial de runtime
+
+O modo oficial de desenvolvimento e deploy e sempre pela stack principal do Docker Compose.
+
+O módulo `fila-atendimento` não sobe mais com `web/api/postgres` próprios no runtime do projeto:
+
+- o backend do módulo sobe dentro do `plataforma-api`
+- o frontend do módulo entra pelo `painel-web`
+- o banco do módulo usa o mesmo `postgres`, com schema próprio `fila_atendimento`
+
+Em outras palavras: para validar `fila-atendimento`, suba a mesma estrutura que já usamos para o restante da plataforma.
+
+## Atalho local de contingência
+
+O script `scripts/start-fila-atendimento-host-local.ps1` foi mantido apenas como contingência quando o Docker local estiver inutilizável. Ele não é mais o modo recomendado de desenvolvimento nem de validação de deploy.
 
 Observacoes de performance local (atualizadas em 2026-03-05):
 
-- `api/worker/retention-worker/web` so executam `npm install` quando `node_modules` estiver vazio.
+- `atendimento-online-api`, `atendimento-online-worker`, `atendimento-online-retencao-worker` e `painel-web` so executam `npm install` quando `node_modules` estiver vazio.
 - O bootstrap de banco da API (`prisma:push` + `prisma:seed`) roda apenas no primeiro boot do volume.
 - Para forcar bootstrap novamente: defina `API_DB_BOOTSTRAP_ALWAYS=true` no `.env`.
 - Redis roda apenas na rede interna Docker (sem porta host), com limite de memoria via `REDIS_MAXMEMORY`.
@@ -59,16 +74,19 @@ Observacoes de performance local (atualizadas em 2026-03-05):
 
 - Front: `http://localhost:3000`
 - API health: `http://localhost:4000/health`
-- Platform Core health: `http://localhost:4100/health`
+- Plataforma API health: `http://localhost:4100/health`
+- Fila Atendimento host: `http://localhost:3000/admin/fila-atendimento`
+- Fila Atendimento API hospedada: `http://localhost:4100/core/modules/fila-atendimento/healthz`
 - Front Core login: `http://localhost:3000/admin/core/login`
 - Front Core cadastro: `http://localhost:3000/admin/core/cadastro`
-- Front Auth login (omnichannel): `http://localhost:3000/admin/login`
+- Login admin do painel: `http://localhost:3000/admin/login`
 
-## Credenciais seed (platform-core)
+## Credenciais seed (plataforma-api)
 
 - Platform root (criar tenant): `root@core.local` / `123456`
 - Demo owner: `admin@demo-core.local` / `123456`
 - Demo agent: `agent@demo-core.local` / `123456`
+- Tenant operacional extra: `acme-core` (bootstrapado no `plataforma-api` para auditoria de isolamento)
 
 ## Credenciais seed (tenant demo)
 
@@ -86,7 +104,7 @@ Observacoes de performance local (atualizadas em 2026-03-05):
 
 ## Fluxo MVP implementado
 
-- Login multi-tenant (`/auth/login`)
+- Login do painel via `plataforma-api` (`/core/auth/login` no backend, `/admin/login` no host)
 - Perfil do usuario logado (`/me`)
 - Gestao de tenant (`GET/PATCH /tenant`)
 - Gestao de usuarios do tenant (`GET/POST/PATCH /users`)
@@ -120,7 +138,7 @@ Para ativar envio real para WhatsApp via Evolution:
   - `EVOLUTION_REQUEST_TIMEOUT_MS` (padrao `90000` para uploads midia/audio maiores)
   - `EVOLUTION_DEFAULT_INSTANCE`
   - `EVOLUTION_WEBHOOK_TOKEN`
-  - `WEBHOOK_RECEIVER_BASE_URL` (ex.: `http://api:4000` no docker interno ou URL publica da API)
+  - `WEBHOOK_RECEIVER_BASE_URL` (ex.: `http://atendimento-online-api:4000` no docker interno ou URL publica da API)
   - `NUXT_GIF_PROVIDER` (padrao: `tenor`)
   - `NUXT_TENOR_API_KEY` (obrigatorio para busca de GIF no composer)
   - `NUXT_TENOR_BASE_URL` (padrao: `https://tenor.googleapis.com/v2`)
@@ -133,10 +151,10 @@ Se `EVOLUTION_BASE_URL` estiver vazio, o worker marca mensagens outbound como `S
 - Variaveis no `.env`:
   - `RETENTION_SWEEP_ON_BOOT` (default `true`)
   - `RETENTION_SWEEP_INTERVAL_MINUTES` (default `1440`)
-- O servico `retention-worker` executa expurgo com base em `tenant.retentionDays`.
+- O servico `atendimento-online-retencao-worker` executa expurgo com base em `tenant.retentionDays`.
 - Expurgo remove mensagens antigas e conversas vazias antigas.
 
-## Painel admin (omnichannel)
+## Painel admin de atendimento online
 
 - URL: `http://localhost:3000/admin/omnichannel/operacao`
 - Disponivel para usuarios `ADMIN`
@@ -148,7 +166,7 @@ Se `EVOLUTION_BASE_URL` estiver vazio, o worker marca mensagens outbound como `S
 
 ## Servico Evolution no compose
 
-`docker-compose.yml` inclui um servico `evolution` no profile `channels`.
+`docker-compose.yml` inclui um servico `whatsapp-evolution-gateway` no profile `channels`.
 
 Para subir com ele:
 
@@ -161,18 +179,16 @@ docker compose --profile channels up --build
 ### Front (composables)
 
 ```bash
-cd apps/omni-nuxt-ui
+cd apps/painel-web
 npm run test:composables
 ```
-
-Obs: se o script de testes ainda nao estiver disponivel no front final, execute no legado `apps/web` ate concluir a migracao.
 
 ### Bateria de midia (API/worker/fila)
 
 Comando:
 
 ```bash
-cd apps/api
+cd apps/atendimento-online-api
 npm run test:media:battery
 ```
 
@@ -186,18 +202,19 @@ Comportamento:
 Comando:
 
 ```bash
-cd apps/api
+cd apps/atendimento-online-api
 npm run test:tenant:isolation
 ```
 
-O script valida acesso cruzado entre os tenants `demo` e `acme` e falha com exit code quando detectar quebra de isolamento.
+O script prioriza os `AUDIT_*` do ambiente e cai para slugs conhecidos (`demo`/`demo-core` e `acme`/`acme-core`).
+Os tenants escolhidos precisam existir no `apps/atendimento-online-api` e no `plataforma-api`, com usuarios ativos e acesso ao modulo atendimento.
 
 ## Documentacao detalhada
 
 - Guia geral: `docs/README.md`
 - Arquitetura: `docs/architecture.md`
 - Referencia de rotas/API: `docs/api-reference.md`
-- Core de plataforma (Go): `apps/platform-core/README.md`
+- Core de plataforma (Go): `apps/plataforma-api/README.md`
 - Setup Evolution: `docs/evolution-setup.md`
 - Troubleshooting: `docs/troubleshooting.md`
 - Modelo atual de dados: `docs/data-model-current.md`

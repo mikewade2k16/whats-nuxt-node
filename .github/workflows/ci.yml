@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/api
+        working-directory: apps/atendimento-online-api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/api/package-lock.json
+          cache-dependency-path: apps/atendimento-online-api/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/omni-nuxt-ui
+        working-directory: apps/painel-web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/omni-nuxt-ui/package-lock.json
+          cache-dependency-path: apps/painel-web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -73,7 +73,7 @@ jobs:
       PORT: 4000
       CORS_ORIGIN: http://localhost:3000
       JWT_SECRET: change-this-secret
-      CORE_API_BASE_URL: http://platform-core:4100
+      CORE_API_BASE_URL: http://plataforma-api:4100
       CORE_API_EMAIL: root@core.local
       CORE_API_PASSWORD: 123456
       CORE_REQUEST_TIMEOUT_MS: 15000
@@ -82,22 +82,22 @@ jobs:
       CORE_DB_SCHEMA: platform_core
       CORE_HTTP_ADDR: :4100
       CORE_JWT_SECRET: change-this-core-secret
-      CORE_JWT_ISSUER: platform-core
+      CORE_JWT_ISSUER: plataforma-api
       CORE_JWT_TTL_MINUTES: 60
       CORE_DEFAULT_USERS_LIMIT: 10
       CORE_ALLOWED_ORIGINS: http://localhost:3000
       CORE_AUTO_MIGRATE: "true"
       NUXT_PUBLIC_API_BASE: http://localhost:4000
-      NUXT_API_INTERNAL_BASE: http://api:4000
-      NUXT_CORE_API_INTERNAL_BASE: http://platform-core:4100
-      WEBHOOK_RECEIVER_BASE_URL: http://api:4000
+      NUXT_API_INTERNAL_BASE: http://atendimento-online-api:4000
+      NUXT_CORE_API_INTERNAL_BASE: http://plataforma-api:4100
+      WEBHOOK_RECEIVER_BASE_URL: http://atendimento-online-api:4000
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Start stack
-        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis platform-core api web
+        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api painel-web
 
       - name: Wait for stack health
         run: |
@@ -110,7 +110,7 @@ jobs:
             sleep 5
           done
           docker compose -f docker-compose.dev.yml ps
-          docker compose -f docker-compose.dev.yml logs --tail=200 platform-core api web postgres redis
+          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api painel-web postgres redis
           exit 1
 
       - name: Run security access audit
@@ -118,7 +118,7 @@ jobs:
 
       - name: Show stack logs on failure
         if: failure()
-        run: docker compose -f docker-compose.dev.yml logs --tail=200 platform-core api web postgres redis
+        run: docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api painel-web postgres redis
 
       - name: Shutdown stack
         if: always()
@@ -165,7 +165,7 @@ jobs:
       WEBHOOK_RECEIVER_BASE_URL: http://localhost:4000
     defaults:
       run:
-        working-directory: apps/api
+        working-directory: apps/atendimento-online-api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -175,7 +175,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/api/package-lock.json
+          cache-dependency-path: apps/atendimento-online-api/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -255,7 +255,7 @@ jobs:
       SANDBOX_ENABLED: "false"
     defaults:
       run:
-        working-directory: apps/api
+        working-directory: apps/atendimento-online-api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -265,7 +265,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/api/package-lock.json
+          cache-dependency-path: apps/atendimento-online-api/package-lock.json
 
       - name: Install dependencies
         run: npm ci

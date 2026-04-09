@@ -1,4 +1,4 @@
-# Backup de páginas admin/manage
+# Backup de pÃ¡ginas admin/manage
 Data: 2026-03-14
-Origem: apps/omni-nuxt-ui/app/pages/admin/manage/clientes.vue; users.vue
-Objetivo: comparação antes/depois da migração para backend Go/core
+Origem: apps/painel-web/app/pages/admin/manage/clientes.vue; users.vue
+Objetivo: comparaÃ§Ã£o antes/depois da migraÃ§Ã£o para backend Go/core

@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "contractVersion": "1.0",
+    "requestId": "req_01",
+    "transport": "http",
+    "source": "painel-web-bff",
+    "targetModule": "fila-atendimento",
+    "operation": "operation.list"
+  },
+  "context": {
+    "actor": {
+      "actorId": "usr_123",
+      "actorType": "user",
+      "displayName": "Maria",
+      "roles": [
+        "tenant_admin"
+      ],
+      "permissions": [
+        "fila-atendimento.operation.read"
+      ],
+      "timezone": "America/Sao_Paulo"
+    },
+    "tenant": {
+      "tenantId": "ten_123",
+      "tenantSlug": "acme",
+      "tenantStatus": "active",
+      "timezone": "America/Sao_Paulo",
+      "activeModules": [
+        "fila-atendimento"
+      ],
+      "featureFlags": []
+    },
+    "policy": {
+      "allowed": true,
+      "reason": null
+    },
+    "capabilities": [
+      "fila-atendimento.operacao"
+    ],
+    "integrations": {
+      "usersDirectory": {
+        "enabled": true,
+        "mode": "reference-plus-summary"
+      },
+      "customersFeed": {
+        "enabled": false,
+        "mode": "disabled"
+      }
+    }
+  },
+  "input": {
+    "storeRef": "store_001",
+    "filters": {
+      "queue": "default",
+      "status": "waiting"
+    }
+  }
+}

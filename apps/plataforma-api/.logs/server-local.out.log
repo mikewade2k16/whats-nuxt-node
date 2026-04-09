@@ -1,0 +1,13 @@
+2026/04/04 18:34:46 [MikeG15/iF53vbaTv9-000001] "GET http://127.0.0.1:4110/health HTTP/1.1" from 127.0.0.1 - 200 123B in 0s
+2026/04/04 18:36:00 [MikeG15/iF53vbaTv9-000002] "GET http://127.0.0.1:4110/health HTTP/1.1" from 127.0.0.1 - 200 123B in 0s
+2026/04/04 18:36:09 [MikeG15/iF53vbaTv9-000003] "POST http://127.0.0.1:4110/core/auth/login HTTP/1.1" from 127.0.0.1 - 200 831B in 80.0662ms
+2026/04/04 18:36:09 [MikeG15/iF53vbaTv9-000004] "POST http://127.0.0.1:4110/core/auth/login HTTP/1.1" from 127.0.0.1 - 200 814B in 56.922ms
+2026/04/04 18:36:09 [MikeG15/iF53vbaTv9-000005] "GET http://127.0.0.1:4110/core/tenants HTTP/1.1" from 127.0.0.1 - 200 842B in 3.4798ms
+2026/04/04 18:36:09 [MikeG15/iF53vbaTv9-000006] "GET http://127.0.0.1:4110/core/tenants/519c080e-68dd-4453-8cbf-d90f9f8463bc/users HTTP/1.1" from 127.0.0.1 - 200 1421B in 2.1568ms
+2026/04/04 18:36:09 [MikeG15/iF53vbaTv9-000007] "GET http://127.0.0.1:4110/core/tenants/519c080e-68dd-4453-8cbf-d90f9f8463bc/users/cdf0c134-2c4c-4c6f-bac7-220ffddb9ff9/roles HTTP/1.1" from 127.0.0.1 - 200 236B in 5.4539ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000008] "GET http://127.0.0.1:4110/core/auth/me HTTP/1.1" from 127.0.0.1 - 200 367B in 2.7284ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000009] "GET http://127.0.0.1:4110/core/admin/clients?page=1&limit=300 HTTP/1.1" from 127.0.0.1 - 200 718B in 6.7358ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000010] "GET http://127.0.0.1:4110/core/auth/me HTTP/1.1" from 127.0.0.1 - 200 367B in 1.7087ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000011] "GET http://127.0.0.1:4110/core/admin/clients?page=1&limit=300 HTTP/1.1" from 127.0.0.1 - 200 718B in 3.5491ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000012] "GET http://127.0.0.1:4110/core/auth/me HTTP/1.1" from 127.0.0.1 - 200 367B in 2.2092ms
+2026/04/04 18:36:11 [MikeG15/iF53vbaTv9-000013] "GET http://127.0.0.1:4110/core/tenants/519c080e-68dd-4453-8cbf-d90f9f8463bc HTTP/1.1" from 127.0.0.1 - 200 290B in 3.3187ms

@@ -1,0 +1,84 @@
+{
+  "id": "fila-atendimento",
+  "displayName": "Fila de Atendimento",
+  "status": "incubating",
+  "version": "0.1.0-draft",
+  "description": "Módulo plugável de fila, operação, relatórios e analytics operacionais. É distinto do módulo atendimento-online do WhatsApp/Instagram.",
+  "currentSource": {
+    "incubator": "incubadora/fila-atendimento"
+  },
+  "targetHosts": {
+    "frontend": "apps/painel-web",
+    "shell": "apps/plataforma-api"
+  },
+  "contractsConsumed": {
+    "required": [
+      "ActorContext",
+      "TenantContext",
+      "AccessPolicy",
+      "StoreScopeProvider",
+      "PersistenceProvider",
+      "ModuleRegistry",
+      "Clock"
+    ],
+    "optional": [
+      "IdentityProvisioner",
+      "RealtimeContextResolver",
+      "DomainEventBus",
+      "AuditSink",
+      "UsersDirectory",
+      "CustomersFeed"
+    ]
+  },
+  "backendSlices": [
+    "operations",
+    "reports",
+    "analytics",
+    "settings",
+    "consultants",
+    "realtime-adapter"
+  ],
+  "frontendSlices": [
+    "operacao",
+    "relatorios",
+    "ranking",
+    "dados",
+    "inteligencia",
+    "configuracoes-operacionais",
+    "consultor"
+  ],
+  "sourcePaths": {
+    "incubatedBackend": [
+      "incubadora/fila-atendimento/back/internal/modules/operations",
+      "incubadora/fila-atendimento/back/internal/modules/realtime",
+      "incubadora/fila-atendimento/back/internal/modules/reports",
+      "incubadora/fila-atendimento/back/internal/modules/analytics",
+      "incubadora/fila-atendimento/back/internal/modules/settings",
+      "incubadora/fila-atendimento/back/internal/modules/consultants"
+    ],
+    "incubatedFrontend": [
+      "incubadora/fila-atendimento/web/app/features/operation",
+      "incubadora/fila-atendimento/web/app/pages/operacao",
+      "incubadora/fila-atendimento/web/app/pages/relatorios.vue",
+      "incubadora/fila-atendimento/web/app/pages/ranking.vue",
+      "incubadora/fila-atendimento/web/app/pages/dados.vue",
+      "incubadora/fila-atendimento/web/app/pages/inteligencia.vue",
+      "incubadora/fila-atendimento/web/app/pages/configuracoes.vue",
+      "incubadora/fila-atendimento/web/app/pages/consultor.vue"
+    ],
+    "qa": [
+      "incubadora/fila-atendimento/qa-bot/scenarios"
+    ]
+  },
+  "capabilities": [
+    "fila-atendimento.operacao",
+    "fila-atendimento.relatorios",
+    "fila-atendimento.analytics",
+    "fila-atendimento.configuracoes",
+    "fila-atendimento.realtime"
+  ],
+  "notes": [
+    "Este manifesto é documental nesta fase e ainda não está plugado em runtime automático.",
+    "Este módulo não substitui o atendimento-online."
+  ]
+}

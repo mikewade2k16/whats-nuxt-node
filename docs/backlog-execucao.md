@@ -23,6 +23,13 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 - [ ] [P1] EPIC-D: Colaboracao interna e operacao.
 - [ ] [P1] EPIC-E: Qualidade, observabilidade e seguranca.
 
+## Bloqueios de ativacao do modulo atendimento-online
+
+- [ ] [P0] AO-001 Eliminar a projecao local de `Tenant` e `User` do `apps/atendimento-online-api` e migrar as FKs operacionais do schema `public` para um modelo totalmente derivado do shell/core.
+  - bloqueio: o modulo `atendimento-online` nao deve ser adotado como modulo oficial unico enquanto conversas, mensagens, auditoria e acessos dependerem de identidade local projetada.
+  - alvo tecnico: remover dependencia estrutural de `tenantId`, `userId`, `assignedToId`, `senderUserId`, `actorUserId`, `createdByUserId`, `responsibleUserId` e correlatos presos ao runtime local.
+  - criterio de aceite: sessao, tenant ativo, ownership operacional e identidade de usuario resolvidos a partir do core/shell sem shadow autoritativo local.
+
 ## EPIC-A: Estabilidade de mensagens e midia
 
 ### A1. Confiabilidade de envio
@@ -108,7 +115,7 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 - [x] [P1] B2-006 Enviar mensagem com `@` mention (payload com `mentions[]`).
   - melhoria 2026-02-27: composer passou a montar `metadataJson.mentions` combinando mencoes detectadas no texto + mencoes explicitas selecionadas no picker.
   - melhoria 2026-02-27: outbound agora persiste `displayByJid/displayByPhone` quando o picker conhece o participante, preservando o nome humano no render posterior.
-  - melhoria 2026-02-27: teste automatizado no composable (`apps/omni-nuxt-ui/tests/composables/useOmnichannelInbox.spec.ts`) valida envio de `mentioned[]` para grupo.
+  - melhoria 2026-02-27: teste automatizado no composable (`apps/painel-web/tests/composables/useOmnichannelInbox.spec.ts`) valida envio de `mentioned[]` para grupo.
   - pendencia resolvida: suporte integral ao JID final via picker (`@lid` e `@s.whatsapp.net`).
 - [x] [P0] B2-007 Exibir avatar real do participante em grupos (incluindo mensagem de audio).
   - melhoria 2026-02-26: front passou a resolver avatar por indice de `jid`/telefone/nome e fallback por historico de mensagens (cobrindo cenarios sem `participantJid` no payload atual).
@@ -211,12 +218,18 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 
 - [x] [P0] E1-001 Cobertura de testes dos composables principais.
 - [x] [P1] E1-002 Testes de integracao API para fluxo outbound por tipo de midia.
-  - entregue: script `apps/api/src/scripts/media-integration.ts` (`npm run test:media:integration`) com validacao de status terminal e auditoria por mensagem.
+  - entregue: script `apps/atendimento-online-api/src/scripts/media-integration.ts` (`npm run test:media:integration`) com validacao de status terminal e auditoria por mensagem.
   - reforco: gate CI `media-integration-audit` adicionada em `.github/workflows/ci.yml`.
 - [x] [P1] E1-003 Testes E2E de jornada principal (login, inbox, envio, recebimento).
-  - entregue 2026-02-26: script `apps/api/src/scripts/journey-e2e.ts` (`npm run test:journey:e2e`) cobrindo login, inbox, outbound e inbound via webhook.
+  - entregue 2026-02-26: script `apps/atendimento-online-api/src/scripts/journey-e2e.ts` (`npm run test:journey:e2e`) cobrindo login, inbox, outbound e inbound via webhook.
 - [x] [P0] E1-004 Pipeline CI com gates por testes/lint/build.
   - entregue: `.github/workflows/ci.yml` com gates de build API + testes/build do web.
+
+### E2. Hardening de autenticacao web
+
+- [-] [P1] E2-001 Remember login com cookie httpOnly no shell admin, restaurando sessao sem persistir token em `localStorage`.
+- [ ] [P2] E2-002 Evoluir remember login para refresh token rotativo com revogacao dedicada e renovacao silenciosa.
+- [ ] [P2] E2-003 Avaliar e prototipar WebAuthn/passkeys para reduzir dependencia de senha no login administrativo.
 
 ### E2. Observabilidade
 
@@ -232,7 +245,7 @@ Objetivo: transformar o roadmap em tarefas pequenas e executaveis, com prioridad
 ### E3. Seguranca e compliance
 
 - [x] [P0] E3-001 Revisar controle de acesso por tenant em todos os endpoints.
-  - andamento: auditoria automatizada criada em `apps/api/src/scripts/tenant-isolation-audit.ts` (`npm run test:tenant:isolation`).
+  - andamento: auditoria automatizada criada em `apps/atendimento-online-api/src/scripts/tenant-isolation-audit.ts` (`npm run test:tenant:isolation`).
   - execucao 2026-02-26: 10/10 checks de isolamento passaram (usuarios, conversas, mensagens, update cruzado e acesso sem token).
   - reforco: gate de CI `tenant-isolation-audit` adicionada em `.github/workflows/ci.yml`.
 - [x] [P1] E3-002 Hardening de upload (MIME real, size, antivirus opcional).

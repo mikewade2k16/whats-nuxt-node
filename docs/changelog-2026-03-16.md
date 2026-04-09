@@ -4,7 +4,7 @@
 
 ### 1. Bug Critico: instanceId faltando no evento conversation.updated (Realtime)
 
-**Arquivo:** `apps/api/src/routes/webhooks/handlers/message-upsert/events.ts`
+**Arquivo:** `apps/atendimento-online-api/src/routes/webhooks/handlers/message-upsert/events.ts`
 
 **Problema:** O evento `conversation.updated` emitido pelo webhook do WhatsApp (via Evolution API)
 nao incluia `instanceId` nem `instanceScopeKey` no payload. Quando o usuario tinha uma instancia
@@ -35,12 +35,12 @@ payload: {
 ### 2. Socket.IO ModuleAccessDenied - tratamento visivel
 
 **Arquivos:**
-- `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInboxRealtime.ts`
-- `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
-- `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+- `apps/painel-web/app/composables/omnichannel/useOmnichannelInboxRealtime.ts`
+- `apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts`
+- `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue`
 
 **Problema:** O middleware do Socket.IO em `main.ts` verifica se o usuario tem
-`atendimentoAccess` via platform-core. Se nao tem, rejeita com "ModuleAccessDenied".
+`atendimentoAccess` via plataforma-api. Se nao tem, rejeita com "ModuleAccessDenied".
 Mas o frontend tratava isso como erro generico e caia silenciosamente para polling
 a cada 20 segundos - sem nenhum aviso visual.
 
@@ -55,9 +55,9 @@ a cada 20 segundos - sem nenhum aviso visual.
 ### 3. Multi-Tenant Switch para o modulo Omnichannel
 
 **Arquivos:**
-- `apps/api/src/routes/auth.ts` - Novo endpoint `POST /auth/switch-tenant`
-- `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts` - Funcao `switchTenant()`
-- `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue` - UI do seletor
+- `apps/atendimento-online-api/src/routes/auth.ts` - Novo endpoint `POST /auth/switch-tenant`
+- `apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts` - Funcao `switchTenant()`
+- `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue` - UI do seletor
 
 #### Backend: POST /auth/switch-tenant
 
@@ -67,7 +67,7 @@ Apenas platform admins (isPlatformAdmin + userType=admin + level=admin) podem us
 Fluxo:
 1. Verifica JWT do usuario atual
 2. Verifica que e platform admin via `resolveCoreAtendimentoAccessByEmail`
-3. Se `clientId` fornecido: busca nos admin clients do platform-core para encontrar `coreTenantId`
+3. Se `clientId` fornecido: busca nos admin clients do plataforma-api para encontrar `coreTenantId`
 4. Se `coreTenantId` fornecido: resolve diretamente
 5. Resolve/cria tenant local via `ensureLocalTenant`
 6. Resolve/cria usuario local via `ensureLocalUser`
@@ -100,7 +100,7 @@ No `OmnichannelInboxModule.vue`:
 | Contexto | Verificacao | Descricao |
 |----------|-------------|-----------|
 | Socket.IO | `resolveCoreAtendimentoAccessByEmail` | Verifica isPlatformAdmin + atendimentoAccess |
-| BFF Admin Routes | `x-core-token` header | Token do platform-core via `coreAdminFetch` |
+| BFF Admin Routes | `x-core-token` header | Token do plataforma-api via `coreAdminFetch` |
 | API Routes | JWT `Authorization` header | Token local gerado no login |
 | Session Simulation | `canSimulate` | Requer isPlatformAdmin + userType=admin + level=admin |
 | Switch Tenant | `resolveCoreAtendimentoAccessByEmail` | Mesmo check do Socket.IO |
@@ -110,7 +110,7 @@ No `OmnichannelInboxModule.vue`:
 ### 4. Correcao de dados: Webhook URL do Evolution API
 
 **Problema:** O webhook URL do Evolution API estava configurado para
-`http://api:4000/webhooks/evolution/demo` (tenant slug `demo`),
+`http://atendimento-online-api:4000/webhooks/evolution/demo` (tenant slug `demo`),
 mas o root user logava no tenant `demo-core` (slug diferente, ID diferente).
 
 **Resultado:** Eventos eram publicados na room `tenant:cmmp2peeq...` (demo),
@@ -127,8 +127,8 @@ O root user (`root@core.local`) esta no tenant `demo-core`.
 
 **Fix:** Atualizei o webhook URL no Evolution API:
 ```
-ANTES: http://api:4000/webhooks/evolution/demo
-DEPOIS: http://api:4000/webhooks/evolution/demo-core
+ANTES: http://atendimento-online-api:4000/webhooks/evolution/demo
+DEPOIS: http://atendimento-online-api:4000/webhooks/evolution/demo-core
 ```
 
 Comando usado:
@@ -136,14 +136,14 @@ Comando usado:
 curl -X POST "http://localhost:8080/webhook/set/demo-instance" \
   -H "apikey: <KEY>" \
   -H "Content-Type: application/json" \
-  -d '{"webhook":{"url":"http://api:4000/webhooks/evolution/demo-core",...}}'
+  -d '{"webhook":{"url":"http://atendimento-online-api:4000/webhooks/evolution/demo-core",...}}'
 ```
 
 ---
 
 ### 5. Melhorias de UX no estado de conexao WhatsApp
 
-**Arquivo:** `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+**Arquivo:** `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue`
 
 - Mensagens mais claras no alerta de WhatsApp desconectado
 - Botao muda de "Abrir Admin" para "Reconectar WhatsApp" ou "Configurar WhatsApp"
@@ -155,7 +155,7 @@ curl -X POST "http://localhost:8080/webhook/set/demo-instance" \
 
 ### Erros pre-existentes (nao corrigidos)
 
-- **401 em `/api/admin/profile`**: Token core expirado ou platform-core inacessivel
+- **401 em `/api/admin/profile`**: Token core expirado ou plataforma-api inacessivel
 - **403 em `/api/admin/clients`**: Consequencia do 401 acima (sessao invalida)
 - Esses erros sao capturados pelo session simulation e nao impedem o funcionamento basico
 - Para resolver: fazer logout e login novamente para renovar o core token
@@ -167,11 +167,11 @@ curl -X POST "http://localhost:8080/webhook/set/demo-instance" \
 ### 6. Isolamento de modulo: clientes sem atendimento nao podem ver inbox
 
 **Arquivos:**
-- `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
-- `apps/api/src/routes/auth.ts`
+- `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue`
+- `apps/atendimento-online-api/src/routes/auth.ts`
 
 **Problema:** Quando um platform admin fazia switch para um cliente SEM o modulo atendimento
-(ex: "Pérola" que so tem "Core Panel"), o inbox ainda era exibido com as conversas daquele tenant.
+(ex: "PÃ©rola" que so tem "Core Panel"), o inbox ainda era exibido com as conversas daquele tenant.
 Isso violava a regra: "Module must be active on client AND user must be allocated to module."
 
 O bypass acontecia porque:
@@ -198,8 +198,8 @@ O bypass acontecia porque:
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `apps/api/src/routes/webhooks/handlers/message-upsert/events.ts` | Adicionado `instanceId` e `instanceScopeKey` no evento |
-| `apps/api/src/routes/auth.ts` | Novo endpoint `POST /auth/switch-tenant` |
-| `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInboxRealtime.ts` | `realtimeConnectionState`, deteccao de `ModuleAccessDenied` |
-| `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts` | `switchTenant()`, `switchTenantError`, propagacao de `realtimeConnectionState` |
-| `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue` | Dropdown de tenant, alertas de estado, melhor UX WhatsApp, bloqueio sem modulo |
+| `apps/atendimento-online-api/src/routes/webhooks/handlers/message-upsert/events.ts` | Adicionado `instanceId` e `instanceScopeKey` no evento |
+| `apps/atendimento-online-api/src/routes/auth.ts` | Novo endpoint `POST /auth/switch-tenant` |
+| `apps/painel-web/app/composables/omnichannel/useOmnichannelInboxRealtime.ts` | `realtimeConnectionState`, deteccao de `ModuleAccessDenied` |
+| `apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts` | `switchTenant()`, `switchTenantError`, propagacao de `realtimeConnectionState` |
+| `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue` | Dropdown de tenant, alertas de estado, melhor UX WhatsApp, bloqueio sem modulo |

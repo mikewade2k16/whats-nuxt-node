@@ -1,0 +1,603 @@
+import axios, { AxiosError, type AxiosRequestConfig, type Method } from "axios";
+import { env } from "../config.js";
+
+export interface CoreTenant {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  contactEmail?: string | null;
+  timezone: string;
+  locale: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoreTenantModule {
+  moduleId: string;
+  code: string;
+  name: string;
+  isCore: boolean;
+  status: string;
+  source?: string | null;
+  activatedAt?: string | null;
+  deactivatedAt?: string | null;
+}
+
+export interface CoreAdminClient {
+  id: number;
+  coreTenantId: string;
+  name: string;
+  status: string;
+  modules?: Array<{
+    code?: string;
+    name?: string;
+    status?: string;
+  }>;
+}
+
+export interface CoreAdminUser {
+  id: number;
+  coreUserId: string;
+  isPlatformAdmin: boolean;
+  level: string;
+  clientId: number | null;
+  clientName: string;
+  name: string;
+  nick: string;
+  email: string;
+  phone: string;
+  status: string;
+  profileImage: string;
+  userType: string;
+  preferences?: unknown;
+  moduleCodes?: string[];
+  atendimentoAccess?: boolean;
+}
+
+export interface CoreTenantUser {
+  tenantUserId: string;
+  userId: string;
+  name: string;
+  email: string;
+  status: string;
+  isOwner: boolean;
+  joinedAt?: string | null;
+  lastSeenAt?: string | null;
+}
+
+export interface CoreTenantUserRole {
+  tenantUserRoleId: string;
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  isSystem: boolean;
+  assignedAt: string;
+}
+
+export interface CoreAuthUser {
+  id: string;
+  name: string;
+  email: string;
+  nick?: string | null;
+  profileImage?: string | null;
+  isPlatformAdmin: boolean;
+  tenantId?: string;
+  clientId?: number | null;
+  clientName?: string;
+  level?: string;
+  userType?: string;
+  preferences?: string;
+  moduleCodes?: string[];
+  atendimentoAccess?: boolean;
+}
+
+interface CoreAuthLoginResponse {
+  accessToken: string;
+  expiresAt?: string;
+  user?: CoreAuthUser;
+}
+
+interface CoreAuthMeResponse {
+  user?: CoreAuthUser;
+}
+
+interface CoreItemsResponse<T> {
+  items: T[];
+  meta?: unknown;
+}
+
+interface InviteTenantUserPayload {
+  email: string;
+  name: string;
+  password?: string;
+  isOwner?: boolean;
+  roleCodes?: string[];
+}
+
+export interface InviteTenantUserResponse {
+  tenantUserId: string;
+  userId: string;
+  createdUser: boolean;
+}
+
+interface CoreResolvedLimitPayload {
+  tenantId?: string;
+  moduleCode?: string;
+  limitKey?: string;
+  resolved?: {
+    isUnlimited?: boolean;
+    value?: number | null;
+    source?: string;
+  };
+}
+
+export class CoreApiError extends Error {
+  statusCode: number;
+  details: unknown;
+
+  constructor(message: string, statusCode = 500, details: unknown = null) {
+    super(message);
+    this.name = "CoreApiError";
+    this.statusCode = statusCode;
+    this.details = details;
+  }
+}
+
+function removeTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+type CoreRequestOptions = {
+  params?: Record<string, unknown>;
+  data?: unknown;
+  timeoutMs?: number;
+  accessToken?: string | null;
+};
+
+function normalizeOptionalAccessToken(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+export class PlatformCoreClient {
+  private readonly baseUrl: string;
+  private readonly loginEmail: string;
+  private readonly loginPassword: string;
+  private readonly timeoutMs: number;
+  private accessToken: string | null = null;
+  private accessTokenExpiresAtMs = 0;
+
+  constructor(config: {
+    baseUrl: string;
+    loginEmail: string;
+    loginPassword: string;
+    timeoutMs: number;
+  }) {
+    this.baseUrl = removeTrailingSlash(config.baseUrl);
+    this.loginEmail = config.loginEmail;
+    this.loginPassword = config.loginPassword;
+    this.timeoutMs = config.timeoutMs;
+  }
+
+  private isTokenValidNow() {
+    if (!this.accessToken) {
+      return false;
+    }
+
+    if (this.accessTokenExpiresAtMs <= 0) {
+      return true;
+    }
+
+    const now = Date.now();
+    // Refresh a few seconds before expiry to avoid edge race.
+    return now + 10_000 < this.accessTokenExpiresAtMs;
+  }
+
+  private clearToken() {
+    this.accessToken = null;
+    this.accessTokenExpiresAtMs = 0;
+  }
+
+  private async ensureAccessToken(forceRefresh = false) {
+    if (!forceRefresh && this.isTokenValidNow()) {
+      return this.accessToken as string;
+    }
+
+    const payload = {
+      email: this.loginEmail,
+      password: this.loginPassword
+    };
+
+    try {
+      const response = await axios.request<CoreAuthLoginResponse>({
+        method: "POST",
+        url: `${this.baseUrl}/core/auth/login`,
+        data: payload,
+        timeout: this.timeoutMs
+      });
+
+      const accessToken = response.data.accessToken?.trim();
+      if (!accessToken) {
+        throw new CoreApiError("Resposta invalida do plataforma-api (token ausente).", 500, response.data);
+      }
+
+      this.accessToken = accessToken;
+
+      const expiresAtRaw = response.data.expiresAt;
+      const expiresAtMs = expiresAtRaw ? Date.parse(expiresAtRaw) : Number.NaN;
+      this.accessTokenExpiresAtMs = Number.isFinite(expiresAtMs) ? expiresAtMs : 0;
+      return accessToken;
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        throw error;
+      }
+
+      if (error instanceof AxiosError) {
+        const statusCode = error.response?.status ?? 500;
+        const details = error.response?.data ?? null;
+        const message =
+          (typeof details === "object" &&
+            details !== null &&
+            "message" in details &&
+            typeof (details as { message?: unknown }).message === "string" &&
+            String((details as { message: string }).message).trim()) ||
+          error.message ||
+          "Falha ao autenticar no plataforma-api.";
+        throw new CoreApiError(message, statusCode, details);
+      }
+
+      throw new CoreApiError("Falha ao autenticar no plataforma-api.", 500, null);
+    }
+  }
+
+  async loginUser(credentials: { email: string; password: string; tenantId?: string }) {
+    const payload: Record<string, string> = {
+      email: credentials.email,
+      password: credentials.password
+    };
+
+    if (credentials.tenantId?.trim()) {
+      payload.tenantId = credentials.tenantId.trim();
+    }
+
+    try {
+      const response = await axios.request<CoreAuthLoginResponse>({
+        method: "POST",
+        url: `${this.baseUrl}/core/auth/login`,
+        data: payload,
+        timeout: this.timeoutMs
+      });
+
+      const accessToken = response.data.accessToken?.trim();
+      if (!accessToken) {
+        throw new CoreApiError("Resposta invalida do plataforma-api (token ausente).", 500, response.data);
+      }
+
+      const user = response.data.user;
+      if (!user) {
+        throw new CoreApiError("Resposta invalida do plataforma-api (usuario ausente).", 500, response.data);
+      }
+
+      return {
+        accessToken,
+        expiresAt: response.data.expiresAt ?? null,
+        user
+      };
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        throw error;
+      }
+
+      if (error instanceof AxiosError) {
+        const statusCode = error.response?.status ?? 500;
+        const details = error.response?.data ?? null;
+        const message =
+          (typeof details === "object" &&
+            details !== null &&
+            "message" in details &&
+            typeof (details as { message?: unknown }).message === "string" &&
+            String((details as { message: string }).message).trim()) ||
+          error.message ||
+          "Falha ao autenticar usuario no plataforma-api.";
+        throw new CoreApiError(message, statusCode, details);
+      }
+
+      throw new CoreApiError("Falha ao autenticar usuario no plataforma-api.", 500, null);
+    }
+  }
+
+  async getMe(accessToken: string) {
+    const normalizedToken = accessToken.trim();
+    if (!normalizedToken) {
+      throw new CoreApiError("Token do plataforma-api ausente.", 401, null);
+    }
+
+    try {
+      const response = await axios.request<CoreAuthMeResponse>({
+        method: "GET",
+        url: `${this.baseUrl}/core/auth/me`,
+        timeout: this.timeoutMs,
+        headers: {
+          Authorization: normalizedToken.startsWith("Bearer ")
+            ? normalizedToken
+            : `Bearer ${normalizedToken}`
+        }
+      });
+
+      const user = response.data.user;
+      if (!user?.id || !user?.email) {
+        throw new CoreApiError("Resposta invalida do plataforma-api (perfil ausente).", 500, response.data);
+      }
+
+      return user;
+    } catch (error) {
+      if (error instanceof CoreApiError) {
+        throw error;
+      }
+
+      if (error instanceof AxiosError) {
+        const statusCode = error.response?.status ?? 500;
+        const details = error.response?.data ?? null;
+        const message =
+          (typeof details === "object" &&
+            details !== null &&
+            "message" in details &&
+            typeof (details as { message?: unknown }).message === "string" &&
+            String((details as { message: string }).message).trim()) ||
+          error.message ||
+          "Falha ao carregar perfil no plataforma-api.";
+        throw new CoreApiError(message, statusCode, details);
+      }
+
+      throw new CoreApiError("Falha ao carregar perfil no plataforma-api.", 500, null);
+    }
+  }
+
+  private async request<T>(
+    method: Method,
+    path: string,
+    options: CoreRequestOptions = {},
+    allowRetry = true
+  ): Promise<T> {
+    const explicitAccessToken = normalizeOptionalAccessToken(options.accessToken);
+    const token = explicitAccessToken ?? await this.ensureAccessToken();
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+    const requestConfig: AxiosRequestConfig = {
+      method,
+      url: `${this.baseUrl}${normalizedPath}`,
+      timeout: options.timeoutMs ?? this.timeoutMs,
+      params: options.params,
+      data: options.data,
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    };
+
+    try {
+      const response = await axios.request<T>(requestConfig);
+      return response.data;
+    } catch (error) {
+      if (!(error instanceof AxiosError)) {
+        throw new CoreApiError("Erro inesperado no plataforma-api.", 500, null);
+      }
+
+      const statusCode = error.response?.status ?? 500;
+      const details = error.response?.data ?? null;
+
+      if (statusCode === 401 && allowRetry && !explicitAccessToken) {
+        this.clearToken();
+        return this.request<T>(method, path, options, false);
+      }
+
+      const message =
+        (typeof details === "object" &&
+          details !== null &&
+          "message" in details &&
+          typeof (details as { message?: unknown }).message === "string" &&
+          String((details as { message: string }).message).trim()) ||
+        error.message ||
+        "Falha na chamada ao plataforma-api.";
+
+      throw new CoreApiError(message, statusCode, details);
+    }
+  }
+
+  async listTenants(options: { accessToken?: string | null } = {}) {
+    const response = await this.request<CoreItemsResponse<CoreTenant>>("GET", "/core/tenants", {
+      accessToken: options.accessToken
+    });
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  async listAdminClients(options: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    q?: string;
+    accessToken?: string | null;
+  } = {}) {
+    const response = await this.request<CoreItemsResponse<CoreAdminClient>>("GET", "/core/admin/clients", {
+      params: {
+        page: options.page ?? 1,
+        limit: options.limit ?? 200,
+        status: options.status,
+        q: options.q
+      },
+      accessToken: options.accessToken
+    });
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  async findTenantBySlug(slug: string, options: { accessToken?: string | null } = {}) {
+    const normalizedSlug = slug.trim().toLowerCase();
+    if (!normalizedSlug) {
+      return null;
+    }
+
+    const tenants = await this.listTenants(options);
+    return tenants.find((entry) => entry.slug.trim().toLowerCase() === normalizedSlug) ?? null;
+  }
+
+  async findTenantById(tenantId: string, options: { accessToken?: string | null } = {}) {
+    const normalizedId = tenantId.trim();
+    if (!normalizedId) {
+      return null;
+    }
+
+    const tenants = await this.listTenants(options);
+    return tenants.find((entry) => entry.id === normalizedId) ?? null;
+  }
+
+  async listTenantUsers(tenantId: string, options: { accessToken?: string | null } = {}) {
+    const response = await this.request<CoreItemsResponse<CoreTenantUser>>(
+      "GET",
+      `/core/tenants/${encodeURIComponent(tenantId)}/users`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  async listTenantUserRoles(
+    tenantId: string,
+    tenantUserId: string,
+    options: { accessToken?: string | null } = {}
+  ) {
+    const response = await this.request<CoreItemsResponse<CoreTenantUserRole>>(
+      "GET",
+      `/core/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(tenantUserId)}/roles`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  async listTenantModules(tenantId: string, options: { accessToken?: string | null } = {}) {
+    const response = await this.request<CoreItemsResponse<CoreTenantModule>>(
+      "GET",
+      `/core/tenants/${encodeURIComponent(tenantId)}/modules`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  inviteTenantUser(
+    tenantId: string,
+    payload: InviteTenantUserPayload,
+    options: { accessToken?: string | null } = {}
+  ) {
+    return this.request<InviteTenantUserResponse>(
+      "POST",
+      `/core/tenants/${encodeURIComponent(tenantId)}/users/invite`,
+      {
+        data: payload,
+        accessToken: options.accessToken
+      }
+    );
+  }
+
+  assignTenantUserToModule(
+    tenantId: string,
+    moduleCode: string,
+    tenantUserId: string,
+    options: { accessToken?: string | null } = {}
+  ) {
+    return this.request<Record<string, unknown>>(
+      "POST",
+      `/core/tenants/${encodeURIComponent(tenantId)}/modules/${encodeURIComponent(moduleCode)}/users/${encodeURIComponent(tenantUserId)}/assign`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+  }
+
+  unassignTenantUserFromModule(
+    tenantId: string,
+    moduleCode: string,
+    tenantUserId: string,
+    options: { accessToken?: string | null } = {}
+  ) {
+    return this.request<Record<string, unknown>>(
+      "DELETE",
+      `/core/tenants/${encodeURIComponent(tenantId)}/modules/${encodeURIComponent(moduleCode)}/users/${encodeURIComponent(tenantUserId)}/assign`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+  }
+
+  async listAdminUsers(options: {
+    page?: number;
+    limit?: number;
+    q?: string;
+    clientId?: number | string | null;
+    accessToken?: string | null;
+  } = {}) {
+    const response = await this.request<CoreItemsResponse<CoreAdminUser>>("GET", "/core/admin/users", {
+      params: {
+        page: options.page ?? 1,
+        limit: options.limit ?? 200,
+        q: options.q,
+        clientId: options.clientId ?? undefined
+      },
+      accessToken: options.accessToken
+    });
+    return Array.isArray(response.items) ? response.items : [];
+  }
+
+  async resolveModuleLimit(
+    tenantId: string,
+    moduleCode: string,
+    limitKey: string,
+    options: { accessToken?: string | null } = {}
+  ) {
+    const response = await this.request<CoreResolvedLimitPayload>(
+      "GET",
+      `/core/tenants/${encodeURIComponent(tenantId)}/modules/${encodeURIComponent(moduleCode)}/limits/${encodeURIComponent(limitKey)}`,
+      {
+        accessToken: options.accessToken
+      }
+    );
+
+    return {
+      isUnlimited: Boolean(response?.resolved?.isUnlimited),
+      value: typeof response?.resolved?.value === "number" ? response.resolved.value : null,
+      source: String(response?.resolved?.source ?? "").trim() || "default"
+    };
+  }
+
+  upsertModuleLimit(
+    tenantId: string,
+    moduleCode: string,
+    limitKey: string,
+    payload: { valueInt?: number | null; isUnlimited?: boolean; source?: string; notes?: string | null },
+    options: { accessToken?: string | null } = {}
+  ) {
+    return this.request<Record<string, unknown>>(
+      "PUT",
+      `/core/tenants/${encodeURIComponent(tenantId)}/modules/${encodeURIComponent(moduleCode)}/limits/${encodeURIComponent(limitKey)}`,
+      {
+        data: {
+          valueInt: payload.valueInt ?? null,
+          isUnlimited: Boolean(payload.isUnlimited),
+          source: payload.source,
+          notes: payload.notes ?? undefined
+        },
+        accessToken: options.accessToken
+      }
+    );
+  }
+}
+
+export const platformCoreClient = new PlatformCoreClient({
+  baseUrl: env.CORE_API_BASE_URL,
+  loginEmail: env.CORE_API_EMAIL,
+  loginPassword: env.CORE_API_PASSWORD,
+  timeoutMs: env.CORE_REQUEST_TIMEOUT_MS
+});

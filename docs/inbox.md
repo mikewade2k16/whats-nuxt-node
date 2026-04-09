@@ -25,7 +25,7 @@ Regras:
 
 ## Ponto de entrada do modulo
 
-### `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
+### `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue`
 
 Responsabilidade:
 
@@ -39,7 +39,7 @@ Uso:
 - este e o ponto de montagem do modulo dentro das paginas (`index`/`admin`).
 - alteracoes de contrato entre os paineis normalmente passam por este arquivo.
 
-## Componentes da pasta `apps/omni-nuxt-ui/app/components/omnichannel/inbox`
+## Componentes da pasta `apps/painel-web/app/components/omnichannel/inbox`
 
 ### `InboxChatPanel.vue`
 
@@ -196,7 +196,7 @@ Responsabilidade:
 Responsabilidade:
 
 - textarea do composer;
-- area de digitacao, menções e barra de resposta;
+- area de digitacao, menÃ§Ãµes e barra de resposta;
 - integra refs expostas para foco/controle de cursor.
 - regra UX: Esc no composer cancela o reply ativo (quando houver), sem enviar mensagem.
 - regra UX: clicar em Responder em outra mensagem substitui imediatamente o alvo atual do reply.
@@ -232,7 +232,7 @@ Responsabilidade:
 - tipos locais de renderizacao da inbox;
 - hoje usado principalmente para itens derivados de historico (`InboxRenderItem`) e contratos internos de UI.
 
-## Composables da pasta `apps/omni-nuxt-ui/app/composables/omnichannel`
+## Composables da pasta `apps/painel-web/app/composables/omnichannel`
 
 ### `useInboxChatPresentation.ts`
 
@@ -381,7 +381,7 @@ Responsabilidade:
 Responsabilidade:
 
 - utilitarios puros compartilhados;
-- escape HTML, regex, normalizacoes, links, tamanho de arquivo, parse auxiliar e helpers de menções.
+- escape HTML, regex, normalizacoes, links, tamanho de arquivo, parse auxiliar e helpers de menÃ§Ãµes.
 
 ### `useInboxChatReplyMeta.ts`
 

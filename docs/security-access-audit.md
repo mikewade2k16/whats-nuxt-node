@@ -1,4 +1,4 @@
-﻿# Security Access Audit (Sprint Atual)
+# Security Access Audit (Sprint Atual)
 
 Data de referencia: 2026-03-15
 
@@ -27,9 +27,9 @@ Correcao:
 - update inline do usuario logado agora atualiza e persiste a sessao no ato.
 
 Arquivos:
-- `apps/omni-nuxt-ui/app/layouts/admin.vue`
-- `apps/omni-nuxt-ui/app/composables/useUsersManager.ts`
-- `apps/omni-nuxt-ui/app/pages/admin/profile.vue`
+- `apps/painel-web/app/layouts/admin.vue`
+- `apps/painel-web/app/composables/useUsersManager.ts`
+- `apps/painel-web/app/pages/admin/profile.vue`
 
 ## 2) Anti-bypass por header spoof no BFF
 
@@ -44,7 +44,7 @@ Correcao:
 - para usuario nao-root, headers de simulacao sao ignorados (fail-closed).
 
 Arquivo:
-- `apps/omni-nuxt-ui/server/utils/access-context.ts`
+- `apps/painel-web/server/utils/access-context.ts`
 
 ## 3) Gates server-side root-only
 
@@ -55,8 +55,8 @@ Correcao:
 - endpoints BFF de `clientes` e `qa` passaram a exigir root em modo admin no backend.
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/api/admin/clients/*`
-- `apps/omni-nuxt-ui/server/api/admin/qa/*`
+- `apps/painel-web/server/api/admin/clients/*`
+- `apps/painel-web/server/api/admin/qa/*`
 
 ## 4) Remocao de forcamento de admin no frontend
 
@@ -67,7 +67,7 @@ Correcao:
 - forcamento removido; contexto passa a ser validado no backend.
 
 Arquivo:
-- `apps/omni-nuxt-ui/app/composables/useBffFetch.ts`
+- `apps/painel-web/app/composables/useBffFetch.ts`
 
 ## 5) Helpers unificados de autorizacao por rota
 
@@ -82,10 +82,10 @@ Correcao:
 - rotas criticas de `clients`, `users` e `qa` passaram a usar esses helpers como fonte unica.
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/utils/admin-route-auth.ts`
-- `apps/omni-nuxt-ui/server/api/admin/clients/*`
-- `apps/omni-nuxt-ui/server/api/admin/users/*`
-- `apps/omni-nuxt-ui/server/api/admin/qa/*`
+- `apps/painel-web/server/utils/admin-route-auth.ts`
+- `apps/painel-web/server/api/admin/clients/*`
+- `apps/painel-web/server/api/admin/users/*`
+- `apps/painel-web/server/api/admin/qa/*`
 
 ## 6) Rate limit em login e endpoints sensiveis
 
@@ -108,17 +108,17 @@ Correcao:
   - storage migrado para Redis com fallback em memoria se Redis falhar
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/utils/rate-limit.ts`
-- `apps/omni-nuxt-ui/server/utils/redis.ts`
-- `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
-- `apps/omni-nuxt-ui/server/api/core-bff/[...path].ts`
-- `apps/omni-nuxt-ui/server/api/admin/profile/index.patch.ts`
-- `apps/api/src/lib/rate-limit.ts`
-- `apps/api/src/routes/auth.ts`
-- `apps/platform-core/internal/httpapi/middleware/ratelimit.go`
-- `apps/platform-core/internal/httpapi/router.go`
-- `apps/platform-core/internal/config/config.go`
-- `apps/platform-core/cmd/server/main.go`
+- `apps/painel-web/server/utils/rate-limit.ts`
+- `apps/painel-web/server/utils/redis.ts`
+- `apps/painel-web/server/api/bff/[...path].ts`
+- `apps/painel-web/server/api/core-bff/[...path].ts`
+- `apps/painel-web/server/api/admin/profile/index.patch.ts`
+- `apps/atendimento-online-api/src/lib/rate-limit.ts`
+- `apps/atendimento-online-api/src/routes/auth.ts`
+- `apps/plataforma-api/internal/httpapi/middleware/ratelimit.go`
+- `apps/plataforma-api/internal/httpapi/router.go`
+- `apps/plataforma-api/internal/config/config.go`
+- `apps/plataforma-api/cmd/server/main.go`
 
 ## 7) Sanitizacao de erro em producao
 
@@ -132,12 +132,12 @@ Correcao:
 - login unificado do Node nao devolve mais `details` sensiveis em producao.
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/utils/safe-error.ts`
-- `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
-- `apps/omni-nuxt-ui/server/api/core-bff/[...path].ts`
-- `apps/omni-nuxt-ui/server/utils/core-admin-fetch.ts`
-- `apps/api/src/main.ts`
-- `apps/api/src/routes/auth.ts`
+- `apps/painel-web/server/utils/safe-error.ts`
+- `apps/painel-web/server/api/bff/[...path].ts`
+- `apps/painel-web/server/api/core-bff/[...path].ts`
+- `apps/painel-web/server/utils/core-admin-fetch.ts`
+- `apps/atendimento-online-api/src/main.ts`
+- `apps/atendimento-online-api/src/routes/auth.ts`
 
 ## 8) Gate de seguranca no CI
 
@@ -170,12 +170,12 @@ Correcao:
 - core Go substituiu o `RealIP` generico por middleware proprio com a mesma regra de confianca.
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/api/bff/[...path].ts`
-- `apps/omni-nuxt-ui/server/api/core-bff/[...path].ts`
-- `apps/api/src/lib/trusted-proxy.ts`
-- `apps/api/src/routes/auth.ts`
-- `apps/platform-core/internal/httpapi/middleware/proxy.go`
-- `apps/platform-core/internal/httpapi/router.go`
+- `apps/painel-web/server/api/bff/[...path].ts`
+- `apps/painel-web/server/api/core-bff/[...path].ts`
+- `apps/atendimento-online-api/src/lib/trusted-proxy.ts`
+- `apps/atendimento-online-api/src/routes/auth.ts`
+- `apps/plataforma-api/internal/httpapi/middleware/proxy.go`
+- `apps/plataforma-api/internal/httpapi/router.go`
 
 ## 10) Gate server-side alinhado com modulos/feature matrix
 
@@ -193,16 +193,16 @@ Correcao:
 - isso fecha o bypass server-side por acesso direto a endpoint sem depender do menu/rota no frontend.
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/utils/admin-route-auth.ts`
-- `apps/omni-nuxt-ui/app/utils/admin-access.ts`
-- `apps/omni-nuxt-ui/server/api/admin/finances/*`
-- `apps/omni-nuxt-ui/server/api/admin/products/*`
-- `apps/omni-nuxt-ui/server/api/admin/leads/*`
-- `apps/omni-nuxt-ui/server/api/admin/candidates/*`
-- `apps/omni-nuxt-ui/server/api/admin/training/*`
-- `apps/omni-nuxt-ui/server/api/admin/qrcodes/*`
-- `apps/omni-nuxt-ui/server/api/admin/short-links/*`
-- `apps/omni-nuxt-ui/server/api/admin/scripts/*`
+- `apps/painel-web/server/utils/admin-route-auth.ts`
+- `apps/painel-web/app/utils/admin-access.ts`
+- `apps/painel-web/server/api/admin/finances/*`
+- `apps/painel-web/server/api/admin/products/*`
+- `apps/painel-web/server/api/admin/leads/*`
+- `apps/painel-web/server/api/admin/candidates/*`
+- `apps/painel-web/server/api/admin/training/*`
+- `apps/painel-web/server/api/admin/qrcodes/*`
+- `apps/painel-web/server/api/admin/short-links/*`
+- `apps/painel-web/server/api/admin/scripts/*`
 
 ## 11) Auditoria estruturada de acesso negado (`403`)
 
@@ -220,9 +220,9 @@ Correcao:
   - tenant/client ativo
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/utils/access-context.ts`
-- `apps/omni-nuxt-ui/server/utils/admin-route-auth.ts`
-- `apps/omni-nuxt-ui/server/utils/admin-feature-guard.ts`
+- `apps/painel-web/server/utils/access-context.ts`
+- `apps/painel-web/server/utils/admin-route-auth.ts`
+- `apps/painel-web/server/utils/admin-feature-guard.ts`
 
 Exemplo de evento:
 
@@ -252,12 +252,12 @@ Arquivos:
 - `.env.example`
 - `docker-compose.dev.yml`
 - `docker-compose.prod.yml`
-- `apps/omni-nuxt-ui/nuxt.config.ts`
-- `apps/omni-nuxt-ui/server/utils/trusted-proxy.ts`
-- `apps/api/src/config.ts`
-- `apps/api/src/lib/trusted-proxy.ts`
-- `apps/platform-core/internal/config/config.go`
-- `apps/platform-core/internal/httpapi/middleware/proxy.go`
+- `apps/painel-web/nuxt.config.ts`
+- `apps/painel-web/server/utils/trusted-proxy.ts`
+- `apps/atendimento-online-api/src/config.ts`
+- `apps/atendimento-online-api/src/lib/trusted-proxy.ts`
+- `apps/plataforma-api/internal/config/config.go`
+- `apps/plataforma-api/internal/httpapi/middleware/proxy.go`
 
 ## 13) Login central sem tenant na UI
 
@@ -273,8 +273,8 @@ Correcao:
   - faz bootstrap legado apenas quando encontra um tenant local unico para aquele email
 
 Arquivos:
-- `apps/omni-nuxt-ui/app/pages/admin/login.vue`
-- `apps/api/src/routes/auth.ts`
+- `apps/painel-web/app/pages/admin/login.vue`
+- `apps/atendimento-online-api/src/routes/auth.ts`
 
 ## 14) Hardening de upload e webhook
 
@@ -300,10 +300,10 @@ Correcao:
   - evita descarte silencioso de jobs/eventos/locks de seguranca
 
 Arquivos:
-- `apps/omni-nuxt-ui/server/api/admin/products/[id]/image.post.ts`
-- `apps/api/src/routes/webhooks/register-routes.ts`
-- `apps/api/src/routes/webhooks/idempotency.ts`
-- `apps/api/src/config.ts`
+- `apps/painel-web/server/api/admin/products/[id]/image.post.ts`
+- `apps/atendimento-online-api/src/routes/webhooks/register-routes.ts`
+- `apps/atendimento-online-api/src/routes/webhooks/idempotency.ts`
+- `apps/atendimento-online-api/src/config.ts`
 - `docker-compose.dev.yml`
 - `docker-compose.prod.yml`
 

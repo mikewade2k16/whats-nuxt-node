@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "contractVersion": "1.0",
+    "requestId": "req_01",
+    "status": "ok"
+  },
+  "data": {
+    "items": [
+      {
+        "serviceId": "srv_001",
+        "ticketNumber": "A-001",
+        "storeRef": "store_001",
+        "consultantRef": "cst_001",
+        "customerRef": null,
+        "status": "waiting",
+        "createdAt": "2026-04-04T10:00:00-03:00"
+      }
+    ],
+    "summary": {
+      "waiting": 1,
+      "inProgress": 0
+    }
+  },
+  "errors": [],
+  "events": [
+    {
+      "name": "fila-atendimento.operation.snapshot.served",
+      "payload": {
+        "storeRef": "store_001"
+      }
+    }
+  ]
+}

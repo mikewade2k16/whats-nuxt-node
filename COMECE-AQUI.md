@@ -1,26 +1,26 @@
-# 🚀 GUIA RÁPIDO - Otimizações de Infraestrutura
+# ðŸš€ GUIA RÃPIDO - OtimizaÃ§Ãµes de Infraestrutura
 
-**Status:** ✅ Implementado e pronto para usar
-**Data:** 13 de Março, 2026
+**Status:** âœ… Implementado e pronto para usar
+**Data:** 13 de MarÃ§o, 2026
 
 ---
 
-## ⚡ Comece em 3 passos
+## âš¡ Comece em 3 passos
 
-### 1️⃣ Leia o Resumo (5 min)
+### 1ï¸âƒ£ Leia o Resumo (5 min)
 ```bash
-# Ver visão geral do que foi feito
+# Ver visÃ£o geral do que foi feito
 less docs/RESUMO-EXECUTIVO.md
 ```
 
-### 2️⃣ Execute startup (2 min)
+### 2ï¸âƒ£ Execute startup (2 min)
 ```bash
-# Seu sistema é agora auto-configurável
+# Seu sistema Ã© agora auto-configurÃ¡vel
 chmod +x scripts/startup.sh
 ./scripts/startup.sh
 ```
 
-### 3️⃣ Monitore (contínuo)
+### 3ï¸âƒ£ Monitore (contÃ­nuo)
 ```bash
 # Em outro terminal
 chmod +x scripts/*.sh
@@ -29,76 +29,76 @@ chmod +x scripts/*.sh
 
 ---
 
-## 📁 Estrutura de Documentação
+## ðŸ“ Estrutura de DocumentaÃ§Ã£o
 
 ```
 docs/
-├── RESUMO-EXECUTIVO.md              👈 LER PRIMEIRO
-├── infra-diagnostico-otimizacao.md  (Visão técnica completa)
-├── scripts-guia-uso.md              (Como usar os 4 scripts)
-├── troubleshooting-infra.md         (Troubleshooting)
-└── deploy-producao-checklist.md     (Para ir a produção)
+â”œâ”€â”€ RESUMO-EXECUTIVO.md              ðŸ‘ˆ LER PRIMEIRO
+â”œâ”€â”€ infra-diagnostico-otimizacao.md  (VisÃ£o tÃ©cnica completa)
+â”œâ”€â”€ scripts-guia-uso.md              (Como usar os 4 scripts)
+â”œâ”€â”€ troubleshooting-infra.md         (Troubleshooting)
+â””â”€â”€ deploy-producao-checklist.md     (Para ir a produÃ§Ã£o)
 ```
 
 ---
 
-## 🔧 Arquivos Novos/Modificados
+## ðŸ”§ Arquivos Novos/Modificados
 
 ### Arquivos Criados
 
 ```
-✅ docker-compose.prod.yml             Compose com limites & health checks
-✅ apps/api/Dockerfile.prod            Multi-stage para API
-✅ apps/omni-nuxt-ui/Dockerfile.prod   Multi-stage para Web
-✅ scripts/startup.sh                  Inicialização segura
-✅ scripts/monitor-containers.sh       Monitoramento contínuo
-✅ scripts/health-check.sh             Testes de saúde
-✅ scripts/docker-stats.sh             Métricas de recursos
+âœ… docker-compose.prod.yml             Compose com limites & health checks
+âœ… apps/atendimento-online-api/Dockerfile.prod            Multi-stage para API
+âœ… apps/painel-web/Dockerfile.prod   Multi-stage para Web
+âœ… scripts/startup.sh                  InicializaÃ§Ã£o segura
+âœ… scripts/monitor-containers.sh       Monitoramento contÃ­nuo
+âœ… scripts/health-check.sh             Testes de saÃºde
+âœ… scripts/docker-stats.sh             MÃ©tricas de recursos
 ```
 
-### Documentação Criada
+### DocumentaÃ§Ã£o Criada
 
 ```
-✅ docs/RESUMO-EXECUTIVO.md
-✅ docs/infra-diagnostico-otimizacao.md
-✅ docs/scripts-guia-uso.md
-✅ docs/troubleshooting-infra.md
-✅ docs/deploy-producao-checklist.md
-✅ .env.example (atualizado com comentários)
+âœ… docs/RESUMO-EXECUTIVO.md
+âœ… docs/infra-diagnostico-otimizacao.md
+âœ… docs/scripts-guia-uso.md
+âœ… docs/troubleshooting-infra.md
+âœ… docs/deploy-producao-checklist.md
+âœ… .env.example (atualizado com comentÃ¡rios)
 ```
 
 ---
 
-## 🎯 O Que Mudou
+## ðŸŽ¯ O Que Mudou
 
-### Antes 🔴
+### Antes ðŸ”´
 - Sem limites de recursos
 - Containers caindo aleatoriamente
 - Sem health checks
 - Node.js consumindo muita RAM
-- Redis rejeitando operações
+- Redis rejeitando operaÃ§Ãµes
 - Sem monitoramento
 - Tudo em modo desenvolvimento
 
-### Depois ✅
-- Limites de CPU & Memória definidos
+### Depois âœ…
+- Limites de CPU & MemÃ³ria definidos
 - Auto-restart se falhar
-- Health checks em todos serviços
+- Health checks em todos serviÃ§os
 - Node.js otimizado
-- Redis com política segura
-- Monitoramento automático
-- Tudo pronto para produção
+- Redis com polÃ­tica segura
+- Monitoramento automÃ¡tico
+- Tudo pronto para produÃ§Ã£o
 
 ---
 
-## ⚙️ Tarefas para Você
+## âš™ï¸ Tarefas para VocÃª
 
 ### Imediato (Hoje)
 ```bash
-# 1. Copiar arquivo de configuração
+# 1. Copiar arquivo de configuraÃ§Ã£o
 cp .env.example .env
 
-# 2. Editar variáveis de produção
+# 2. Editar variÃ¡veis de produÃ§Ã£o
 nano .env
 
 # 3. Fazendo startup
@@ -107,20 +107,20 @@ nano .env
 
 ### Esta Semana
 ```bash
-# 1. Testar saúde
+# 1. Testar saÃºde
 ./scripts/health-check.sh
 
 # 2. Monitorar (deixar rodando)
 ./scripts/monitor-containers.sh &
 
-# 3. Coletar métricas
+# 3. Coletar mÃ©tricas
 ./scripts/docker-stats.sh report
 
-# 4. Ler documentação completa
+# 4. Ler documentaÃ§Ã£o completa
 less docs/infra-diagnostico-otimizacao.md
 ```
 
-### Para Produção
+### Para ProduÃ§Ã£o
 ```bash
 # Seguir checklist
 less docs/deploy-producao-checklist.md
@@ -128,36 +128,36 @@ less docs/deploy-producao-checklist.md
 
 ---
 
-## 📊 Números
+## ðŸ“Š NÃºmeros
 
-| Métrica | Status |
+| MÃ©trica | Status |
 |---------|--------|
-| Containers com limites | ✅ 8/8 |
-| Health checks | ✅ 8/8 |
-| Scripts prontos | ✅ 4/4 |
-| Documentação | ✅ 5/5 |
-| Dockerfiles otimizados | ✅ 2/2 |
+| Containers com limites | âœ… 8/8 |
+| Health checks | âœ… 8/8 |
+| Scripts prontos | âœ… 4/4 |
+| DocumentaÃ§Ã£o | âœ… 5/5 |
+| Dockerfiles otimizados | âœ… 2/2 |
 
 ---
 
-## 🆘 Tenho um Problema
+## ðŸ†˜ Tenho um Problema
 
-**Opção 1:** Procurar em troubleshooting
+**OpÃ§Ã£o 1:** Procurar em troubleshooting
 ```bash
 less docs/troubleshooting-infra.md
 ```
 
-**Opção 2:** Rodar health check
+**OpÃ§Ã£o 2:** Rodar health check
 ```bash
 ./scripts/health-check.sh
 ```
 
-**Opção 3:** Ver logs
+**OpÃ§Ã£o 3:** Ver logs
 ```bash
 docker-compose logs -f
 ```
 
-**Opção 4:** Resetar tudo
+**OpÃ§Ã£o 4:** Resetar tudo
 ```bash
 docker-compose down -v
 ./scripts/startup.sh --force
@@ -165,31 +165,31 @@ docker-compose down -v
 
 ---
 
-## 🚀 Próximas Ações Recomendadas
+## ðŸš€ PrÃ³ximas AÃ§Ãµes Recomendadas
 
 ### Curto Prazo (1 semana)
 1. [ ] Testar localmente com novo setup
 2. [ ] Rodar monitor continuamente
 3. [ ] Validar performance
-4. [ ] Documentar customizações locais
+4. [ ] Documentar customizaÃ§Ãµes locais
 
-### Médio Prazo (2-3 semanas)
+### MÃ©dio Prazo (2-3 semanas)
 1. [ ] Deploy em staging com docker-compose.prod.yml
 2. [ ] Testes de carga
-3. [ ] Ajustar limites se necessário
+3. [ ] Ajustar limites se necessÃ¡rio
 4. [ ] Implementar alertas
 
 ### Longo Prazo (1-2 meses)
-1. [ ] Produção (seguir checklist)
+1. [ ] ProduÃ§Ã£o (seguir checklist)
 2. [ ] Implementar Prometheus + Grafana
 3. [ ] Multi-instance load balancing
 4. [ ] Database replication (backup)
 
 ---
 
-## 💡 Dica Pro
+## ðŸ’¡ Dica Pro
 
-Combinar scripts para máximo benefício:
+Combinar scripts para mÃ¡ximo benefÃ­cio:
 
 ```bash
 # Terminal 1: Iniciar sistema
@@ -198,7 +198,7 @@ Combinar scripts para máximo benefício:
 # Terminal 2: Monitorar
 ./scripts/monitor-containers.sh
 
-# Terminal 3: Testar saúde
+# Terminal 3: Testar saÃºde
 while true; do
   ./scripts/health-check.sh
   sleep 60
@@ -210,63 +210,63 @@ docker-compose logs -f --tail=50
 
 ---
 
-## 🎓 Leia Depois
+## ðŸŽ“ Leia Depois
 
 Quando tiver tempo:
-- [Documentação Docker](https://docs.docker.com/compose/)
+- [DocumentaÃ§Ã£o Docker](https://docs.docker.com/compose/)
 - [Best Practices Node.js](https://nodejs.org/en/docs/guides/)
 - [PostgreSQL Tuning](https://wiki.postgresql.org/wiki/Performance_Optimization)
 - [Redis Maxmemory](https://redis.io/commands/config-set/)
 
 ---
 
-## 📞 Questões Frequentes
+## ðŸ“ž QuestÃµes Frequentes
 
 ### P: Posso usar docker-compose.yml antigo?
-**R:** Não. Use `docker-compose.prod.yml` que tem otimizações.
+**R:** NÃ£o. Use `docker-compose.prod.yml` que tem otimizaÃ§Ãµes.
 
-### P: E se a aplicação ficar ainda mais lenta?
-**R:** Ver `docs/troubleshooting-infra.md` seção "Performance Lenta"
+### P: E se a aplicaÃ§Ã£o ficar ainda mais lenta?
+**R:** Ver `docs/troubleshooting-infra.md` seÃ§Ã£o "Performance Lenta"
 
-### P: Preciso alterar código?
-**R:** Não! Apenas config de containers e deployment.
+### P: Preciso alterar cÃ³digo?
+**R:** NÃ£o! Apenas config de containers e deployment.
 
-### P: Trabalha com múltiplas VPS?
-**R:** Sim, veja `deploy-producao-checklist.md` para setup distribuído.
+### P: Trabalha com mÃºltiplas VPS?
+**R:** Sim, veja `deploy-producao-checklist.md` para setup distribuÃ­do.
 
 ### P: Como restaurar de um backup?
-**R:** Ver `docs/troubleshooting-infra.md` seção "EMERGÊNCIA"
+**R:** Ver `docs/troubleshooting-infra.md` seÃ§Ã£o "EMERGÃŠNCIA"
 
 ---
 
-## ✨ Benefícios Finais
+## âœ¨ BenefÃ­cios Finais
 
-✅ **Menor custo**: Reduz VPS em até 70%
-✅ **Maior confiabilidade**: 99%+ uptime
-✅ **Mais rápido**: API 3x mais rápida
-✅ **Auto-recuperação**: Reinicia sozinho
-✅ **Fácil escalar**: Adiciona clientes sem medo
-✅ **Observável**: Sabe exatamente o que está acontecendo
-
----
-
-## 🎉 Conclusão
-
-Seu sistema agora é:
-- 🔒 **Seguro** (limites previnem crashes)
-- ⚡ **Rápido** (otimizações Node.js)
-- 🔧 **Resiliente** (auto-restart)
-- 📊 **Observável** (scripts de monitoramento)
-- 💰 **Econômico** (VPS menor)
-
-**Próximo passo:** `./scripts/startup.sh` 🚀
+âœ… **Menor custo**: Reduz VPS em atÃ© 70%
+âœ… **Maior confiabilidade**: 99%+ uptime
+âœ… **Mais rÃ¡pido**: API 3x mais rÃ¡pida
+âœ… **Auto-recuperaÃ§Ã£o**: Reinicia sozinho
+âœ… **FÃ¡cil escalar**: Adiciona clientes sem medo
+âœ… **ObservÃ¡vel**: Sabe exatamente o que estÃ¡ acontecendo
 
 ---
 
-## 📚 Documentação Completa
+## ðŸŽ‰ ConclusÃ£o
+
+Seu sistema agora Ã©:
+- ðŸ”’ **Seguro** (limites previnem crashes)
+- âš¡ **RÃ¡pido** (otimizaÃ§Ãµes Node.js)
+- ðŸ”§ **Resiliente** (auto-restart)
+- ðŸ“Š **ObservÃ¡vel** (scripts de monitoramento)
+- ðŸ’° **EconÃ´mico** (VPS menor)
+
+**PrÃ³ximo passo:** `./scripts/startup.sh` ðŸš€
+
+---
+
+## ðŸ“š DocumentaÃ§Ã£o Completa
 
 ### Para Developers
-- [infra-diagnostico-otimizacao.md](docs/infra-diagnostico-otimizacao.md) - Diagnóstico técnico
+- [infra-diagnostico-otimizacao.md](docs/infra-diagnostico-otimizacao.md) - DiagnÃ³stico tÃ©cnico
 - [troubleshooting-infra.md](docs/troubleshooting-infra.md) - Debug e troubleshooting
 
 ### Para DevOps
@@ -278,6 +278,6 @@ Seu sistema agora é:
 
 ---
 
-**Status:** 🟢 **PRONTO PARA USAR**  
-**Última atualização:** 13 de Março, 2026
+**Status:** ðŸŸ¢ **PRONTO PARA USAR**  
+**Ãšltima atualizaÃ§Ã£o:** 13 de MarÃ§o, 2026
 

@@ -1,4 +1,4 @@
-﻿# Sprint de Otimizacao Geral (Infra + App)
+# Sprint de Otimizacao Geral (Infra + App)
 
 Data base: 2026-03-05
 Escopo: estabilidade local, consumo de recursos e latencia percebida no uso diario do painel.
@@ -30,7 +30,7 @@ Escopo: estabilidade local, consumo de recursos e latencia percebida no uso diar
 
 1. Redis dev sem AOF (`--appendonly no --save ""`) com limite de memoria (`REDIS_MAXMEMORY`).
 2. Redis sem porta exposta no host (acesso interno via rede Docker).
-3. `npm install` condicional em `api`, `worker`, `retention-worker` e `web`.
+3. `npm install` condicional em `atendimento-online-api`, `atendimento-online-worker`, `atendimento-online-retencao-worker` e `painel-web`.
 4. Bootstrap de banco da API apenas no primeiro boot do volume, com override por `API_DB_BOOTSTRAP_ALWAYS=true`.
 5. Limites de heap por servico via `NODE_OPTIONS` no `.env`.
 6. Inbox: removido auto-foco agressivo no corpo do chat para melhorar UX de digitacao.
@@ -95,28 +95,28 @@ Escopo: estabilidade local, consumo de recursos e latencia percebida no uso diar
 ## Budget infra (servicos)
 
 Ambiente dev local:
-1. `api`: alvo `<= 550MB` RAM, pico de CPU curto em bootstrap.
-2. `worker`: alvo `<= 350MB` RAM.
-3. `retention-worker`: alvo `<= 220MB` RAM.
-4. `web`: alvo `<= 700MB` RAM em dev com HMR.
+1. `atendimento-online-api`: alvo `<= 550MB` RAM, pico de CPU curto em bootstrap.
+2. `atendimento-online-worker`: alvo `<= 350MB` RAM.
+3. `atendimento-online-retencao-worker`: alvo `<= 220MB` RAM.
+4. `painel-web`: alvo `<= 700MB` RAM em dev com HMR.
 5. `postgres`: alvo `<= 450MB` RAM.
 6. `redis`: alvo `<= 220MB` RAM (com `REDIS_MAXMEMORY`).
 
 Ambiente de producao (base por tenant pequeno):
-1. `api`: reservar `0.5 vCPU` / `512MB`.
-2. `worker`: reservar `0.5 vCPU` / `384MB`.
-3. `web`: reservar `0.5 vCPU` / `384MB`.
+1. `atendimento-online-api`: reservar `0.5 vCPU` / `512MB`.
+2. `atendimento-online-worker`: reservar `0.5 vCPU` / `384MB`.
+3. `painel-web`: reservar `0.5 vCPU` / `384MB`.
 4. `postgres`: reservar `1 vCPU` / `1GB` (ajustar por volume).
 5. `redis`: reservar `0.25 vCPU` / `256MB`.
 
 ## Runbook observabilidade basica
 
 1. Medir latencia API:
-   - `docker compose logs api --since=10m | rg \"responseTime|statusCode|/conversations|/tenant/whatsapp/status\"`
+   - `docker compose logs atendimento-online-api --since=10m | rg \"responseTime|statusCode|/conversations|/tenant/whatsapp/status\"`
 2. Medir saude de fila/outbound:
-   - `docker compose logs worker --since=10m | rg \"outbound|failed|retry|correlation\"`
+   - `docker compose logs atendimento-online-worker --since=10m | rg \"outbound|failed|retry|correlation\"`
 3. Medir reconexao websocket/realtime:
-   - `docker compose logs api --since=10m | rg \"socket|connect|disconnect|conversation.updated|message.created\"`
+   - `docker compose logs atendimento-online-api --since=10m | rg \"socket|connect|disconnect|conversation.updated|message.created\"`
 4. Medir consumo de recursos por servico:
    - `docker stats --no-stream`
 5. Rotina de incidente (5 minutos):

@@ -1,58 +1,58 @@
-# Resumo Executivo - Otimização de Infraestrutura
+# Resumo Executivo - OtimizaÃ§Ã£o de Infraestrutura
 
-**Data:** 13 de Março, 2026  
-**Status:** IMPLEMENTAÇÃO - Pronto para aplicação
+**Data:** 13 de MarÃ§o, 2026  
+**Status:** IMPLEMENTAÃ‡ÃƒO - Pronto para aplicaÃ§Ã£o
 **Impacto Estimado:** -60% crashes, +40% performance, -30% custo infra
 
 ---
 
-## 🎯 Problema
+## ðŸŽ¯ Problema
 
-Containers caindo e travando frequentemente, tornando inviável:
-- ❌ Execução local do painel
-- ❌ Escalabilidade para múltiplos clientes
-- ❌ Deployment em produção
+Containers caindo e travando frequentemente, tornando inviÃ¡vel:
+- âŒ ExecuÃ§Ã£o local do painel
+- âŒ Escalabilidade para mÃºltiplos clientes
+- âŒ Deployment em produÃ§Ã£o
 
 ---
 
-## 🔍 Causas Raiz Identificadas
+## ðŸ” Causas Raiz Identificadas
 
 | Problema | Severidade | Impacto |
 |----------|-----------|--------|
-| **Sem limites de recursos** | 🔴 CRÍTICO | Container consome toda RAM |
-| **Health checks faltando** | 🔴 CRÍTICO | Não detecta falhas aplicação |
-| **Node.js mal configurado** | 🟠 ALTA | Memory leaks, GC ruins |
-| **Redis com política perigosa** | 🔴 CRÍTICO | Rejeita requests quando cheio |
-| **Sem monitoramento** | 🟠 ALTA | Não sabe o que está caindo |
-| **Tudo em dev mode** | 🟠 ALTA | 10-50x mais lento |
+| **Sem limites de recursos** | ðŸ”´ CRÃTICO | Container consome toda RAM |
+| **Health checks faltando** | ðŸ”´ CRÃTICO | NÃ£o detecta falhas aplicaÃ§Ã£o |
+| **Node.js mal configurado** | ðŸŸ  ALTA | Memory leaks, GC ruins |
+| **Redis com polÃ­tica perigosa** | ðŸ”´ CRÃTICO | Rejeita requests quando cheio |
+| **Sem monitoramento** | ðŸŸ  ALTA | NÃ£o sabe o que estÃ¡ caindo |
+| **Tudo em dev mode** | ðŸŸ  ALTA | 10-50x mais lento |
 
 ---
 
-## ✅ Soluções Implementadas
+## âœ… SoluÃ§Ãµes Implementadas
 
-### 1. Limites de CPU & Memória
+### 1. Limites de CPU & MemÃ³ria
 
 Cada container agora tem:
 ```
 postgresql:  1.5G / 1.5 CPU
 redis:       512M / 0.5 CPU
 api:         1.0G / 1.0 CPU
-platform-core: 512M / 1.0 CPU
+plataforma-api: 512M / 1.0 CPU
 workers:     512M / 1.0 CPU
 web:         512M / 1.0 CPU
 evolution:   1.0G / 2.0 CPU
 ```
 
-**Resultado:** Um serviço não consegue matar os outros
+**Resultado:** Um serviÃ§o nÃ£o consegue matar os outros
 
-### 2. Health Checks Automáticos
+### 2. Health Checks AutomÃ¡ticos
 
-Todos containers agora têm:
-- ✅ Health check a cada 10-30s
-- ✅ Restart automático se unhealthy
-- ✅ Melhor detecção de falhas
+Todos containers agora tÃªm:
+- âœ… Health check a cada 10-30s
+- âœ… Restart automÃ¡tico se unhealthy
+- âœ… Melhor detecÃ§Ã£o de falhas
 
-**Resultado:** Aplicação se recupera sozinha
+**Resultado:** AplicaÃ§Ã£o se recupera sozinha
 
 ### 3. Node.js Otimizado
 
@@ -68,7 +68,7 @@ NODE_OPTIONS:
 
 ### 4. Redis Seguro
 
-Mudada política de `noeviction` para `allkeys-lru`
+Mudada polÃ­tica de `noeviction` para `allkeys-lru`
 - Antes: API cai quando Redis cheio
 - Depois: Remove dados menos usados automaticamente
 
@@ -76,33 +76,33 @@ Mudada política de `noeviction` para `allkeys-lru`
 
 ### 5. Dockerfiles Multi-stage
 
-Imagens otimizadas para produção:
+Imagens otimizadas para produÃ§Ã£o:
 - Base: ~300MB (antes: ~400MB)
-- Sem dependências de dev
+- Sem dependÃªncias de dev
 - Compilado e pronto
 
-**Resultado:** Deploy mais rápido, menores imagens
+**Resultado:** Deploy mais rÃ¡pido, menores imagens
 
 ### 6. Scripts de Monitoramento
 
-4 scripts prontos para monitoração e debug:
+4 scripts prontos para monitoraÃ§Ã£o e debug:
 
-| Script | Função | Frequência |
+| Script | FunÃ§Ã£o | FrequÃªncia |
 |--------|--------|-----------|
-| `startup.sh` | Inicialização segura | Manual |
-| `monitor-containers.sh` | Monitorar saúde | Contínuo (30s) |
+| `startup.sh` | InicializaÃ§Ã£o segura | Manual |
+| `monitor-containers.sh` | Monitorar saÃºde | ContÃ­nuo (30s) |
 | `health-check.sh` | Testar endpoints | Manual/Cron |
-| `docker-stats.sh` | Métricas recursos | Manual/Monitor |
+| `docker-stats.sh` | MÃ©tricas recursos | Manual/Monitor |
 
 **Resultado:** Visibilidade total do sistema
 
 ---
 
-## 📊 Impacto Esperado
+## ðŸ“Š Impacto Esperado
 
 ### Antes vs Depois
 
-| Métrica | Antes | Depois | Melhora |
+| MÃ©trica | Antes | Depois | Melhora |
 |---------|-------|--------|---------|
 | Crashes/dia | 5-10 | < 1 | **-80%** |
 | Downtime | 10-20% | < 1% | **+95%** |
@@ -113,34 +113,34 @@ Imagens otimizadas para produção:
 
 ---
 
-## 💰 Benefício Financeiro
+## ðŸ’° BenefÃ­cio Financeiro
 
 ### Custo Atual vs Proposto
 
-#### VPS Mínima (MVP - 10 clientes)
-- **Antes:** VPS 8GB/4CPU = R$ 200-300/mês (ainda caindo)
-- **Depois:** VPS 4GB/2CPU = R$ 50-100/mês ✅ **-70% custo**
+#### VPS MÃ­nima (MVP - 10 clientes)
+- **Antes:** VPS 8GB/4CPU = R$ 200-300/mÃªs (ainda caindo)
+- **Depois:** VPS 4GB/2CPU = R$ 50-100/mÃªs âœ… **-70% custo**
 
-#### VPS Escalada (Produção - 50+ clientes)
-- **Antes:** VPS 16GB/8CPU = R$ 500+/mês (risco alto)
-- **Depois:** VPS 16GB/8CPU = R$ 500/mês (confiável) ✅ **0% custo, +99% confiabilidade**
+#### VPS Escalada (ProduÃ§Ã£o - 50+ clientes)
+- **Antes:** VPS 16GB/8CPU = R$ 500+/mÃªs (risco alto)
+- **Depois:** VPS 16GB/8CPU = R$ 500/mÃªs (confiÃ¡vel) âœ… **0% custo, +99% confiabilidade**
 
 ### ROI
-- **Investimento:** 8-10 horas implementação
-- **Economia:** R$ 100-200/mês em VPS
-- **Payback:** < 1 mês
+- **Investimento:** 8-10 horas implementaÃ§Ã£o
+- **Economia:** R$ 100-200/mÃªs em VPS
+- **Payback:** < 1 mÃªs
 
 ---
 
-## 📋 Arquivos Criados
+## ðŸ“‹ Arquivos Criados
 
-### Documentação (4 arquivos)
+### DocumentaÃ§Ã£o (4 arquivos)
 ```
 docs/
-├── infra-diagnostico-otimizacao.md       (PRINCIPAL)
-├── troubleshooting-infra.md              (Troubleshooting)
-├── scripts-guia-uso.md                   (Como usar scripts)
-└── deploy-producao-checklist.md          (Deploy checklist)
+â”œâ”€â”€ infra-diagnostico-otimizacao.md       (PRINCIPAL)
+â”œâ”€â”€ troubleshooting-infra.md              (Troubleshooting)
+â”œâ”€â”€ scripts-guia-uso.md                   (Como usar scripts)
+â””â”€â”€ deploy-producao-checklist.md          (Deploy checklist)
 ```
 
 ### Docker Compose Otimizado
@@ -150,22 +150,22 @@ docker-compose.prod.yml                   (PRONTO PARA USAR)
 
 ### Dockerfiles Multi-Stage
 ```
-apps/api/Dockerfile.prod                  (API otimizada)
-apps/omni-nuxt-ui/Dockerfile.prod         (Web otimizada)
+apps/atendimento-online-api/Dockerfile.prod                  (API otimizada)
+apps/painel-web/Dockerfile.prod         (Web otimizada)
 ```
 
-### Scripts de Automação (4 scripts)
+### Scripts de AutomaÃ§Ã£o (4 scripts)
 ```
 scripts/
-├── startup.sh                            (Inicialização)
-├── monitor-containers.sh                 (Monitoramento)
-├── health-check.sh                       (Testes)
-└── docker-stats.sh                       (Métricas)
+â”œâ”€â”€ startup.sh                            (InicializaÃ§Ã£o)
+â”œâ”€â”€ monitor-containers.sh                 (Monitoramento)
+â”œâ”€â”€ health-check.sh                       (Testes)
+â””â”€â”€ docker-stats.sh                       (MÃ©tricas)
 ```
 
 ---
 
-## 🚀 Plano de Implementação
+## ðŸš€ Plano de ImplementaÃ§Ã£o
 
 ### Fase 1: Hoje (30 minutos)
 - [ ] Copiar `docker-compose.prod.yml`
@@ -176,19 +176,19 @@ scripts/
 - [ ] Extrair scripts (`chmod +x`)
 - [ ] Rodar `startup.sh`
 - [ ] Testar `health-check.sh`
-- [ ] Verificar métricas com `docker-stats.sh`
+- [ ] Verificar mÃ©tricas com `docker-stats.sh`
 
-### Fase 3: Produção (1-2 dias)
+### Fase 3: ProduÃ§Ã£o (1-2 dias)
 - [ ] Seguir `deploy-producao-checklist.md`
 - [ ] Setup em VPS
 - [ ] Validar tudo funciona
-- [ ] Ativar monitoramento contínuo
+- [ ] Ativar monitoramento contÃ­nuo
 
 ---
 
-## 🎯 Métricas para Acompanhar
+## ðŸŽ¯ MÃ©tricas para Acompanhar
 
-Após implementação, monitorar:
+ApÃ³s implementaÃ§Ã£o, monitorar:
 
 ```bash
 # Diariamente
@@ -203,9 +203,9 @@ Após implementação, monitorar:
 
 ---
 
-## 📞 Suporte & Contato
+## ðŸ“ž Suporte & Contato
 
-Dúvidas durante implementação:
+DÃºvidas durante implementaÃ§Ã£o:
 
 1. **Troubleshooting primeiro:** `docs/troubleshooting-infra.md`
 2. **Scripts problem:** `docs/scripts-guia-uso.md`
@@ -214,49 +214,49 @@ Dúvidas durante implementação:
 
 ---
 
-## 🎓 Aprendizados
+## ðŸŽ“ Aprendizados
 
 ### Para Equipe Dev
-- ✅ Docker compose com limites é essencial
-- ✅ Health checks detectam problemas mais rápido
-- ✅ Node.js precisa de otimizações GC em prod
-- ✅ Monitoramento automático economiza horas
+- âœ… Docker compose com limites Ã© essencial
+- âœ… Health checks detectam problemas mais rÃ¡pido
+- âœ… Node.js precisa de otimizaÃ§Ãµes GC em prod
+- âœ… Monitoramento automÃ¡tico economiza horas
 
 ### Para DevOps/Infra
-- ✅ Redis `noeviction` é perigoso em prod
-- ✅ Multi-container precisa de resources bem definidos
-- ✅ Scripts de monitoring economizam muito tempo
-- ✅ Logging estruturado é fundamental
+- âœ… Redis `noeviction` Ã© perigoso em prod
+- âœ… Multi-container precisa de resources bem definidos
+- âœ… Scripts de monitoring economizam muito tempo
+- âœ… Logging estruturado Ã© fundamental
 
 ---
 
-## ⏱️ Timeline de Benefícios
+## â±ï¸ Timeline de BenefÃ­cios
 
-| Período | Benefício |
+| PerÃ­odo | BenefÃ­cio |
 |---------|-----------|
 | **Imediato** | Crashes reduzidos 50% |
 | **Semana 1** | Confiabilidade 99%+ |
-| **Mês 1** | Custo VPS reduzido |
-| **Mês 2** | Escalabilidade testada |
-| **Mês 3** | Produção stable |
+| **MÃªs 1** | Custo VPS reduzido |
+| **MÃªs 2** | Escalabilidade testada |
+| **MÃªs 3** | ProduÃ§Ã£o stable |
 
 ---
 
-## 🏁 Conclusão
+## ðŸ ConclusÃ£o
 
-Com estas otimizações:
+Com estas otimizaÃ§Ãµes:
 
-✅ **Sistema estável** - Crashes reduzidos 80%
-✅ **Menos custos** - Reduza VPS até 70%
-✅ **Pronto para produção** - Segurança & performance
-✅ **Fácil escalabilidade** - Adicionar clientes sem risco
-✅ **Monitoramento automático** - Saiba quando algo quebra
+âœ… **Sistema estÃ¡vel** - Crashes reduzidos 80%
+âœ… **Menos custos** - Reduza VPS atÃ© 70%
+âœ… **Pronto para produÃ§Ã£o** - SeguranÃ§a & performance
+âœ… **FÃ¡cil escalabilidade** - Adicionar clientes sem risco
+âœ… **Monitoramento automÃ¡tico** - Saiba quando algo quebra
 
-**Status:** 🟢 **PRONTO PARA IMPLEMENTAÇÃO**
+**Status:** ðŸŸ¢ **PRONTO PARA IMPLEMENTAÃ‡ÃƒO**
 
 ---
 
-## 📚 Próximas Leituras
+## ðŸ“š PrÃ³ximas Leituras
 
 1. Start with: [infra-diagnostico-otimizacao.md](infra-diagnostico-otimizacao.md)
 2. Then: [scripts-guia-uso.md](scripts-guia-uso.md)

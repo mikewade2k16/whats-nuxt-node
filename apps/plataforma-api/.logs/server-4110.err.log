@@ -1,0 +1,4 @@
+2026/04/04 15:23:47 database error: ping database: failed to connect to `user=omnichannel database=omnichannel`:
+	127.0.0.1:5432 (127.0.0.1): tls error: server refused TLS connection
+	127.0.0.1:5432 (127.0.0.1): failed SASL auth: FATAL: autenticação do tipo senha falhou para o usuário "omnichannel" (SQLSTATE 28P01)
+exit status 1

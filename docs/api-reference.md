@@ -6,8 +6,9 @@ Base URL do front (Nuxt): `http://localhost:3000`
 
 Autenticacao:
 
-1. Login em `POST /auth/login`.
-2. Usar `Authorization: Bearer <token>` nas rotas protegidas.
+1. O login principal fica em `POST /core/auth/login` no `plataforma-api`.
+2. O `apps/atendimento-online-api` nao expoe login proprio; ele consome `Authorization: Bearer <core-token>` nas rotas protegidas.
+3. Quando o actor for `platform admin`, enviar `x-selected-tenant-slug` para explicitar o tenant operacional alvo.
 
 Correlation id (observabilidade):
 
@@ -19,59 +20,59 @@ Correlation id (observabilidade):
 
 | Metodo | Rota | Auth | Arquivo |
 | --- | --- | --- | --- |
-| GET | `/health` | Nao | `apps/api/src/routes/health.ts` |
-| POST | `/auth/login` | Nao | `apps/api/src/routes/auth.ts` |
-| GET | `/me` | Sim | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant` | Sim | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant/audit-events` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant/metrics/failures` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant/metrics/http-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
-| PATCH | `/tenant` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant/whatsapp/status` | Sim | `apps/api/src/routes/tenant.ts` |
-| POST | `/tenant/whatsapp/validate-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/api/src/routes/tenant.ts` |
-| GET | `/tenant/whatsapp/qrcode` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
-| POST | `/tenant/whatsapp/bootstrap` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
-| POST | `/tenant/whatsapp/connect` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
-| POST | `/tenant/whatsapp/logout` | Sim (ADMIN) | `apps/api/src/routes/tenant.ts` |
-| GET | `/users` | Sim | `apps/api/src/routes/users.ts` |
-| POST | `/users` | Sim (ADMIN) | `apps/api/src/routes/users.ts` |
-| PATCH | `/users/:userId` | Sim (ADMIN) | `apps/api/src/routes/users.ts` (desativado: `501`) |
-| GET | `/contacts` | Sim | `apps/api/src/routes/contacts.ts` |
-| POST | `/contacts` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
-| PATCH | `/contacts/:contactId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
-| POST | `/contacts/:contactId/open-conversation` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
-| POST | `/contacts/import-whatsapp` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/contacts.ts` |
-| GET | `/stickers` | Sim | `apps/api/src/routes/stickers.ts` |
-| POST | `/stickers` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/stickers.ts` |
-| DELETE | `/stickers/:stickerId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/api/src/routes/stickers.ts` |
-| GET | `/conversations` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations/sync-open` | Sim | `apps/api/src/routes/conversations/routes-core-sync-open.ts` |
-| GET | `/conversations/sandbox/test` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations` | Sim | `apps/api/src/routes/conversations.ts` |
-| GET | `/conversations/:conversationId/messages` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations/:conversationId/messages/sync-history` | Sim | `apps/api/src/routes/conversations.ts` |
-| GET | `/conversations/:conversationId/messages/:messageId` | Sim | `apps/api/src/routes/conversations.ts` |
-| GET | `/conversations/:conversationId/messages/:messageId/media` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations/:conversationId/messages` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations/:conversationId/messages/:messageId/reprocess` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/conversations/:conversationId/messages/reprocess-failed` | Sim | `apps/api/src/routes/conversations.ts` |
-| PATCH | `/conversations/:conversationId/assign` | Sim | `apps/api/src/routes/conversations.ts` |
-| PATCH | `/conversations/:conversationId/status` | Sim | `apps/api/src/routes/conversations.ts` |
-| POST | `/webhooks/evolution/:tenantSlug` | Nao (token opcional via header) | `apps/api/src/routes/webhooks.ts` |
-| POST | `/webhooks/evolution/:tenantSlug/:eventName` | Nao (token opcional via header) | `apps/api/src/routes/webhooks.ts` |
+| GET | `/health` | Nao | `apps/atendimento-online-api/src/routes/health.ts` |
+| POST | `/session/context` | Sim (platform admin) | `apps/atendimento-online-api/src/routes/session-context.ts` |
+| GET | `/me` | Sim | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant` | Sim | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant/audit-events` | Sim (ADMIN/SUPERVISOR) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant/metrics/failures` | Sim (ADMIN/SUPERVISOR) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant/metrics/http-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| PATCH | `/tenant` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant/whatsapp/status` | Sim | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| POST | `/tenant/whatsapp/validate-endpoints` | Sim (ADMIN/SUPERVISOR) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/tenant/whatsapp/qrcode` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| POST | `/tenant/whatsapp/bootstrap` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| POST | `/tenant/whatsapp/connect` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| POST | `/tenant/whatsapp/logout` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/tenant.ts` |
+| GET | `/users` | Sim | `apps/atendimento-online-api/src/routes/users.ts` |
+| POST | `/users` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/users.ts` |
+| PATCH | `/users/:userId` | Sim (ADMIN) | `apps/atendimento-online-api/src/routes/users.ts` (desativado: `501`) |
+| GET | `/contacts` | Sim | `apps/atendimento-online-api/src/routes/contacts.ts` |
+| POST | `/contacts` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/contacts.ts` |
+| PATCH | `/contacts/:contactId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/contacts.ts` |
+| POST | `/contacts/:contactId/open-conversation` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/contacts.ts` |
+| POST | `/contacts/import-whatsapp` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/contacts.ts` |
+| GET | `/stickers` | Sim | `apps/atendimento-online-api/src/routes/stickers.ts` |
+| POST | `/stickers` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/stickers.ts` |
+| DELETE | `/stickers/:stickerId` | Sim (ADMIN/SUPERVISOR/AGENT) | `apps/atendimento-online-api/src/routes/stickers.ts` |
+| GET | `/conversations` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations/sync-open` | Sim | `apps/atendimento-online-api/src/routes/conversations/routes-core-sync-open.ts` |
+| GET | `/conversations/sandbox/test` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| GET | `/conversations/:conversationId/messages` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations/:conversationId/messages/sync-history` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| GET | `/conversations/:conversationId/messages/:messageId` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| GET | `/conversations/:conversationId/messages/:messageId/media` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations/:conversationId/messages` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations/:conversationId/messages/:messageId/reprocess` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/conversations/:conversationId/messages/reprocess-failed` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| PATCH | `/conversations/:conversationId/assign` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| PATCH | `/conversations/:conversationId/status` | Sim | `apps/atendimento-online-api/src/routes/conversations.ts` |
+| POST | `/webhooks/evolution/:tenantSlug` | Nao (token opcional via header) | `apps/atendimento-online-api/src/routes/webhooks.ts` |
+| POST | `/webhooks/evolution/:tenantSlug/:eventName` | Nao (token opcional via header) | `apps/atendimento-online-api/src/routes/webhooks.ts` |
 
 ## Rotas internas do portal de docs (Nuxt server)
 
-Estas rotas existem no `web` para leitura dos arquivos `.md`:
+Estas rotas existem no `painel-web` para leitura dos arquivos `.md`:
 
 | Metodo | Rota | Auth | Arquivo |
 | --- | --- | --- | --- |
-| GET | `/api/docs` | Sessao no front | `apps/omni-nuxt-ui/server/api/docs/index.get.ts` |
-| GET | `/api/docs/:slug` | Sessao no front | `apps/omni-nuxt-ui/server/api/docs/[slug].get.ts` |
+| GET | `/api/docs` | Sessao no front | `apps/painel-web/server/api/docs/index.get.ts` |
+| GET | `/api/docs/:slug` | Sessao no front | `apps/painel-web/server/api/docs/[slug].get.ts` |
 
 Implementacao de leitura e parse de checklist:
 
-- `apps/omni-nuxt-ui/server/utils/project-docs.ts`
+- `apps/painel-web/server/utils/project-docs.ts`
 
 Campos de BI retornados por `/api/docs` e `/api/docs/:slug`:
 
@@ -108,15 +109,21 @@ Matriz operacional atual:
 
 ## Contratos importantes
 
-### `POST /auth/login`
+### Sessao principal
+
+1. O painel autentica via `POST /api/core-bff/core/auth/login`.
+2. O token retornado por `plataforma-api` e reutilizado como sessao principal no `apps/atendimento-online-api`.
+3. Nao existe mais `POST /auth/login` local no modulo operacional.
+
+### `POST /session/context`
+
+Uso: platform admin atualiza o tenant operacional ativo sem criar uma segunda sessao.
 
 Request:
 
 ```json
 {
-  "tenantSlug": "demo",
-  "email": "admin@demo.local",
-  "password": "123456"
+  "clientId": 10
 }
 ```
 
@@ -124,31 +131,18 @@ Response:
 
 ```json
 {
-  "token": "jwt",
-  "user": {
-    "id": "cuid",
-    "tenantId": "cuid",
-    "tenantSlug": "demo",
-    "email": "admin@demo.local",
-    "name": "Admin Demo",
-    "role": "ADMIN"
-  },
-  "coreAccessToken": "jwt-core",
-  "coreUser": {
-    "id": "uuid",
-    "name": "Admin Demo",
-    "email": "admin@demo.local",
-    "isPlatformAdmin": false,
-    "tenantId": "uuid-tenant-core"
+  "token": "jwt-core",
+  "sessionContext": {
+    "tenantId": "uuid-tenant-core",
+    "tenantSlug": "demo"
   }
 }
 ```
 
 Observacoes:
 
-1. Credenciais sao validadas no `platform-core` (Go).
-2. O token `token` e a sessao JWT do modulo de atendimento (Node), emitida apos validacao no core.
-3. `coreAccessToken` e retornado para o front acessar `/api/core-bff/*` sem segundo login.
+1. O endpoint reaproveita o mesmo `core token`; ele nao cria login paralelo.
+2. O frontend deve persistir `tenantSlug` selecionado e continuar enviando `x-selected-tenant-slug` nas chamadas operacionais.
 
 ### `POST /tenant/whatsapp/bootstrap`
 
@@ -169,7 +163,7 @@ Response (resumo):
 {
   "success": true,
   "instanceName": "demo-wa",
-  "webhookUrl": "http://api:4000/webhooks/evolution/demo",
+  "webhookUrl": "http://atendimento-online-api:4000/webhooks/evolution/demo",
   "created": true
 }
 ```
@@ -331,9 +325,9 @@ Response (resumo):
 
 Regras de limite (plano):
 
-1. A criacao passou a usar `platform-core` como fonte de verdade (`/core/tenants/{tenantId}/users/invite`).
+1. A criacao passou a usar `plataforma-api` como fonte de verdade (`/core/tenants/{tenantId}/users/invite`).
 2. A API de atendimento sincroniza o usuario no banco local apenas como shadow tecnico para manter compatibilidade de atribuicao/conversas.
-3. Quando o `platform-core` estiver indisponivel ou rejeitar a operacao, a API retorna o erro equivalente.
+3. Quando o `plataforma-api` estiver indisponivel ou rejeitar a operacao, a API retorna o erro equivalente.
 
 ### `PATCH /users/:userId` e `DELETE /users/:userId`
 
@@ -531,7 +525,7 @@ Response (resumo):
 {
   "instanceName": "demo-instance",
   "generatedAt": "2026-02-27T12:00:00.000Z",
-  "baseUrl": "http://evolution:8080",
+  "baseUrl": "http://whatsapp-evolution-gateway:8080",
   "timeoutMs": 90000,
   "endpoints": [
     {
@@ -824,7 +818,7 @@ Payload:
 
 ```json
 {
-  "emoji": "👍"
+  "emoji": "Ã°Å¸â€˜Â"
 }
 ```
 
@@ -996,16 +990,16 @@ Observacao:
 
 Publicacao de eventos:
 
-`apps/api/src/event-bus.ts`
+`apps/atendimento-online-api/src/event-bus.ts`
 
 ## Estrutura outbound por tipo
 
 Arquivos:
 
-1. Orquestrador da fila: `apps/api/src/workers/outbound-worker.ts`
-2. Envio de texto: `apps/api/src/workers/senders/send-text.ts`
-3. Envio de midia/audio: `apps/api/src/workers/senders/send-media.ts`
-4. Utilitarios comuns: `apps/api/src/workers/senders/common.ts`
+1. Orquestrador da fila: `apps/atendimento-online-api/src/workers/outbound-worker.ts`
+2. Envio de texto: `apps/atendimento-online-api/src/workers/senders/send-text.ts`
+3. Envio de midia/audio: `apps/atendimento-online-api/src/workers/senders/send-media.ts`
+4. Utilitarios comuns: `apps/atendimento-online-api/src/workers/senders/common.ts`
 
 Objetivo:
 
@@ -1017,8 +1011,8 @@ Objetivo:
 
 Arquivos:
 
-1. Servico de expurgo: `apps/api/src/services/retention-service.ts`
-2. Worker de retencao: `apps/api/src/workers/retention-worker.ts`
+1. Servico de expurgo: `apps/atendimento-online-api/src/services/retention-service.ts`
+2. Worker de retencao: `apps/atendimento-online-api/src/workers/retention-worker.ts`
 
 Comportamento:
 

@@ -224,7 +224,7 @@ async function main() {
     productId: 0,
     qrCodeId: 0,
     scriptId: 0,
-    financeId: 0
+    financeId: ''
   }
 
   cases.push({
@@ -529,7 +529,7 @@ async function main() {
           }
         })
         if (tenantFinanceEnabled) {
-          tempState.financeId = Number(response.payload?.data?.id ?? 0)
+          tempState.financeId = String(response.payload?.data?.id ?? '').trim()
         }
         return response
       }

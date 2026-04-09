@@ -1,0 +1,16 @@
+
+> @whats-test/atendimento-online-api@0.1.0 dev
+> tsx watch src/main.ts
+
+{"level":40,"time":1775338499836,"pid":64164,"hostname":"MikeG15","msg":"Redis desabilitado no modo local; Socket.IO rodando sem adapter distribuido."}
+{"level":30,"time":1775338499865,"pid":64164,"hostname":"MikeG15","msg":"Server listening at http://127.0.0.1:4010"}
+{"level":30,"time":1775338499865,"pid":64164,"hostname":"MikeG15","msg":"Server listening at http://172.27.80.1:4010"}
+{"level":30,"time":1775338499865,"pid":64164,"hostname":"MikeG15","msg":"Server listening at http://172.21.0.1:4010"}
+{"level":30,"time":1775338499865,"pid":64164,"hostname":"MikeG15","msg":"Server listening at http://192.168.0.2:4010"}
+{"level":30,"time":1775338499865,"pid":64164,"hostname":"MikeG15","msg":"API online na porta 4010"}
+{"level":30,"time":1775338500267,"pid":64164,"hostname":"MikeG15","reqId":"req-1","req":{"method":"GET","url":"/health","host":"127.0.0.1:4010","remoteAddress":"127.0.0.1","remotePort":51375},"msg":"incoming request"}
+{"level":30,"time":1775338500273,"pid":64164,"hostname":"MikeG15","reqId":"req-1","res":{"statusCode":200},"responseTime":4.507299959659576,"msg":"request completed"}
+{"level":30,"time":1775338560727,"pid":64164,"hostname":"MikeG15","reqId":"req-2","req":{"method":"GET","url":"/health","host":"127.0.0.1:4010","remoteAddress":"127.0.0.1","remotePort":59294},"msg":"incoming request"}
+{"level":30,"time":1775338560728,"pid":64164,"hostname":"MikeG15","reqId":"req-2","res":{"statusCode":200},"responseTime":1.0444999933242798,"msg":"request completed"}
+{"level":30,"time":1775338569135,"pid":64164,"hostname":"MikeG15","reqId":"req-3","req":{"method":"POST","url":"/auth/login","host":"127.0.0.1:4010","remoteAddress":"127.0.0.1","remotePort":59999},"msg":"incoming request"}
+{"level":30,"time":1775338571471,"pid":64164,"hostname":"MikeG15","reqId":"req-3","res":{"statusCode":200},"responseTime":2335.2631999850273,"msg":"request completed"}

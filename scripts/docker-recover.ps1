@@ -31,8 +31,8 @@ if (-not $ready) {
 }
 
 if ($RebuildCore) {
-  Write-Host "[docker-recover] Rebuilding and starting platform-core..."
-  & docker compose -f $ComposeFile up -d --build platform-core
+  Write-Host "[docker-recover] Rebuilding and starting plataforma-api..."
+  & docker compose -f $ComposeFile up -d --build plataforma-api
 } else {
   Write-Host "[docker-recover] Starting stack..."
   & docker compose -f $ComposeFile up -d

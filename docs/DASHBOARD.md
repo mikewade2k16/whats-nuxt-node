@@ -1,172 +1,172 @@
-# 📊 Dashboard de Monitoramento - Guia de Uso
+# ðŸ“Š Dashboard de Monitoramento - Guia de Uso
 
-## Visão Geral
+## VisÃ£o Geral
 
-O Dashboard de Monitoramento é uma interface integrada no painel Nuxt que permite visualizar e controlar os containers Docker em tempo real, diretamente da aplicação, **sem necessidade de acessar o terminal ou Docker Desktop**.
+O Dashboard de Monitoramento Ã© uma interface integrada no painel Nuxt que permite visualizar e controlar os containers Docker em tempo real, diretamente da aplicaÃ§Ã£o, **sem necessidade de acessar o terminal ou Docker Desktop**.
 
-## ✅ O que foi criado
+## âœ… O que foi criado
 
 ### 1. **Componentes Nuxt**
-- `apps/omni-nuxt-ui/app/components/Admin/ContainerMonitor.vue` - Componente principal com monitoring
-- `apps/omni-nuxt-ui/app/pages/admin.vue` - Layout base do painel admin
-- `apps/omni-nuxt-ui/app/pages/admin/containers.vue` - Página de containers
-- `apps/omni-nuxt-ui/app/pages/admin/logs.vue` - Página de logs consolidados
-- `apps/omni-nuxt-ui/app/pages/admin/health.vue` - Página de health check
+- `apps/painel-web/app/components/Admin/ContainerMonitor.vue` - Componente principal com monitoring
+- `apps/painel-web/app/pages/admin.vue` - Layout base do painel admin
+- `apps/painel-web/app/pages/admin/containers.vue` - PÃ¡gina de containers
+- `apps/painel-web/app/pages/admin/logs.vue` - PÃ¡gina de logs consolidados
+- `apps/painel-web/app/pages/admin/health.vue` - PÃ¡gina de health check
 
 ### 2. **Composable TypeScript**
-- `apps/omni-nuxt-ui/app/composables/useAdminApi.ts` - Abstração de APIs de admin
+- `apps/painel-web/app/composables/useAdminApi.ts` - AbstraÃ§Ã£o de APIs de admin
 
 ### 3. **API Backend**
-- `apps/api/src/routes/admin.ts` - 8 endpoints para monitoramento e controle
-- Integrado em `apps/api/src/main.ts`
+- `apps/atendimento-online-api/src/routes/admin.ts` - 8 endpoints para monitoramento e controle
+- Integrado em `apps/atendimento-online-api/src/main.ts`
 
 ### 4. **Docker Compose**
-- `docker-compose.dev.yml` - Configuração otimizada para Windows
+- `docker-compose.dev.yml` - ConfiguraÃ§Ã£o otimizada para Windows
 
-## 🚀 Como colocar no ar
+## ðŸš€ Como colocar no ar
 
 ### Passo 1: Construir e iniciar os containers
 
 ```bash
-# Navegue até a raiz do projeto
+# Navegue atÃ© a raiz do projeto
 cd c:\Users\Mike\Documents\Projects\whats-test
 
-# Inicie com a configuração de desenvolvimento (otimizada para Windows)
+# Inicie com a configuraÃ§Ã£o de desenvolvimento (otimizada para Windows)
 docker-compose -f docker-compose.dev.yml up -d
 
-# Ou, se preferir usar produção
+# Ou, se preferir usar produÃ§Ã£o
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
 ### Passo 2: Acessar o Dashboard
 
 1. Abra o navegador em: **http://localhost:3000/admin/containers**
-2. Você verá o dashboard com:
-   - ✅ Status de todos os containers
-   - 📊 Uso de CPU e Memória em tempo real
-   - 🎯 Botões de controle (Restart, Stop, Logs)
+2. VocÃª verÃ¡ o dashboard com:
+   - âœ… Status de todos os containers
+   - ðŸ“Š Uso de CPU e MemÃ³ria em tempo real
+   - ðŸŽ¯ BotÃµes de controle (Restart, Stop, Logs)
 
 ### Passo 3: Usar as funcionalidades
 
-#### 📊 **Monitoramento de Containers**
+#### ðŸ“Š **Monitoramento de Containers**
 - Acesse: `/admin/containers`
 - Veja em tempo real:
   - Status (Up, Exited, etc)
   - CPU % de cada container
-  - Uso de Memória
-  - Status de saúde (Healthy/Unhealthy)
+  - Uso de MemÃ³ria
+  - Status de saÃºde (Healthy/Unhealthy)
 
-#### 🔄 **Controlar Containers**
-- **Restart**: Reinicia o container (útil para recarga de código)
+#### ðŸ”„ **Controlar Containers**
+- **Restart**: Reinicia o container (Ãºtil para recarga de cÃ³digo)
 - **Stop**: Para o container
-- **Logs**: Visualiza os últimos 100 logs do container
+- **Logs**: Visualiza os Ãºltimos 100 logs do container
 
-#### 📋 **Logs Consolidados**
+#### ðŸ“‹ **Logs Consolidados**
 - Acesse: `/admin/logs`
-- Filtre por container específico
-- Ajuste número de linhas (10-1000)
+- Filtre por container especÃ­fico
+- Ajuste nÃºmero de linhas (10-1000)
 - Auto-refresh a cada 5 segundos
 - Copie logs para clipboard
 
-#### ❤️ **Health Check**
+#### â¤ï¸ **Health Check**
 - Acesse: `/admin/health`
-- Veja saúde de todos os serviços
-- Histórico das últimas 20 verificações
+- Veja saÃºde de todos os serviÃ§os
+- HistÃ³rico das Ãºltimas 20 verificaÃ§Ãµes
 - Status geral do sistema
 
-## 📈 Recursos
+## ðŸ“ˆ Recursos
 
 ### Monitoramento em Tempo Real
-- **Atualização automática**: A cada 30 segundos
+- **AtualizaÃ§Ã£o automÃ¡tica**: A cada 30 segundos
 - **Polling via HTTP**: Sem necessidade de WebSocket
-- **Métricas por container**:
+- **MÃ©tricas por container**:
   - CPU %
   - Memory (formato: `256M / 1G`)
   - Status
   - Health Check
 
 ### Sistema Stats
-- CPU Cores disponíveis
+- CPU Cores disponÃ­veis
 - Total de RAM
-- RAM disponível
+- RAM disponÃ­vel
 - Percentual de uso da RAM
 - Platform (Linux/Windows/macOS)
 - Uptime do sistema
 
 ### Controle de Containers
-Todos os endpoints POST requerem autenticação (já integrado via `authPlugin` do Fastify):
+Todos os endpoints POST requerem autenticaÃ§Ã£o (jÃ¡ integrado via `authPlugin` do Fastify):
 
 ```bash
-# Exemplos de curl (local, sem autenticação em dev)
+# Exemplos de curl (local, sem autenticaÃ§Ã£o em dev)
 curl -X POST http://localhost:4000/api/admin/container/api/restart
 curl -X POST http://localhost:4000/api/admin/container/web/stop
 curl -X POST http://localhost:4000/api/admin/container/postgres/start
 ```
 
-## 🔧 Endpoints de API
+## ðŸ”§ Endpoints de API
 
-Todos os endpoints estão sob `/api/admin`:
+Todos os endpoints estÃ£o sob `/api/admin`:
 
-| Método | Endpoint | Descrição |
+| MÃ©todo | Endpoint | DescriÃ§Ã£o |
 |--------|----------|-----------|
 | GET | `/api/admin/containers` | Lista todos os containers + stats do sistema |
-| GET | `/api/admin/container/:name/stats` | Stats de um container específico |
+| GET | `/api/admin/container/:name/stats` | Stats de um container especÃ­fico |
 | GET | `/api/admin/container/:name/logs?tail=50` | Logs de um container |
 | POST | `/api/admin/container/:name/restart` | Reinicia container |
 | POST | `/api/admin/container/:name/stop` | Para container |
 | POST | `/api/admin/container/:name/start` | Inicia container |
 | GET | `/api/admin/system` | Stats do sistema |
-| GET | `/health` | Health check básico |
+| GET | `/health` | Health check bÃ¡sico |
 
-## 🛠️ Troubleshooting
+## ðŸ› ï¸ Troubleshooting
 
-### "Containers não aparecem no dashboard"
-1. Certifique-se que os containers estão rodando: `docker ps`
-2. Verifique se a API está online: `curl http://localhost:4000/health`
+### "Containers nÃ£o aparecem no dashboard"
+1. Certifique-se que os containers estÃ£o rodando: `docker ps`
+2. Verifique se a API estÃ¡ online: `curl http://localhost:4000/health`
 3. Verifique o console do navegador para erros
 
 ### "CPU/Memory mostra 0%"
-- Em alguns ambientes, `docker stats` pode não estar disponível
+- Em alguns ambientes, `docker stats` pode nÃ£o estar disponÃ­vel
 - Neste caso, implemente fallback usando `docker inspect`
-- Veja opções em `apps/api/src/routes/admin.ts:getContainerStats()`
+- Veja opÃ§Ãµes em `apps/atendimento-online-api/src/routes/admin.ts:getContainerStats()`
 
-### "Buttons não funcionam"
+### "Buttons nÃ£o funcionam"
 1. Verifique logs da API: `docker logs api`
-2. Certifique-se que Docker CLI está disponível: `docker --version`
-3. Verifique permissões do container para acessar docker socket
+2. Certifique-se que Docker CLI estÃ¡ disponÃ­vel: `docker --version`
+3. Verifique permissÃµes do container para acessar docker socket
 
 ### "Docker Desktop continua travando"
-- Use `docker-compose.dev.yml` com configuração otimizada
-- Reduza memory limits se necessário
+- Use `docker-compose.dev.yml` com configuraÃ§Ã£o otimizada
+- Reduza memory limits se necessÃ¡rio
 - Compare com `docker-compose.prod.yml`
 
-## 📱 Responsive Design
+## ðŸ“± Responsive Design
 
-O Dashboard é otimizado para:
-- ✅ Desktop (1920x1080+)
-- ✅ Tablet (iPad)
-- ✅ Mobile (via sidebar colapsável - pode ser implementado)
+O Dashboard Ã© otimizado para:
+- âœ… Desktop (1920x1080+)
+- âœ… Tablet (iPad)
+- âœ… Mobile (via sidebar colapsÃ¡vel - pode ser implementado)
 
-## 🔐 Segurança
+## ðŸ” SeguranÃ§a
 
 ### Em Desenvolvimento
-- Endpoints de admin estão **disponíveis sem autenticação**
-- Útil para desenvolvimento local
+- Endpoints de admin estÃ£o **disponÃ­veis sem autenticaÃ§Ã£o**
+- Ãštil para desenvolvimento local
 
-### Em Produção
-- **IMPORTANTE**: Adicione verificação de autenticação
-- Modifique `apps/api/src/routes/admin.ts` para verificar:
+### Em ProduÃ§Ã£o
+- **IMPORTANTE**: Adicione verificaÃ§Ã£o de autenticaÃ§Ã£o
+- Modifique `apps/atendimento-online-api/src/routes/admin.ts` para verificar:
 ```typescript
 app.post('/api/admin/container/:name/restart', async (request, reply) => {
-  // Adicione verificação de admin:
+  // Adicione verificaÃ§Ã£o de admin:
   if (!request.user?.isAdmin) {
     return reply.status(403).send({ error: 'Forbidden' })
   }
-  // ... resto do código
+  // ... resto do cÃ³digo
 })
 ```
 
-- Ou use Fastify hooks para verificação global:
+- Ou use Fastify hooks para verificaÃ§Ã£o global:
 ```typescript
 app.register(async (fastify) => {
   fastify.addHook('onRequest', async (request, reply) => {
@@ -179,14 +179,14 @@ app.register(async (fastify) => {
 })
 ```
 
-## 📊 Docker Compose Dev vs Prod
+## ðŸ“Š Docker Compose Dev vs Prod
 
 ### docker-compose.dev.yml (Windows Development)
 ```yaml
 # Otimizado para Windows Docker Desktop
 API:
   cpus: '2'
-  memory: '1.5G'  # Reduzido para não travar
+  memory: '1.5G'  # Reduzido para nÃ£o travar
   NODE_ENV: development
   volumes: live mount com hot-reload
 
@@ -198,7 +198,7 @@ Web:
 
 ### docker-compose.prod.yml (Production)
 ```yaml
-# Configuração em produção
+# ConfiguraÃ§Ã£o em produÃ§Ã£o
 API:
   cpus: '2'
   memory: '2G'    # Mais generoso
@@ -212,18 +212,18 @@ Web:
   NODE_ENV: production
 ```
 
-## 🎯 Próximos Passos
+## ðŸŽ¯ PrÃ³ximos Passos
 
 ### Melhorias Opcionais
 1. **Socket.io em tempo real** - Substitua polling por push de eventos
-2. **Gráficos de histórico** - Use Chart.js ou similar para mostrar tendências
-3. **Alertas automáticos** - Notifique quando memória > 80%
-4. **Autenticação de painel** - Restrinja acesso a usuários admin
-5. **Docker stats avançado** - Mostrar network I/O, disk usage
+2. **GrÃ¡ficos de histÃ³rico** - Use Chart.js ou similar para mostrar tendÃªncias
+3. **Alertas automÃ¡ticos** - Notifique quando memÃ³ria > 80%
+4. **AutenticaÃ§Ã£o de painel** - Restrinja acesso a usuÃ¡rios admin
+5. **Docker stats avanÃ§ado** - Mostrar network I/O, disk usage
 6. **Terminal interativo** - Execute comandos no container via UI
-7. **Exportar métricas** - Prometheus/Grafana integration
+7. **Exportar mÃ©tricas** - Prometheus/Grafana integration
 
-### Implementação Rápida de Melhorias
+### ImplementaÃ§Ã£o RÃ¡pida de Melhorias
 
 #### 1. Real-time com Socket.io
 ```typescript
@@ -244,7 +244,7 @@ onMounted(() => {
 })
 ```
 
-#### 2. Gráficos com Chart.js
+#### 2. GrÃ¡ficos com Chart.js
 ```bash
 npm install chart.js vue-chartjs
 ```
@@ -258,32 +258,32 @@ const cpuHistory = ref([...])
 </script>
 ```
 
-## 📚 Arquivos Modificados
+## ðŸ“š Arquivos Modificados
 
 ```
-📦 apps/
- ├── 🔧 api/src/main.ts (ADD: import + register admin routes)
- ├── 📁 api/src/routes/admin.ts (NEW: 8 endpoints)
- └── 🔧 omni-nuxt-ui/
-     ├── app/components/Admin/ContainerMonitor.vue (NEW)
-     ├── app/composables/useAdminApi.ts (NEW)
-     └── app/pages/admin/
-         ├── admin.vue (NEW)
-         ├── containers.vue (NEW)
-         ├── logs.vue (NEW)
-         └── health.vue (NEW)
+ðŸ“¦ apps/
+ â”œâ”€â”€ ðŸ”§ api/src/main.ts (ADD: import + register admin routes)
+ â”œâ”€â”€ ðŸ“ api/src/routes/admin.ts (NEW: 8 endpoints)
+ â””â”€â”€ ðŸ”§ painel-web/
+     â”œâ”€â”€ app/components/Admin/ContainerMonitor.vue (NEW)
+     â”œâ”€â”€ app/composables/useAdminApi.ts (NEW)
+     â””â”€â”€ app/pages/admin/
+         â”œâ”€â”€ admin.vue (NEW)
+         â”œâ”€â”€ containers.vue (NEW)
+         â”œâ”€â”€ logs.vue (NEW)
+         â””â”€â”€ health.vue (NEW)
 
-🐳 docker-compose.dev.yml (NEW)
+ðŸ³ docker-compose.dev.yml (NEW)
 ```
 
-## 💡 Dicas
+## ðŸ’¡ Dicas
 
-1. **Desenvolva mais rápido**: Com o dashboard, você não precisa abrir terminal para reiniciar containers
-2. **Monitore em tempo real**: Veja imediatamente o impacto de mudanças no código
-3. **Débug facilitado**: Acesse logs diretamente da UI
-4. **Menos context switching**: Tudo dentro da aplicação
+1. **Desenvolva mais rÃ¡pido**: Com o dashboard, vocÃª nÃ£o precisa abrir terminal para reiniciar containers
+2. **Monitore em tempo real**: Veja imediatamente o impacto de mudanÃ§as no cÃ³digo
+3. **DÃ©bug facilitado**: Acesse logs diretamente da UI
+4. **Menos context switching**: Tudo dentro da aplicaÃ§Ã£o
 
-## 🎬 Quick Start
+## ðŸŽ¬ Quick Start
 
 ```bash
 # Inicie tudo
@@ -297,4 +297,4 @@ docker-compose -f docker-compose.dev.yml up -d
 
 ---
 
-**Desenvolvido para melhorar a experiência de desenvolvimento local! 🚀**
+**Desenvolvido para melhorar a experiÃªncia de desenvolvimento local! ðŸš€**

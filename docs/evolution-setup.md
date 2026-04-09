@@ -40,7 +40,7 @@ Exemplo funcional para o seu compose atual:
 
 ```env
 API_BODY_LIMIT_MB=80
-EVOLUTION_BASE_URL=http://evolution:8080
+EVOLUTION_BASE_URL=http://whatsapp-evolution-gateway:8080
 EVOLUTION_API_KEY=troque-por-chave-forte
 EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7
 EVOLUTION_CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472
@@ -54,7 +54,7 @@ EVOLUTION_SEND_REACTION_PATH=/message/sendReaction/:instance
 EVOLUTION_REQUEST_TIMEOUT_MS=90000
 EVOLUTION_DEFAULT_INSTANCE=demo-instance
 EVOLUTION_WEBHOOK_TOKEN=troque-token-webhook
-WEBHOOK_RECEIVER_BASE_URL=http://api:4000
+WEBHOOK_RECEIVER_BASE_URL=http://atendimento-online-api:4000
 ```
 
 Explicacao:
@@ -80,7 +80,7 @@ Explicacao:
 10. `EVOLUTION_CONFIG_SESSION_PHONE_VERSION`:
    versao de sessao do WhatsApp (ajuda quando aparece `statusReason: 405`).
 11. `EVOLUTION_DATABASE_URL`:
-   conexao da Evolution no Postgres (schema separado `evolution`).
+   conexao da Evolution no Postgres (schema separado `whatsapp-evolution-gateway`).
 12. `EVOLUTION_DEFAULT_INSTANCE`:
    fallback se tenant nao tiver instancia definida.
 13. `EVOLUTION_WEBHOOK_TOKEN`:
@@ -154,7 +154,7 @@ Correcao:
 1. Usar imagem mais recente (`evoapicloud/evolution-api:v2.3.7` ou `latest`).
 2. Definir `EVOLUTION_CONFIG_SESSION_PHONE_VERSION` no `.env`.
 3. Reiniciar a stack de canais e recriar a instancia:
-   - `docker compose --profile channels up -d evolution`
+   - `docker compose --profile channels up -d whatsapp-evolution-gateway`
    - `POST /tenant/whatsapp/bootstrap`
 
 ## Observacao importante sobre webhook em producao
@@ -168,12 +168,12 @@ Sem isso, a Evolution nao consegue chamar o webhook inbound.
 ## Onde essa configuracao e usada no codigo
 
 1. Parse de env:
-   `apps/api/src/config.ts`
+   `apps/atendimento-online-api/src/config.ts`
 2. Cliente Evolution:
-   `apps/api/src/services/evolution-client.ts`
+   `apps/atendimento-online-api/src/services/evolution-client.ts`
 3. Bootstrap/connect/status do tenant:
-   `apps/api/src/routes/tenant.ts`
+   `apps/atendimento-online-api/src/routes/tenant.ts`
 4. Recebimento de webhook:
-   `apps/api/src/routes/webhooks.ts`
+   `apps/atendimento-online-api/src/routes/webhooks.ts`
 5. Envio outbound no worker:
-   `apps/api/src/workers/outbound-worker.ts`
+   `apps/atendimento-online-api/src/workers/outbound-worker.ts`

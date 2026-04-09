@@ -10,13 +10,12 @@ dist
 .nuxt
 .data
 
-apps/api/node_modules
-apps/api/dist
-apps/api/prisma/dev.db
+apps/atendimento-online-api/node_modules
+apps/atendimento-online-api/dist
+apps/atendimento-online-api/prisma/dev.db
 
-apps/web/node_modules
-apps/web/.nuxt
-apps/web/.output
+apps/painel-web/node_modules
+apps/painel-web/.nuxt
+apps/painel-web/.output
 
 volumes
-

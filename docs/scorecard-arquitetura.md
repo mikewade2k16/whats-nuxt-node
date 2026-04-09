@@ -13,7 +13,7 @@ Como a nota e calculada no portal `/docs`:
 ## Arquitetura base
 
 - [x] API e worker stateless.
-- [x] Separacao de responsabilidades (`web`, `api`, `worker`, `db`, `queue`).
+- [x] Separacao de responsabilidades (`painel-web`, `atendimento-online-api`, `atendimento-online-worker`, `db`, `queue`).
 - [x] Isolamento multi-tenant no backend.
 - [-] Padrao de modulo plugavel fechado em todos os dominios.
 - [ ] Contratos de integracao 100% versionados.

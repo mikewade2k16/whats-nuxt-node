@@ -1,5 +1,5 @@
 #!/bin/bash
-# Health Check - Verifica saúde de todos os endpoints da aplicação
+# Health Check - Verifica saÃºde de todos os endpoints da aplicaÃ§Ã£o
 
 set -e
 
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Configurações
+# ConfiguraÃ§Ãµes
 API_URL="${API_URL:-http://localhost:4000}"
 CORE_URL="${CORE_URL:-http://localhost:4100}"
 WEB_URL="${WEB_URL:-http://localhost:3000}"
@@ -26,7 +26,7 @@ TIMEOUT="${TIMEOUT:-5}"
 PASSED=0
 FAILED=0
 
-# Funções
+# FunÃ§Ãµes
 check_http_endpoint() {
     local name=$1
     local url=$2
@@ -35,10 +35,10 @@ check_http_endpoint() {
     echo -n "Checando ${name}... "
     
     if curl -s -f -m "$timeout" "$url" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ OK${NC}"
+        echo -e "${GREEN}âœ… OK${NC}"
         ((PASSED++))
     else
-        echo -e "${RED}❌ FALHOU${NC}"
+        echo -e "${RED}âŒ FALHOU${NC}"
         ((FAILED++))
     fi
 }
@@ -51,10 +51,10 @@ check_tcp_port() {
     echo -n "Checando ${name}... "
     
     if timeout "$TIMEOUT" bash -c "</dev/tcp/${host}/${port}" 2>/dev/null; then
-        echo -e "${GREEN}✅ OK${NC}"
+        echo -e "${GREEN}âœ… OK${NC}"
         ((PASSED++))
     else
-        echo -e "${RED}❌ FALHOU${NC}"
+        echo -e "${RED}âŒ FALHOU${NC}"
         ((FAILED++))
     fi
 }
@@ -65,10 +65,10 @@ check_redis() {
     local result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping 2>/dev/null || echo "PONG_FAIL")
     
     if [ "$result" = "PONG" ]; then
-        echo -e "${GREEN}✅ OK${NC}"
+        echo -e "${GREEN}âœ… OK${NC}"
         ((PASSED++))
     else
-        echo -e "${RED}❌ FALHOU${NC}"
+        echo -e "${RED}âŒ FALHOU${NC}"
         ((FAILED++))
     fi
 }
@@ -79,10 +79,10 @@ check_postgres() {
     local result=$(PGPASSWORD-$DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" 2>/dev/null || echo "FAIL")
     
     if [ "$result" = *"1 row"* ] || [ "$result" = *"1"* ]; then
-        echo -e "${GREEN}✅ OK${NC}"
+        echo -e "${GREEN}âœ… OK${NC}"
         ((PASSED++))
     else
-        echo -e "${YELLOW}⚠️  PUXAR (sem psql instalado)${NC}"
+        echo -e "${YELLOW}âš ï¸  PUXAR (sem psql instalado)${NC}"
     fi
 }
 
@@ -94,14 +94,14 @@ get_container_stats() {
 }
 
 # Header
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║          HEALTH CHECK - $(date '+%Y-%m-%d %H:%M:%S')              ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}\n"
+echo -e "${BLUE}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+echo -e "${BLUE}â•‘          HEALTH CHECK - $(date '+%Y-%m-%d %H:%M:%S')              â•‘${NC}"
+echo -e "${BLUE}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
 # Checar endpoints HTTP
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
 echo -e "${BLUE}HTTP ENDPOINTS${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
 check_http_endpoint "API Health" "$API_URL/health" "$TIMEOUT"
 check_http_endpoint "API Ready" "$API_URL/ready" "$TIMEOUT"
@@ -109,45 +109,45 @@ check_http_endpoint "Core API" "$CORE_URL/health" "$TIMEOUT"
 check_http_endpoint "Web App" "$WEB_URL" "$TIMEOUT"
 
 # Checar portas TCP
-echo -e "\n${BLUE}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}SERVIÇOS TCP${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
+echo -e "\n${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
+echo -e "${BLUE}SERVIÃ‡OS TCP${NC}"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
 check_tcp_port "PostgreSQL" "$DB_HOST" "$DB_PORT"
 check_tcp_port "Redis" "$REDIS_HOST" "$REDIS_PORT"
 
 # Checar dados
-echo -e "\n${BLUE}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}SERVIÇOS DATA${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
+echo -e "\n${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
+echo -e "${BLUE}SERVIÃ‡OS DATA${NC}"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
 check_redis
 check_postgres
 
-# Estatísticas de containers
-echo -e "\n${BLUE}═══════════════════════════════════════════════════════════${NC}"
+# EstatÃ­sticas de containers
+echo -e "\n${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
 echo -e "${BLUE}USO DE RECURSOS${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
-for container in postgres redis api platform-core worker web; do
+for container in postgres redis atendimento-online-api plataforma-api atendimento-online-worker atendimento-online-retencao-worker painel-web whatsapp-evolution-gateway; do
     if docker ps --filter "name=omnichannel-mvp-$container" -q | grep -q . 2>/dev/null; then
         get_container_stats "omnichannel-mvp-$container"
     fi
-done 2>/dev/null || echo "Docker containers não encontrados"
+done 2>/dev/null || echo "Docker containers nÃ£o encontrados"
 
 # Resumo
-echo -e "\n${BLUE}═══════════════════════════════════════════════════════════${NC}"
+echo -e "\n${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
 echo -e "${BLUE}RESUMO${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
+echo -e "${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}\n"
 
 TOTAL=$((PASSED + FAILED))
 
 if [ $FAILED -eq 0 ]; then
-    echo -e "${GREEN}✅ Todos os serviços estão saudáveis!${NC}"
+    echo -e "${GREEN}âœ… Todos os serviÃ§os estÃ£o saudÃ¡veis!${NC}"
     echo -e "  Passaram: ${PASSED}/${TOTAL}"
     exit 0
 else
-    echo -e "${RED}❌ Alguns serviços estão com problemas${NC}"
+    echo -e "${RED}âŒ Alguns serviÃ§os estÃ£o com problemas${NC}"
     echo -e "  Passaram: ${PASSED}/${TOTAL}"
     echo -e "  Falharam: ${RED}${FAILED}${NC}/${TOTAL}"
     exit 1

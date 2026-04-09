@@ -8,7 +8,7 @@ Comando padrao (recomendado):
 powershell -ExecutionPolicy Bypass -File .\scripts\docker-recover.ps1
 ```
 
-Se alterou codigo Go do `platform-core` e quer rebuild junto:
+Se alterou codigo Go do `plataforma-api` e quer rebuild junto:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\docker-recover.ps1 -RebuildCore
@@ -16,7 +16,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\docker-recover.ps1 -RebuildCo
 
 Observacoes pendentes para tratar depois do destrave de infra:
 - `nuxi prepare` no host Windows continua falhando por `oxc-transform` nativo; isso esta classificado como problema de ambiente local, nao como regressao funcional do painel.
-- `npm run build` completo de `apps/api` continua falhando por um conjunto antigo de erros de tipagem/Prisma ja existentes no projeto; enquanto isso, validamos isoladamente os arquivos alterados neste sprint.
+- `npm run build` completo de `apps/atendimento-online-api` continua falhando por um conjunto antigo de erros de tipagem/Prisma ja existentes no projeto; enquanto isso, validamos isoladamente os arquivos alterados neste sprint.
 
 Fallback manual:
 
@@ -56,14 +56,14 @@ docker compose -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.dev.yml ps
 ```
 
-Se `platform-core` foi alterado no codigo Go, rebuild apenas dele:
+Se `plataforma-api` foi alterado no codigo Go, rebuild apenas dele:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d --build platform-core
+docker compose -f docker-compose.dev.yml up -d --build plataforma-api
 ```
 ## Fix Rapido - Evolution Reiniciando (P1001 / sem WhatsApp conectado)
 
-Sintoma comum apos trocar compose: container `evolution` em restart loop e mensagem "Nenhum WhatsApp conectado para este tenant".
+Sintoma comum apos trocar compose: container `whatsapp-evolution-gateway` em restart loop e mensagem "Nenhum WhatsApp conectado para este tenant".
 
 Passos de recuperacao:
 
@@ -105,9 +105,9 @@ Observacao:
 
 # Guia de Troubleshooting - Docker & Infraestrutura
 
-## 📋 Índice Rápido
+## Ã°Å¸â€œâ€¹ ÃƒÂndice RÃƒÂ¡pido
 1. [Containers Caindo](#containers-caindo)
-2. [Memória/CPU Alta](#memoriacpu-alta)
+2. [MemÃƒÂ³ria/CPU Alta](#memoriacpu-alta)
 3. [Problemas de Conectividade](#problemas-de-conectividade)
 4. [Performance Lenta](#performance-lenta)
 5. [Banco de Dados](#banco-de-dados)
@@ -116,7 +116,7 @@ Observacao:
 
 ---
 
-## 🔴 CONTAINERS CAINDO
+## Ã°Å¸â€Â´ CONTAINERS CAINDO
 
 ### Sintoma: Container reiniciando continuamente
 
@@ -125,11 +125,11 @@ docker-compose logs api
 # Procurar por: "Exited with code 1" ou "Exit code 137" (OOM)
 ```
 
-**Código 137 = Out of Memory (OOM)**
-- Memória insuficiente
+**CÃƒÂ³digo 137 = Out of Memory (OOM)**
+- MemÃƒÂ³ria insuficiente
 - Limite muito baixo
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```yaml
 # docker-compose.prod.yml
 services:
@@ -137,17 +137,17 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G  # Aumentar se necessário
+          memory: 1G  # Aumentar se necessÃƒÂ¡rio
 ```
 
-### Sintoma: Container saudável mas aplicação não responde
+### Sintoma: Container saudÃƒÂ¡vel mas aplicaÃƒÂ§ÃƒÂ£o nÃƒÂ£o responde
 
 **Causa:** Sem health check adequado
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
 # Testar manualmente
-docker-compose exec api curl http://localhost:4000/health
+docker-compose exec atendimento-online-api curl http://localhost:4000/health
 
 # Se retornar erro, verificar logs
 docker-compose logs api --tail=50
@@ -155,25 +155,25 @@ docker-compose logs api --tail=50
 
 ### Sintoma: Todos os containers caem quando um cai
 
-**Causa:** Dependências configuradas incorretamente
+**Causa:** DependÃƒÂªncias configuradas incorretamente
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```yaml
 depends_on:
   postgres:
-    condition: service_healthy  # ✅ Espera healthcheck
+    condition: service_healthy  # Ã¢Å“â€¦ Espera healthcheck
   redis:
-    condition: service_ready    # ✅ Espera porta
+    condition: service_ready    # Ã¢Å“â€¦ Espera porta
 ```
 
 ---
 
-## 💾 MEMÓRIA/CPU ALTA
+## Ã°Å¸â€™Â¾ MEMÃƒâ€œRIA/CPU ALTA
 
 ### Diagnosticar uso de recursos
 
 ```bash
-# Ver métricas em tempo real
+# Ver mÃƒÂ©tricas em tempo real
 docker stats --no-stream
 
 # Ver limites
@@ -190,13 +190,13 @@ docker inspect container_name | grep -A 5 "MemoryLimit"
 **Verificar:**
 ```bash
 # Ver processo Node
-docker-compose exec api ps aux | grep node
+docker-compose exec atendimento-online-api ps aux | grep node
 
 # Verificar heap size
 docker inspect container_name | grep NODE_OPTIONS
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```env
 NODE_OPTIONS=--max-old-space-size=512 \
              --max-semi-space-size=256 \
@@ -206,13 +206,13 @@ NODE_OPTIONS=--max-old-space-size=512 \
 
 ### PostgreSQL consumindo muita RAM
 
-**Verificar conexões:**
+**Verificar conexÃƒÂµes:**
 ```bash
 docker-compose exec postgres psql -U omnichannel -d omnichannel \
   -c "SELECT datname, count(*) FROM pg_stat_activity GROUP BY datname;"
 ```
 
-**Limitar conexões:**
+**Limitar conexÃƒÂµes:**
 ```bash
 # postgres.conf em container
 max_connections = 100
@@ -231,12 +231,12 @@ docker-compose exec redis redis-cli info memory
 ```
 
 **Problema:** `maxmemory-policy=noeviction`
-- Retorna erro para TODAS as operações
+- Retorna erro para TODAS as operaÃƒÂ§ÃƒÂµes
 - API cai com "Redis is full"
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
-# Mudar política
+# Mudar polÃƒÂ­tica
 docker-compose exec redis redis-cli config set maxmemory-policy allkeys-lru
 
 # Ou no compose:
@@ -248,29 +248,29 @@ command:
 
 ---
 
-## 🌐 PROBLEMAS DE CONECTIVIDADE
+## Ã°Å¸Å’Â PROBLEMAS DE CONECTIVIDADE
 
-### API não consegue conectar ao Banco
+### API nÃƒÂ£o consegue conectar ao Banco
 
 **Verificar:**
 ```bash
 # De dentro do container API
-docker-compose exec api wget -O- http://postgres:5432/
-# Não precisa responder, só verificar se conecta
+docker-compose exec atendimento-online-api wget -O- http://postgres:5432/
+# NÃƒÂ£o precisa responder, sÃƒÂ³ verificar se conecta
 
 # Verificar DNS
-docker-compose exec api nslookup postgres
+docker-compose exec atendimento-online-api nslookup postgres
 
-# Testar conexão direta
-docker-compose exec api psql -h postgres -U omnichannel -d omnichannel -c "SELECT 1"
+# Testar conexÃƒÂ£o direta
+docker-compose exec atendimento-online-api psql -h postgres -U omnichannel -d omnichannel -c "SELECT 1"
 ```
 
 **Causas comuns:**
-1. PostgreSQL não está saudável
+1. PostgreSQL nÃƒÂ£o estÃƒÂ¡ saudÃƒÂ¡vel
 2. Porta 5432 bloqueada
 3. Credenciais incorretas
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
 # Aguardar postgres iniciar
 docker-compose up -d postgres
@@ -280,7 +280,7 @@ docker-compose up -d --wait api  # Aguarda dependencies
 docker-compose logs postgres | grep "ready"
 ```
 
-### Frontend não consegue conectar ao API
+### Frontend nÃƒÂ£o consegue conectar ao API
 
 **Verificar:**
 ```bash
@@ -288,10 +288,10 @@ docker-compose logs postgres | grep "ready"
 curl -v http://localhost:4000/health
 
 # Do container web
-docker-compose exec web curl http://api:4000/health
+docker-compose exec painel-web curl http://atendimento-online-api:4000/health
 
 # Verificar URL configurada
-docker-compose exec web cat /app/.env | grep NUXT_API
+docker-compose exec painel-web cat /app/.env | grep NUXT_API
 ```
 
 **Causa:** CORS bloqueado
@@ -301,24 +301,24 @@ docker-compose exec web cat /app/.env | grep NUXT_API
 docker-compose logs api | grep -i "cors\|origin"
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```env
 CORS_ORIGIN=http://localhost:3000,http://api.dominio.com
 ```
 
-### Evolution API não consegue salvar em banco
+### Evolution API nÃƒÂ£o consegue salvar em banco
 
 **Verificar:**
 ```bash
-docker-compose logs evolution | grep -i "connection\|database\|error"
+docker-compose logs whatsapp-evolution-gateway | grep -i "connection\|database\|error"
 
-# Testar conexão direto
-docker-compose exec evolution psql -c "SELECT 1"
+# Testar conexÃƒÂ£o direto
+docker-compose exec whatsapp-evolution-gateway psql -c "SELECT 1"
 ```
 
 ---
 
-## ⚡ PERFORMANCE LENTA
+## Ã¢Å¡Â¡ PERFORMANCE LENTA
 
 ### API respondendo lentamente
 
@@ -327,8 +327,8 @@ docker-compose exec evolution psql -c "SELECT 1"
 # Medir tempo de resposta
 time curl http://localhost:4000/health
 
-# Ver se é código ou IO
-docker-compose exec api curl http://localhost:4000/debug/profile
+# Ver se ÃƒÂ© cÃƒÂ³digo ou IO
+docker-compose exec atendimento-online-api curl http://localhost:4000/debug/profile
 
 # Checar CPU
 docker stats api --no-stream
@@ -336,20 +336,20 @@ docker stats api --no-stream
 
 **Se CPU alta:**
 - Alguma query SQL pesada
-- Processamento de imagem/vídeo
-- Muitos clientes simultâneos
+- Processamento de imagem/vÃƒÂ­deo
+- Muitos clientes simultÃƒÂ¢neos
 
 **Verificar:**
 ```bash
 docker-compose logs api | grep -i "slow\|took\|ms"
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```sql
--- Adicionar índices
+-- Adicionar ÃƒÂ­ndices
 CREATE INDEX idx_messages_created_at ON messages(created_at);
 
--- Verificar plano de execução
+-- Verificar plano de execuÃƒÂ§ÃƒÂ£o
 EXPLAIN ANALYZE SELECT ...;
 ```
 
@@ -362,17 +362,17 @@ EXPLAIN ANALYZE SELECT ...;
 // nuxt preview - melhor para testes
 ```
 
-**Causa 2:** Muitas dependências
+**Causa 2:** Muitas dependÃƒÂªncias
 
 ```bash
 # Verificar tamanho
-du -sh apps/omni-nuxt-ui/node_modules
+du -sh apps/painel-web/node_modules
 
 # Limpar
 npm ci --omit=dev
 ```
 
-**Solução (docker-compose.prod):**
+**SoluÃƒÂ§ÃƒÂ£o (docker-compose.prod):**
 ```dockerfile
 # Build em prod
 FROM base AS prod
@@ -387,7 +387,7 @@ CMD ["npm", "run", "preview"]  # Ou usar production server
 docker-compose exec redis redis-cli --latency
 docker-compose exec redis redis-cli --latency-history
 
-# Ver operações lentas
+# Ver operaÃƒÂ§ÃƒÂµes lentas
 docker-compose exec redis redis-cli slowlog get 10
 ```
 
@@ -395,9 +395,9 @@ docker-compose exec redis redis-cli slowlog get 10
 
 ---
 
-## 🗄️ BANCO DE DADOS
+## Ã°Å¸â€”â€žÃ¯Â¸Â BANCO DE DADOS
 
-### PostgreSQL não inicia
+### PostgreSQL nÃƒÂ£o inicia
 
 **Verificar logs:**
 ```bash
@@ -405,11 +405,11 @@ docker-compose logs postgres
 ```
 
 **Causas:**
-1. Primeira inicialização - pode demorar minutos
+1. Primeira inicializaÃƒÂ§ÃƒÂ£o - pode demorar minutos
 2. Arquivo corrupto
-3. Permissões de volume
+3. PermissÃƒÂµes de volume
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
 # Aguardar pacientemente
 docker-compose logs postgres --follow
@@ -425,7 +425,7 @@ while true; do
 done
 ```
 
-### Conexões PostgreSQL travadas
+### ConexÃƒÂµes PostgreSQL travadas
 
 **Verificar:**
 ```bash
@@ -433,21 +433,21 @@ docker-compose exec postgres psql -U omnichannel -d omnichannel \
   -c "SELECT * FROM pg_stat_activity WHERE state != 'idle';"
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
-# Matar conexão travada
+# Matar conexÃƒÂ£o travada
 docker-compose exec postgres psql -U omnichannel -d omnichannel \
   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid != pg_backend_pid();"
 ```
 
-### Espaço em disco cheio
+### EspaÃƒÂ§o em disco cheio
 
 **Verificar:**
 ```bash
 df -h
 docker system df
 
-# Volume específico
+# Volume especÃƒÂ­fico
 docker inspect postgres_data | grep Mountpoint
 du -sh /var/lib/docker/volumes/..._postgres_data/_data
 ```
@@ -467,11 +467,11 @@ docker-compose exec postgres rm -rf /var/lib/postgresql/data/pg_wal/*
 
 ---
 
-## 🔴 REDIS/CACHE
+## Ã°Å¸â€Â´ REDIS/CACHE
 
-### Redis rejeitando conexões
+### Redis rejeitando conexÃƒÂµes
 
-**Erro típico:**
+**Erro tÃƒÂ­pico:**
 ```
 CLUSTERDOWN The cluster is down
 OOM command not allowed when used memory > 'maxmemory'
@@ -483,18 +483,18 @@ docker-compose exec redis redis-cli info memory
 # Procurar: used_memory vs maxmemory
 
 docker-compose exec redis redis-cli config get maxmemory-policy
-# Deve ser: allkeys-lru (ou outro, não noeviction)
+# Deve ser: allkeys-lru (ou outro, nÃƒÂ£o noeviction)
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```bash
 # Aumentar limite
 docker-compose exec redis redis-cli config set maxmemory 512mb
 
-# Mudar política
+# Mudar polÃƒÂ­tica
 docker-compose exec redis redis-cli config set maxmemory-policy allkeys-lru
 
-# Salvar configuração
+# Salvar configuraÃƒÂ§ÃƒÂ£o
 docker-compose exec redis redis-cli bgsave
 ```
 
@@ -508,7 +508,7 @@ docker-compose exec redis redis-cli config get save
 docker-compose exec redis redis-cli config get appendonly
 ```
 
-**Solução (prod):**
+**SoluÃƒÂ§ÃƒÂ£o (prod):**
 ```yaml
 command:
   - redis-server
@@ -520,13 +520,13 @@ command:
 
 ---
 
-## 🟢 EVOLUTION API
+## Ã°Å¸Å¸Â¢ EVOLUTION API
 
-### Evolution não salva instâncias
+### Evolution nÃƒÂ£o salva instÃƒÂ¢ncias
 
 **Verificar:**
 ```bash
-docker-compose logs evolution | head -50
+docker-compose logs whatsapp-evolution-gateway | head -50
 # Procurar: connection, database, error
 
 # Volume
@@ -546,26 +546,26 @@ WHERE table_schema = 'public'
 ORDER BY pg_total_relation_size(table_schema||'.'||table_name) DESC;
 ```
 
-**Solução:**
+**SoluÃƒÂ§ÃƒÂ£o:**
 ```yaml
 # docker-compose.prod.yml
 environment:
-  DATABASE_SAVE_DATA_HISTORIC: "false"  # Não salvar histórico
-  DATABASE_SAVE_MESSAGE_UPDATE: "false" # Não salvar updates
+  DATABASE_SAVE_DATA_HISTORIC: "false"  # NÃƒÂ£o salvar histÃƒÂ³rico
+  DATABASE_SAVE_MESSAGE_UPDATE: "false" # NÃƒÂ£o salvar updates
 ```
 
 ---
 
-## 🔧 FERRAMENTAS DE DEBUG
+## Ã°Å¸â€Â§ FERRAMENTAS DE DEBUG
 
 ### Ver logs em tempo real
 
 ```bash
-# Todos os serviços
+# Todos os serviÃƒÂ§os
 docker-compose logs -f
 
 # Apenas API
-docker-compose logs -f api --tail=50
+docker-compose logs -f atendimento-online-api --tail=50
 
 # Com grep
 docker-compose logs api | grep -i "error\|warn"
@@ -574,8 +574,8 @@ docker-compose logs api | grep -i "error\|warn"
 ### Entrar dentro de um container
 
 ```bash
-docker-compose exec api sh
-docker-compose exec api bash
+docker-compose exec atendimento-online-api sh
+docker-compose exec atendimento-online-api bash
 docker-compose exec postgres psql -U omnichannel -d omnichannel
 ```
 
@@ -583,7 +583,7 @@ docker-compose exec postgres psql -U omnichannel -d omnichannel
 
 ```bash
 docker-compose ps
-docker-compose exec api curl http://localhost:4000/health
+docker-compose exec atendimento-online-api curl http://localhost:4000/health
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
@@ -602,10 +602,10 @@ docker events --filter 'type=container'
 
 ---
 
-## 🚨 EMERGÊNCIA - RESET COMPLETO
+## Ã°Å¸Å¡Â¨ EMERGÃƒÅ NCIA - RESET COMPLETO
 
 ```bash
-# ⚠️ DESTRUTIVO - Remove tudo
+# Ã¢Å¡Â Ã¯Â¸Â DESTRUTIVO - Remove tudo
 
 # Parar tudo
 docker-compose down -v
@@ -613,7 +613,7 @@ docker-compose down -v
 # Remover volumes
 docker volume prune -f
 
-# Remover imagens não usadas
+# Remover imagens nÃƒÂ£o usadas
 docker image prune -f
 
 # Limpar sistema
@@ -625,11 +625,11 @@ docker system prune -f
 
 ---
 
-## 📞 SUPORTE
+## Ã°Å¸â€œÅ¾ SUPORTE
 
 Se o problema persistir:
 
-1. **Coletar diagnóstico:**
+1. **Coletar diagnÃƒÂ³stico:**
    ```bash
    docker-compose ps > diagnosis.txt
    docker-compose logs > logs.txt
@@ -637,11 +637,11 @@ Se o problema persistir:
    docker system df >> diagnosis.txt
    ```
 
-2. **Enviar informações:**
+2. **Enviar informaÃƒÂ§ÃƒÂµes:**
    - Arquivo `logs.txt`
    - Arquivo `diagnosis.txt`
    - Arquivo `.env` (sem senhas!)
-   - Descrição do problema
+   - DescriÃƒÂ§ÃƒÂ£o do problema
 
 
 

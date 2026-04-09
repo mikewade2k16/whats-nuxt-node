@@ -5,27 +5,27 @@
 1. Conferir se containers estao no ar:
    `docker compose ps`
 2. Ver logs da API:
-   `docker compose logs -f api`
+   `docker compose logs -f atendimento-online-api`
 3. Ver logs do worker:
-   `docker compose logs -f worker`
+   `docker compose logs -f atendimento-online-worker`
 4. Ver logs da Evolution:
-   `docker compose --profile channels logs -f evolution`
+   `docker compose --profile channels logs -f whatsapp-evolution-gateway`
 5. Healthcheck API:
    `http://localhost:4000/health`
 
 ## Checklist obrigatorio de compatibilidade (antes de debugar)
 
 1. Conferir versao do Nuxt UI:
-   - `apps/omni-nuxt-ui/package.json`
+   - `apps/painel-web/package.json`
    - Para componentes `Dashboard*`, usar `@nuxt/ui` v4+.
 2. Sempre que aparecer erro de componente ausente/invalido:
    - validar versoes de dependencias primeiro
    - depois validar imports explicitos do componente no arquivo de pagina/modulo
 3. Se houve upgrade de dependencia:
-   - rebuild do front (`docker compose exec web npm run build`)
-   - restart do container (`docker compose restart web`)
+   - rebuild do front (`docker compose exec painel-web npm run build`)
+   - restart do container (`docker compose restart painel-web`)
 4. Conferir configuracao do BFF:
-   - `NUXT_API_INTERNAL_BASE` precisa apontar para a API acessivel pelo container `web` (ex.: `http://api:4000`).
+   - `NUXT_API_INTERNAL_BASE` precisa apontar para a API acessivel pelo container `painel-web` (ex.: `http://atendimento-online-api:4000`).
    - `NUXT_PUBLIC_API_BASE` e usado no browser para realtime/socket (ex.: `http://localhost:4000`).
 
 ## Fluxo seguro para refactor de tela (evitar perda de codigo)
@@ -36,7 +36,7 @@
 4. Validar compatibilidade de versao primeiro quando aparecer erro de runtime de componente.
 5. Validar imports explicitos de todos componentes usados no template.
 6. Rodar build do front a cada etapa de extracao:
-   - `docker compose exec web npm run build`
+   - `docker compose exec painel-web npm run build`
 7. Registrar no documento:
    - arquivo novo
    - props/emits
@@ -92,7 +92,7 @@ Conexao no Adminer:
 
 Observacao:
 
-1. O `platform-core` usa o mesmo Postgres em schema separado (`platform_core` por padrao).
+1. O `plataforma-api` usa o mesmo Postgres em schema separado (`platform_core` por padrao).
 
 ## 0.6) Erro 500 no front apos remover rota legacy (`Cannot find module '/pages/auth/index.vue?macro=true'`)
 
@@ -102,21 +102,48 @@ Causa comum:
 
 Correcao:
 
-1. Recriar o `web` para forcar recompilacao limpa:
-   - `docker compose restart web`
+1. Recriar o `painel-web` para forcar recompilacao limpa:
+   - `docker compose restart painel-web`
+   - Observacao: o compose do projeto agora limpa `.nuxt`, `.output` e `.nitro` no boot do `painel-web` em modo dev para evitar mapa parcial de rotas apos adicionar/remover arquivos server-side.
 2. Se persistir, limpar cache de build no container e reiniciar:
-   - `docker compose exec web sh -lc "rm -rf /app/.nuxt /app/.output"`
-   - `docker compose restart web`
+   - `docker compose exec painel-web sh -lc "rm -rf /app/.nuxt /app/.output"`
+   - `docker compose restart painel-web`
 3. Validar:
    - `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/admin/login` deve retornar `200`
    - `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/auth/login` deve retornar `404`
+
+## 0.6.1) Nova rota em `server/api` existe no projeto, mas responde `404 Page not found` no painel
+
+Causa comum:
+
+1. O `painel-web` em dev subiu antes da criacao da nova rota e ficou com mapa parcial de rotas do Nitro/Nuxt.
+2. O HMR atualizou arquivos Vue/composables, mas o servidor em execucao nao reindexou as novas rotas server-side.
+
+Diagnostico:
+
+1. Compare uma rota antiga e uma rota nova do mesmo namespace:
+   - se a antiga responde `403` ou `200` e a nova responde `404`, o problema esta no processo em execucao do `painel-web`, nao no source atual.
+2. Verifique logs:
+   - `docker compose logs --tail=120 painel-web`
+   - `WARN [Vue Router warn]: No match found for location with path "/api/..."` costuma indicar que a rota nao entrou no runtime atual.
+
+Correcao:
+
+1. Reiniciar o servico:
+   - `docker compose restart painel-web`
+2. Se o compose ou o comando de boot mudou, recriar o service:
+   - `docker compose up -d --force-recreate painel-web`
+
+Observacao:
+
+1. O compose do projeto agora limpa `.nuxt`, `.output` e `.nitro` no boot do `painel-web` em modo dev para tornar esse restart deterministico quando novas server routes forem adicionadas.
 
 ## 0.7) Users/clients no modulo nao batem com painel core
 
 Causa comum:
 
-1. API do modulo ainda tentando usar dados legados locais sem sincronizar com `platform-core`.
-2. Credenciais de integracao com `platform-core` ausentes no `api`.
+1. API do modulo ainda tentando usar dados legados locais sem sincronizar com `plataforma-api`.
+2. Credenciais de integracao com `plataforma-api` ausentes no `atendimento-online-api`.
 
 Correcao:
 
@@ -125,7 +152,7 @@ Correcao:
    - `CORE_API_EMAIL`
    - `CORE_API_PASSWORD`
 2. Reiniciar a API:
-   - `docker compose restart api`
+   - `docker compose restart atendimento-online-api`
 3. Validar listagem:
    - `GET /users` (deve refletir tenant users do core)
    - `GET /clients` (deve refletir tenants visiveis no core)
@@ -137,14 +164,14 @@ Correcao:
 Causa comum:
 
 1. `NUXT_API_INTERNAL_BASE` ausente ou apontando para host errado.
-2. Container `web` nao consegue resolver host da API.
+2. Container `painel-web` nao consegue resolver host da API.
 
 Correcao:
 
 1. Ajustar `.env`:
-   - `NUXT_API_INTERNAL_BASE=http://api:4000`
+   - `NUXT_API_INTERNAL_BASE=http://atendimento-online-api:4000`
 2. Rebuild/restart do web:
-   - `docker compose up -d --build web`
+   - `docker compose up -d --build painel-web`
 3. Testar proxy direto:
    - `http://localhost:3000/api/bff/health`
 
@@ -152,16 +179,16 @@ Correcao:
 
 Causa comum:
 
-1. Container `web` nao foi recriado apos alterar `docker-compose.yml`.
-2. `PROJECT_DOCS_DIR` nao esta no ambiente do `web`.
-3. Volume `./docs:/project-docs:ro` nao foi montado no `web`.
+1. Container `painel-web` nao foi recriado apos alterar `docker-compose.yml`.
+2. `PROJECT_DOCS_DIR` nao esta no ambiente do `painel-web`.
+3. Volume `./docs:/project-docs:ro` nao foi montado no `painel-web`.
 
 Correcao:
 
-1. Recriar somente o `web`:
-   - `docker compose up -d --build --force-recreate web`
+1. Recriar somente o `painel-web`:
+   - `docker compose up -d --build --force-recreate painel-web`
 2. Validar dentro do container:
-   - `docker compose exec web sh -lc 'echo $PROJECT_DOCS_DIR && ls -la /project-docs'`
+   - `docker compose exec painel-web sh -lc 'echo $PROJECT_DOCS_DIR && ls -la /project-docs'`
 3. Se precisar, subir stack completa novamente:
    - `docker compose --profile channels up -d --build`
 
@@ -200,13 +227,13 @@ Causa comum:
 Ajuste aplicado no projeto:
 
 1. `api/worker/retention-worker/web` agora instalam dependencias apenas quando `node_modules` estiver vazio.
-2. `api` roda `prisma:push` e `prisma:seed` apenas no primeiro boot do volume `api_node_modules` (ou quando `API_DB_BOOTSTRAP_ALWAYS=true`).
+2. `atendimento-online-api` roda `prisma:push` e `prisma:seed` apenas no primeiro boot do volume `api_node_modules` (ou quando `API_DB_BOOTSTRAP_ALWAYS=true`).
 3. `NODE_OPTIONS` por servico foi exposto no `.env` para limitar heap em dev sem perder funcionalidade.
 
 Boas praticas de operacao local:
 
-1. Subir apenas o necessario para a tarefa atual (`docker compose up -d postgres redis api web`).
-2. Ativar `evolution` so quando for validar canal real (`--profile channels`).
+1. Subir apenas o necessario para a tarefa atual (`docker compose up -d postgres redis atendimento-online-api painel-web`).
+2. Ativar `whatsapp-evolution-gateway` so quando for validar canal real (`--profile channels`).
 3. Evitar rodar varias abas pesadas da inbox simultaneamente durante debug de frontend.
 
 ## 1) Login falha com "Credenciais invalidas"
@@ -219,8 +246,8 @@ Causa comum:
 Correcao:
 
 1. Reaplicar schema e seed:
-   - `docker compose exec api npm run prisma:push`
-   - `docker compose exec api npm run prisma:seed`
+   - `docker compose exec atendimento-online-api npm run prisma:push`
+   - `docker compose exec atendimento-online-api npm run prisma:seed`
 2. Testar com:
    - tenant `demo`
    - email `admin@demo.local`
@@ -240,7 +267,7 @@ Correcao:
 1. Validar worker:
    `docker compose ps worker`
 2. Logs do worker:
-   `docker compose logs -f worker`
+   `docker compose logs -f atendimento-online-worker`
 3. Consultar status em `/admin` no bloco WhatsApp.
 4. Confirmar env:
    - `EVOLUTION_BASE_URL`
@@ -272,13 +299,13 @@ Rotas:
 
 Causa comum:
 
-1. `api` e `worker` compartilhando o mesmo volume de `node_modules`.
+1. `atendimento-online-api` e `atendimento-online-worker` compartilhando o mesmo volume de `node_modules`.
 2. `prisma generate` rodando em paralelo nos dois servicos.
 
 Correcao:
 
 1. Usar volume dedicado para o worker (`worker_node_modules`).
-2. No `worker`, remover `prisma:push` do comando de bootstrap.
+2. No `atendimento-online-worker`, remover `prisma:push` do comando de bootstrap.
 3. Recriar containers:
    - `docker compose down`
    - `docker compose --profile channels up -d --build`
@@ -290,7 +317,7 @@ Correcao:
 Causa:
 
 1. O volume `worker_node_modules` guarda o Prisma Client gerado na primeira vez que o container subiu.
-2. Quando o schema Prisma e alterado (ex.: novo enum adicionado como `WhatsAppInstanceUserScopePolicy`), o `prisma:generate` do `api` atualiza o volume `api_node_modules`, mas o volume `worker_node_modules` fica com o client antigo.
+2. Quando o schema Prisma e alterado (ex.: novo enum adicionado como `WhatsAppInstanceUserScopePolicy`), o `prisma:generate` do `atendimento-online-api` atualiza o volume `api_node_modules`, mas o volume `worker_node_modules` fica com o client antigo.
 3. O startup do worker roda `prisma:generate`, mas o `tsx` pode usar o cache do client antigo antes da geracao completar, causando o crash em loop.
 
 Sintoma:
@@ -302,8 +329,8 @@ SyntaxError: The requested module '@prisma/client' does not provide an export na
 Correcao rapida (recuperacao):
 
 ```bash
-docker compose exec worker npm run prisma:generate
-docker compose restart worker
+docker compose exec atendimento-online-worker npm run prisma:generate
+docker compose restart atendimento-online-worker
 ```
 
 Prevencao permanente (ja aplicada no docker-compose.yml):
@@ -319,8 +346,8 @@ Isso garante que toda vez que o worker sobe, o Prisma Client e gerado limpo a pa
 Regra: sempre que alterar o schema Prisma e precisar testar antes do proximo boot completo, rodar:
 
 ```bash
-docker compose exec worker npm run prisma:generate
-docker compose restart worker
+docker compose exec atendimento-online-worker npm run prisma:generate
+docker compose restart atendimento-online-worker
 ```
 
 ## 2.4) Mensagens PENDING presas (worker ativo mas sem processar)
@@ -346,10 +373,10 @@ POST /conversations/:conversationId/messages/reprocess-failed
 POST /conversations/:conversationId/messages/:messageId/reprocess
 ```
 
-Para producao — setup minimo de alerta:
+Para producao ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â setup minimo de alerta:
 
 1. Tail de logs filtrado:
-   `docker compose logs -f worker | grep STALE_PENDING`
+   `docker compose logs -f atendimento-online-worker | grep STALE_PENDING`
 2. Ou configurar alerta no provedor de logs quando aparecer `STALE_PENDING_DETECTED`.
 3. O proximo passo ideal e um webhook de notificacao (Slack/email) disparado por esse log.
 
@@ -371,7 +398,7 @@ Correcao:
    - `/webhooks/evolution/:tenantSlug`
    - `/webhooks/evolution/:tenantSlug/:eventName` (ex.: `connection-update`)
 4. Conferir logs da API:
-   `docker compose logs -f api`
+   `docker compose logs -f atendimento-online-api`
 
 ## 3.1) QR nao aparece no painel
 
@@ -387,7 +414,7 @@ Correcao:
 2. Em seguida clicar `Atualizar QR`.
 3. Verificar `GET /tenant/whatsapp/qrcode?force=true`.
 4. Validar logs da Evolution para evento de QR:
-   `docker compose --profile channels logs -f evolution`
+   `docker compose --profile channels logs -f whatsapp-evolution-gateway`
 5. Se os logs mostrarem loop `state: close` com `statusReason: 405`, atualize a Evolution para imagem mais nova e configure:
    - `EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7`
    - `EVOLUTION_CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472`
@@ -397,40 +424,40 @@ Correcao:
 
 Causa comum:
 
-1. Reconexoes forçadas em sequencia (`connect`/`qrcode?force=true`) durante fase de pareamento.
+1. Reconexoes forÃƒÆ’Ã‚Â§adas em sequencia (`connect`/`qrcode?force=true`) durante fase de pareamento.
 2. Polling concorrente de status/QR saturando a Evolution durante instabilidade.
 3. Sessao da instancia em conflito (`stream replaced`) no provider.
 
 Ajuste aplicado no projeto:
 
 1. `GET /tenant/whatsapp/status` agora usa cache curto + deduplicacao de requests in-flight e fallback para ultimo estado conhecido em erro transitorio.
-2. `GET /tenant/whatsapp/qrcode` nao força reconexao continuamente: existe cooldown server-side para `force=true`.
+2. `GET /tenant/whatsapp/qrcode` nao forÃƒÆ’Ã‚Â§a reconexao continuamente: existe cooldown server-side para `force=true`.
 3. `POST /tenant/whatsapp/connect` agora evita reconnect redundante quando a instancia ja esta `open/connecting` e aplica cooldown curto.
 
 Checklist de validacao:
 
 1. Reiniciar API e web apos atualizar codigo:
-   - `docker compose restart api web worker`
+   - `docker compose restart atendimento-online-api painel-web atendimento-online-worker`
 2. Conferir logs da Evolution:
-   - `docker compose --profile channels logs -f evolution`
+   - `docker compose --profile channels logs -f whatsapp-evolution-gateway`
 3. Conferir logs do worker para retries de rede:
-   - `docker compose logs -f worker | rg "transientConnectionError|Connection Closed|1006"`
+   - `docker compose logs -f atendimento-online-worker | rg "transientConnectionError|Connection Closed|1006"`
 
-## 3.4) `status/qrcode/connect` retornam 500 e container `evolution` aparece `Exited (1)`
+## 3.4) `status/qrcode/connect` retornam 500 e container `whatsapp-evolution-gateway` aparece `Exited (1)`
 
 Causa comum:
 
 1. Boot race no startup: Evolution tenta migracao do Prisma enquanto Postgres ainda esta inicializando (`FATAL: the database system is starting up`).
-2. Service `evolution` nao estava ativo no profile `channels`.
+2. Service `whatsapp-evolution-gateway` nao estava ativo no profile `channels`.
 
 Correcao:
 
 1. Subir/recuperar apenas o canal:
-   - `docker compose --profile channels up -d evolution`
+   - `docker compose --profile channels up -d whatsapp-evolution-gateway`
 2. Validar se ficou em `Up`:
    - `docker compose ps -a`
 3. Conferir logs do startup:
-   - `docker compose --profile channels logs --tail=120 evolution`
+   - `docker compose --profile channels logs --tail=120 whatsapp-evolution-gateway`
 4. Validar API novamente:
    - `GET /tenant/whatsapp/status`
    - `GET /tenant/whatsapp/qrcode?force=false`
@@ -438,7 +465,7 @@ Correcao:
 
 Observacao:
 
-1. O `docker-compose.yml` do projeto agora usa `restart: unless-stopped` no service `evolution` para auto-recuperacao apos falhas transitórias de boot.
+1. O `docker-compose.yml` do projeto agora usa `restart: unless-stopped` no service `whatsapp-evolution-gateway` para auto-recuperacao apos falhas transitÃƒÆ’Ã‚Â³rias de boot.
 
 ## 3.5) Mensagens chegam no WhatsApp, mas nao atualizam na Inbox
 
@@ -456,18 +483,18 @@ Correcao aplicada no projeto:
 Checklist de recuperacao:
 
 1. Reiniciar API:
-   - `docker compose restart api`
+   - `docker compose restart atendimento-online-api`
 2. Regravar webhook da instancia (sem base64):
    - executar `Bootstrap` no Admin (ou `POST /tenant/whatsapp/bootstrap`).
 3. Confirmar em resposta de bootstrap: `webhookResult.webhookBase64=false`.
 4. Verificar logs:
-   - `docker compose logs -f api` (nao deve repetir `Request body is too large` em `messages-upsert`).
+   - `docker compose logs -f atendimento-online-api` (nao deve repetir `Request body is too large` em `messages-upsert`).
 
 ## 3.2) Busca de GIF retorna erro de provider nao configurado
 
 Causa comum:
 
-1. `NUXT_TENOR_API_KEY` nao definido no ambiente do `web`.
+1. `NUXT_TENOR_API_KEY` nao definido no ambiente do `painel-web`.
 2. `NUXT_GIF_PROVIDER` diferente de `tenor`.
 
 Comportamento esperado atual:
@@ -480,8 +507,8 @@ Correcao:
 1. Ajustar `.env`:
    - `NUXT_GIF_PROVIDER=tenor`
    - `NUXT_TENOR_API_KEY=<sua-chave-tenor>`
-2. Recriar apenas o `web`:
-   - `docker compose up -d --build --force-recreate web`
+2. Recriar apenas o `painel-web`:
+   - `docker compose up -d --build --force-recreate painel-web`
 3. Validar no navegador:
    - abrir aba GIF no composer e buscar por termo simples (`amor`, `oi`, `feliz`).
 
@@ -542,13 +569,14 @@ Correcao:
 
 Causa:
 
-Script de extensao do navegador (ou live-reload externo), nao da aplicacao Nuxt.
+Script de extensão do navegador, live-reload externo ou resquício de ambiente antigo; não é o runtime oficial do módulo.
 
 Correcao:
 
 1. Testar em aba anonima sem extensoes.
 2. Desativar extensoes de auto-refresh/live-server no navegador.
-3. Confirmar que a pagina `http://localhost:3000` nao referencia `refresh.js`.
+3. Confirmar que a página `http://localhost:3000` não referencia `refresh.js`.
+4. Confirmar que o `fila-atendimento` atual entra por `http://localhost:3000/admin/fila-atendimento`, e não por `localhost:8081`.
 
 ## 7) Conversa sem avatar em contato direto
 
@@ -561,10 +589,10 @@ Correcao:
 
 1. Confirmar que a API esta com suporte ao fallback Evolution:
    - endpoint interno usado: `POST /chat/fetchProfilePictureUrl/:instance`
-   - arquivo: `apps/api/src/routes/webhooks.ts`
+   - arquivo: `apps/atendimento-online-api/src/routes/webhooks.ts`
 2. Validar instancia conectada no admin (`/admin`) antes de testar novo inbound.
 3. Reiniciar API apos update:
-   `docker compose restart api`
+   `docker compose restart atendimento-online-api`
 
 ## 7.1) Console com varios `403` em `pps.whatsapp.net` (avatar)
 
@@ -601,7 +629,7 @@ Correcao aplicada:
 Saneamento do historico legado:
 
 1. Rodar no container da API:
-   - `docker compose exec api npm run fix:sender-names`
+   - `docker compose exec atendimento-online-api npm run fix:sender-names`
 2. Resultado esperado:
    - `candidatos: 0` apos aplicar.
 
@@ -615,7 +643,7 @@ Causa comum:
 Correcao:
 
 1. Validar uso de paginacao no front:
-   - arquivo: `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
+   - arquivo: `apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts`
 2. Validar contrato da API:
    - `GET /conversations/:conversationId/messages?limit=...&beforeId=...`
    - retorno com `hasMore`
@@ -636,7 +664,7 @@ Correcao aplicada:
 
 1. `useOmnichannelInboxRealtime` agora ativa polling leve de fallback enquanto o socket estiver instavel.
 2. `useOmnichannelInboxHistory` passou a recarregar a conversa ativa apos sync com `processedCount > 0`.
-3. Endpoint `/messages/sync-history` usa consulta escopada por `where.key.remoteJid` (com `offset/limit`) para evitar lote misto de outras conversas da instância.
+3. Endpoint `/messages/sync-history` usa consulta escopada por `where.key.remoteJid` (com `offset/limit`) para evitar lote misto de outras conversas da instÃƒÆ’Ã‚Â¢ncia.
 4. Validar retorno do sync:
    - `queryVariant` deve vir como `where.key+offset` ou `where.key+limit`
    - se `conversationLastMessageAt` permanecer antigo e `createdCount=0`, a Evolution nao possui backfill novo para essa conversa no momento.
@@ -690,8 +718,8 @@ Causa comum:
 Correcao:
 
 1. Atualizar backend com limite maior de `mediaUrl`.
-2. Reiniciar `api` e `worker`:
-   - `docker compose restart api worker`
+2. Reiniciar `atendimento-online-api` e `atendimento-online-worker`:
+   - `docker compose restart atendimento-online-api worker`
 3. Repetir envio do anexo pelo composer.
 
 ## 9.2) Botao de envio fica carregando indefinidamente com anexo
@@ -800,7 +828,7 @@ Correcao:
 1. Ajustar `.env`:
    - `API_BODY_LIMIT_MB=80` (ou maior conforme necessidade)
 2. Reiniciar API:
-   - `docker compose restart api`
+   - `docker compose restart atendimento-online-api`
 3. Repetir teste de envio/recebimento de midia.
 
 ## 10.3) Imagem especifica aparece como enviada no painel, mas nao chega no WhatsApp
@@ -858,7 +886,7 @@ Objetivo:
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:media:battery`
 
 Parametros opcionais:
@@ -919,16 +947,16 @@ Correcao:
 
 Causa comum:
 
-1. Servico `retention-worker` nao iniciado no compose.
+1. Servico `atendimento-online-retencao-worker` nao iniciado no compose.
 2. Variaveis de ambiente de retencao ausentes/invalidas.
 3. `retentionDays` muito alto para o tenant de teste.
 
 Correcao:
 
 1. Validar servico:
-   - `docker compose ps retention-worker`
+   - `docker compose ps atendimento-online-retencao-worker`
 2. Ver logs:
-   - `docker compose logs -f retention-worker`
+   - `docker compose logs -f atendimento-online-retencao-worker`
 3. Conferir variaveis:
    - `RETENTION_SWEEP_ON_BOOT=true`
    - `RETENTION_SWEEP_INTERVAL_MINUTES=1440`
@@ -943,15 +971,15 @@ Causa comum:
 
 Correcao:
 
-1. No BFF (`apps/omni-nuxt-ui/server/api/bff/[...path].ts`), nao repassar `content-length` de upstream para respostas JSON reserializadas.
+1. No BFF (`apps/painel-web/server/api/bff/[...path].ts`), nao repassar `content-length` de upstream para respostas JSON reserializadas.
 2. Repassar `content-length` apenas para payload binario (midia/download).
-3. No composable (`apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`), validar resposta e aplicar fallback para array vazio.
+3. No composable (`apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts`), validar resposta e aplicar fallback para array vazio.
 
 Validacao rapida:
 
 1. `curl -i http://localhost:3000/api/bff/users` deve retornar JSON completo parseavel.
-2. Se vier corpo truncado, rebuild do container `web`:
-   - `docker compose up -d --build web`
+2. Se vier corpo truncado, rebuild do container `painel-web`:
+   - `docker compose up -d --build painel-web`
 
 ## 16) Validar isolamento por tenant (seguranca)
 
@@ -961,7 +989,7 @@ Objetivo:
 
 Comando:
 
-1. `cd apps/api`
+1. `cd apps/atendimento-online-api`
 2. `npm run test:tenant:isolation`
 
 Resultado esperado:
@@ -1004,22 +1032,21 @@ Invoke-RestMethod -Method Post `
 
 ## Ponto de depuracao por arquivo
 
-1. Erro de auth/JWT: `apps/api/src/plugins/auth.ts`
-2. Erro em tenant/admin: `apps/api/src/routes/tenant.ts`
-3. Erro em usuarios: `apps/api/src/routes/users.ts`
-4. Erro de envio outbound: `apps/api/src/workers/outbound-worker.ts`
+1. Erro de auth/JWT: `apps/atendimento-online-api/src/plugins/auth.ts`
+2. Erro em tenant/admin: `apps/atendimento-online-api/src/routes/tenant.ts`
+3. Erro em usuarios: `apps/atendimento-online-api/src/routes/users.ts`
+4. Erro de envio outbound: `apps/atendimento-online-api/src/workers/outbound-worker.ts`
 5. Envio outbound por tipo:
-   - `apps/api/src/workers/senders/send-text.ts`
-   - `apps/api/src/workers/senders/send-media.ts`
-   - `apps/api/src/workers/senders/common.ts`
-5. Erro webhook inbound: `apps/api/src/routes/webhooks.ts`
-6. Erro realtime: `apps/api/src/event-bus.ts` e `apps/api/src/main.ts`
-7. Erro de UI inbox (container): `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelInboxModule.vue`
-8. Erro de dominio inbox (estado/socket/paginacao): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelInbox.ts`
-9. Erro de UI inbox (sidebar conversas): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxConversationsSidebar.vue`
-10. Erro de UI inbox (chat): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxChatPanel.vue`
-11. Erro de UI inbox (detalhes): `apps/omni-nuxt-ui/app/components/omnichannel/inbox/InboxDetailsSidebar.vue`
-12. Tipos inbox: `apps/omni-nuxt-ui/app/components/omnichannel/inbox/types.ts`
-13. Erro de UI admin (container): `apps/omni-nuxt-ui/app/components/omnichannel/OmnichannelAdminModule.vue`
-14. Erro de dominio admin (estado/polling): `apps/omni-nuxt-ui/app/composables/omnichannel/useOmnichannelAdmin.ts`
-
+   - `apps/atendimento-online-api/src/workers/senders/send-text.ts`
+   - `apps/atendimento-online-api/src/workers/senders/send-media.ts`
+   - `apps/atendimento-online-api/src/workers/senders/common.ts`
+5. Erro webhook inbound: `apps/atendimento-online-api/src/routes/webhooks.ts`
+6. Erro realtime: `apps/atendimento-online-api/src/event-bus.ts` e `apps/atendimento-online-api/src/main.ts`
+7. Erro de UI inbox (container): `apps/painel-web/app/components/omnichannel/OmnichannelInboxModule.vue`
+8. Erro de dominio inbox (estado/socket/paginacao): `apps/painel-web/app/composables/omnichannel/useOmnichannelInbox.ts`
+9. Erro de UI inbox (sidebar conversas): `apps/painel-web/app/components/omnichannel/inbox/InboxConversationsSidebar.vue`
+10. Erro de UI inbox (chat): `apps/painel-web/app/components/omnichannel/inbox/InboxChatPanel.vue`
+11. Erro de UI inbox (detalhes): `apps/painel-web/app/components/omnichannel/inbox/InboxDetailsSidebar.vue`
+12. Tipos inbox: `apps/painel-web/app/components/omnichannel/inbox/types.ts`
+13. Erro de UI admin (container): `apps/painel-web/app/components/omnichannel/OmnichannelAdminModule.vue`
+14. Erro de dominio admin (estado/polling): `apps/painel-web/app/composables/omnichannel/useOmnichannelAdmin.ts`

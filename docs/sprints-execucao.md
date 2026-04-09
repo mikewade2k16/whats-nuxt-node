@@ -107,7 +107,7 @@ Legenda:
 - [x] [P1] Enviar mencoes `@` com `mentions[]`.
   - melhoria 2026-02-27: composer de grupo envia `metadataJson.mentions` com merge de mencoes por texto + mencoes explicitas selecionadas no picker.
   - melhoria 2026-02-27: outbound passou a salvar `displayByJid/displayByPhone` quando o picker conhece o participante, preservando render de nome humano.
-  - melhoria 2026-02-27: cobertura automatizada adicionada em `apps/omni-nuxt-ui/tests/composables/useOmnichannelInbox.spec.ts` para validar payload outbound de mencao.
+  - melhoria 2026-02-27: cobertura automatizada adicionada em `apps/painel-web/tests/composables/useOmnichannelInbox.spec.ts` para validar payload outbound de mencao.
   - pendencia resolvida: homologacao local finalizada suportando JIDs finais `@lid`.
 - [x] [P1] Tornar mencoes clicaveis com acao de abrir conversa do contato mencionado.
   - entregue 2026-02-26: clique em mencao no chat tenta abrir conversa WhatsApp existente; se nao existir, cria conversa 1:1 por numero/JID (perfis com escrita).
@@ -180,8 +180,8 @@ Legenda:
 - [x] [P0] Consolidar auth unico do painel e remover login proprio no modulo de atendimento.
   - entregue 2026-03-11: `/admin/login` virou ponto unico de autenticacao para painel + atendimento; rotas legadas do atendimento foram removidas.
   - entregue 2026-03-11: tela de login passou a bloquear submit nativo e limpar query sensivel para evitar `tenantSlug/email/password` na URL.
-- [x] [P0] Migrar leitura de users/clients do modulo para fonte `platform-core` (sem duplicidade de origem).
-  - entregue 2026-03-11: `GET /users`, `GET /clients` e `GET /clients/:clientId/users` passaram a consumir `platform-core` e sincronizar shadow local apenas para compatibilidade do modulo.
+- [x] [P0] Migrar leitura de users/clients do modulo para fonte `plataforma-api` (sem duplicidade de origem).
+  - entregue 2026-03-11: `GET /users`, `GET /clients` e `GET /clients/:clientId/users` passaram a consumir `plataforma-api` e sincronizar shadow local apenas para compatibilidade do modulo.
   - entregue 2026-03-11: mutacoes legadas de users/clients no modulo foram desativadas (`501`) para centralizar governanca no `/admin/core`.
 - [x] [P1] Inbox: reduzir abertura com mensagens defasadas apos login/reconexao.
   - entregue 2026-03-11: `useOmnichannelInboxRealtime` passou a forcar refresh de conversas e conversa ativa tambem na primeira conexao socket.
@@ -204,7 +204,7 @@ Legenda:
   - entregue 2026-03-12: origem local e webhook convergem em `actorKey=wa:self`; rota de reacao limpa legado `user:<id>` do mesmo ator para evitar badge dupla.
 - [x] [P1] Melhorar playback de audio recebido e arquivo de audio.
   - entregue 2026-03-12: inbox passou a hidratar audio por proxy autenticado (blob URL) para evitar falhas por URL direta expirada/403.
-  - entregue 2026-03-12: `DOCUMENT` com MIME `audio/*` agora renderiza player inline e mantém `Abrir/Baixar`.
+  - entregue 2026-03-12: `DOCUMENT` com MIME `audio/*` agora renderiza player inline e mantÃ©m `Abrir/Baixar`.
 - [x] [P1] Corrigir avatar ausente em card de contato inbound.
   - entregue 2026-03-12: parser de `contactMessage/contactsArrayMessage` passou a extrair e persistir `avatarUrl` (inclusive campos aninhados) no `metadataJson.contact`.
 - [x] [P0] Item 13: corrigir reply outbound da plataforma para manter ancora valida no WhatsApp.

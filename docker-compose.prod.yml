@@ -1,12 +1,12 @@
-# Override de producao — usar junto com o docker-compose.yml base:
+# Override de produção. Usar junto com o docker-compose.yml base:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d
 #
 # Este arquivo:
-#   - Adiciona Caddy (HTTPS automatico + reverse proxy)
-#   - Corrige SERVER_URL da Evolution para URL publica
-#   - Remove exposicao de portas que nao devem ser publicas
-#   - Os servicos api/web/worker rodam em dev mode com codigo montado via volume
-#     (adequado para teste; para producao real usar Dockerfile.prod standalone)
+#   - adiciona Caddy (HTTPS automático + reverse proxy)
+#   - corrige SERVER_URL da Evolution para URL pública
+#   - remove exposição de portas que não devem ser públicas
+#   - força `painel-web` e `atendimento-online` a subir em modo produtivo, sem watch/HMR
+#   - remove bootstrap automático de schema do caminho de restart da produção
 
 name: omnichannel-mvp
 
@@ -27,42 +27,90 @@ services:
       ADMINER_USER: ${ADMINER_USER:-dbadmin}
       ADMINER_PASSWORD_HASH: ${ADMINER_PASSWORD_HASH}
     depends_on:
-      - api
-      - web
+      - atendimento-online-api
+      - painel-web
     restart: unless-stopped
 
   adminer:
-    image: adminer:4.8.1
-    profiles: ["channels"]
-    environment:
-      ADMINER_DEFAULT_SERVER: postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+    profiles: ["ops"]
+    ports: !reset []
 
-  api:
-    ports: []
+  redis-commander:
+    profiles: ["ops"]
+    ports: !reset []
 
-  web:
+  atendimento-online-api:
     command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
+      npm run prisma:generate &&
+      npm run build &&
+      npm run start"
+    environment:
+      NODE_ENV: production
+    ports: !reset []
+
+  atendimento-online-worker:
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
+      rm -rf node_modules/.prisma/client &&
+      npm run prisma:generate &&
+      npm run build &&
+      npm run worker:start"
+    environment:
+      NODE_ENV: production
+
+  atendimento-online-retencao-worker:
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
+      npm run prisma:generate &&
+      npm run build &&
+      npm run worker:retention:start"
+    environment:
+      NODE_ENV: production
+
+  plataforma-api:
+    ports: !reset []
+    environment:
+      CORE_PASSWORD_RESET_TTL_MINUTES: ${CORE_PASSWORD_RESET_TTL_MINUTES:-15}
+      CORE_SMTP_HOST: ${CORE_SMTP_HOST:-}
+      CORE_SMTP_PORT: ${CORE_SMTP_PORT:-0}
+      CORE_SMTP_USERNAME: ${CORE_SMTP_USERNAME:-}
+      CORE_SMTP_PASSWORD: ${CORE_SMTP_PASSWORD:-}
+      CORE_SMTP_FROM_EMAIL: ${CORE_SMTP_FROM_EMAIL:-}
+      CORE_SMTP_FROM_NAME: ${CORE_SMTP_FROM_NAME:-Plataforma}
+      FILA_ATENDIMENTO_WEB_APP_URL: ${FILA_ATENDIMENTO_WEB_APP_URL:-https://app.${DOMAIN}}
+      FILA_ATENDIMENTO_CORS_ALLOWED_ORIGINS: ${FILA_ATENDIMENTO_CORS_ALLOWED_ORIGINS:-https://app.${DOMAIN}}
+      FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET: ${FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET:-fila-atendimento-shell-bridge-dev}
+      FILA_ATENDIMENTO_AUTH_SHELL_BRIDGE_TENANT_SLUG: ${FILA_ATENDIMENTO_AUTH_SHELL_BRIDGE_TENANT_SLUG:-tenant-demo}
+
+  mailpit:
+    profiles: ["local-mail"]
+    ports: !reset []
+
+  painel-web:
+    command: >
+      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
       npm run build &&
       node .output/server/index.mjs"
     environment:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
-    ports: []
+      NUXT_PUBLIC_FILA_ATENDIMENTO_BASE: ${NUXT_PUBLIC_FILA_ATENDIMENTO_BASE:-https://app.${DOMAIN}}
+      NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE: ${NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE:-https://app.${DOMAIN}/api/admin/modules/fila-atendimento}
+      NUXT_FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET: ${FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET:-fila-atendimento-shell-bridge-dev}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !reset []
 
   postgres:
-    ports: []
+    ports: !reset []
 
   redis:
-    ports: []
+    ports: !reset []
 
-  evolution:
-    ports: []
+  whatsapp-evolution-gateway:
+    ports: !reset []
     environment:
       SERVER_URL: https://evo.${DOMAIN}
 
