@@ -88,7 +88,9 @@ export function useTenantRealtime() {
     if (typeof raw === 'boolean') return raw
     return String(raw ?? '').trim().toLowerCase() === 'true'
   })
-  const enabled = computed(() => websocketEnabled.value && websocketUrl.value !== '')
+  const activeClientId = computed(() => Number(sessionSimulation.effectiveClientId || 0))
+  const activeClientCoreTenantId = computed(() => String(sessionSimulation.activeClientCoreTenantId || '').trim())
+  const enabled = computed(() => websocketEnabled.value && websocketUrl.value !== '' && activeClientCoreTenantId.value !== '')
 
   function resolveReconnectDelayMs() {
     if (tenantRealtimeReconnectAttempts <= 1) {
@@ -141,7 +143,7 @@ export function useTenantRealtime() {
 
   function shouldDeliverEvent(event: TenantRealtimeEvent) {
     if (event.clientId <= 0) return true
-    return event.clientId === sessionSimulation.clientId
+    return event.clientId === activeClientId.value
   }
 
   function handleIncoming(raw: unknown) {
@@ -189,8 +191,8 @@ export function useTenantRealtime() {
       return
     }
 
-    connectionUrl.searchParams.set('userType', sessionSimulation.userType)
-    connectionUrl.searchParams.set('clientId', String(sessionSimulation.clientId))
+    connectionUrl.searchParams.set('clientId', String(activeClientId.value))
+    connectionUrl.searchParams.set('tenantId', activeClientCoreTenantId.value)
 
     const socket = new WebSocket(connectionUrl.toString())
     tenantRealtimeSocket = socket
@@ -260,10 +262,13 @@ export function useTenantRealtime() {
     tenantRealtimeWatchersBound = true
 
     watch(
-      () => sessionSimulation.requestContextHash,
+      () => [activeClientId.value, activeClientCoreTenantId.value, enabled.value],
       () => {
         if (!tenantRealtimeStarted) return
-        if (!enabled.value) return
+        if (!enabled.value) {
+          disconnect()
+          return
+        }
         disconnect()
         connect()
       }

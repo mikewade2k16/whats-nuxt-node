@@ -255,13 +255,25 @@ export function useUsersManager() {
       const currentClientLabel = String(sessionSimulation.activeClientLabel ?? '').trim()
 
       clientOptions.value = currentClientId > 0
-        ? [{ label: currentClientLabel || `Cliente #${currentClientId}`, value: currentClientId }]
+        ? [{
+            label: currentClientLabel || `Cliente #${currentClientId}`,
+            value: currentClientId,
+            moduleCodes: [...sessionSimulation.activeClientModuleCodes]
+          }]
         : []
       return
     }
 
     try {
-      const response = await bffFetch<{ status: string, data: Array<{ id: number, name: string }> }>('/api/admin/clients', {
+      const response = await bffFetch<{
+        status: string,
+        data: Array<{
+          id: number,
+          name: string,
+          moduleCodes?: string[],
+          modules?: Array<{ code?: string }>
+        }>
+      }>('/api/admin/clients', {
         query: {
           page: 1,
           limit: DEFAULT_CLIENTS_FETCH_LIMIT,
@@ -272,7 +284,12 @@ export function useUsersManager() {
       const options = (response.data || [])
         .map(item => ({
           label: item.name,
-          value: item.id
+          value: item.id,
+          moduleCodes: normalizeModuleCodes(
+            Array.isArray(item.moduleCodes) && item.moduleCodes.length > 0
+              ? item.moduleCodes
+              : (item.modules || []).map(module => module.code)
+          )
         }))
 
       clientOptions.value = options

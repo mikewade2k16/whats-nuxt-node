@@ -392,11 +392,8 @@ function resolveDefaultFeatureAccess(feature: AdminFeatureDefinition, flags: Adm
 function resolveFeatureAccess(feature: AdminFeatureDefinition, context: AdminAccessContext) {
   const flags = resolveAdminAccessFlags(context)
   const preferences = parseAdminPreferences(context.preferences)
-  const bypassModuleCheck = flags.isSuperRoot
-    && flags.activeUserType === 'admin'
-    && flags.activeUserLevel === 'admin'
 
-  if (feature.moduleCode && !bypassModuleCheck && !context.hasModule(feature.moduleCode)) {
+  if (feature.moduleCode && !context.hasModule(feature.moduleCode)) {
     const moduleReasonByCode: Record<string, AdminAccessReason> = {
       atendimento: 'module-atendimento',
       'fila-atendimento': 'module-fila-atendimento',

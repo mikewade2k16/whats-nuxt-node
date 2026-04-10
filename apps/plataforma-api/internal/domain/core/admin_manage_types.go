@@ -51,6 +51,13 @@ type ListAdminClientsInput struct {
 	Limit           int
 }
 
+type GetAdminClientInput struct {
+	UserID          string
+	TenantID        string
+	IsPlatformAdmin bool
+	ClientID        int
+}
+
 type CreateAdminClientInput struct {
 	UserID          string
 	IsPlatformAdmin bool

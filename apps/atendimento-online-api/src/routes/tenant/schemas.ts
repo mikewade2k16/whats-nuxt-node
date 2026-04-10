@@ -53,6 +53,10 @@ export const connectWhatsAppSchema = z.object({
   number: z.string().min(8).max(20).optional()
 });
 
+export const clearWhatsAppConversationHistorySchema = z.object({
+  instanceId: z.string().min(1).optional()
+});
+
 export const qrCodeQuerySchema = z.object({
   instanceId: z.string().min(1).optional(),
   force: booleanQueryParamSchema

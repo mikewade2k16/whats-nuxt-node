@@ -583,34 +583,8 @@ export function useOmnichannelAdmin() {
     userForm
   });
 
-  const togglingAtendimentoAccessUserId = ref("");
   const switchingTenant = ref(false);
   const switchTenantError = ref("");
-
-  async function toggleAtendimentoAccess(userId: string, grant: boolean) {
-    if (!canManageTenant.value) {
-      setError("Perfil sem permissao para gerenciar acessos.");
-      return;
-    }
-
-    togglingAtendimentoAccessUserId.value = userId;
-    clearMessages(true);
-
-    try {
-      const response = await apiFetch<{ users: WhatsAppInstanceAssignableUser[] }>(
-        `/tenant/users/${userId}/atendimento-access`,
-        { method: "PUT", body: { grant } }
-      );
-      whatsappInstanceUsers.value = response.users;
-      infoMessage.value = grant
-        ? "Acesso ao atendimento concedido."
-        : "Acesso ao atendimento removido.";
-    } catch (error) {
-      setError(extractError(error));
-    } finally {
-      togglingAtendimentoAccessUserId.value = "";
-    }
-  }
 
   async function reloadAllData() {
     stopQrPolling();
@@ -782,8 +756,6 @@ export function useOmnichannelAdmin() {
     loadFailuresDashboard,
     loadHttpEndpointMetrics,
     validateEvolutionEndpoints,
-    toggleAtendimentoAccess,
-    togglingAtendimentoAccessUserId,
     switchTenant,
     switchingTenant,
     switchTenantError,

@@ -37,6 +37,7 @@ const DEFAULT_FETCH_LIMIT = 80
 const KNOWN_MODULE_LABELS: Record<string, string> = {
   core_panel: 'Core Panel',
   atendimento: 'Atendimento',
+  'fila-atendimento': 'Fila de Atendimento',
   finance: 'Finance',
   kanban: 'Kanban'
 }
@@ -85,6 +86,9 @@ function moduleLabelByCode(code: string) {
 }
 
 function normalizeClientItem(item: ClientItem): ClientItem {
+	const stores = Array.isArray(item.stores)
+		? normalizeStores(item.stores)
+		: []
   const modules = Array.isArray(item.modules)
     ? item.modules
         .map((module) => {
@@ -99,10 +103,20 @@ function normalizeClientItem(item: ClientItem): ClientItem {
         .filter((module): module is NonNullable<typeof module> => Boolean(module))
     : []
 
+  const activeModules = modules.filter(module => module.status === 'active')
+  const billingMode = normalizeBillingMode(item.billingMode)
+
   return {
     ...item,
-    modules,
-    moduleCodes: normalizeModuleCodes(modules.map(module => module.code))
+    coreTenantId: String(item.coreTenantId ?? '').trim(),
+    billingMode,
+    monthlyPaymentAmount: billingMode === 'per_store'
+      ? storesTotal(stores)
+      : parseAmount(item.monthlyPaymentAmount),
+    stores,
+    storesCount: stores.length,
+    modules: activeModules,
+    moduleCodes: normalizeModuleCodes(activeModules.map(module => module.code))
   }
 }
 
@@ -269,6 +283,7 @@ export function useClientsManager() {
       clients.value.map(client => ({
         value: Number(client.id),
         label: String(client.name ?? '').trim() || `Cliente #${client.id}`,
+        coreTenantId: String(client.coreTenantId ?? '').trim(),
         moduleCodes: normalizeModuleCodes(client.moduleCodes)
       }))
     )
@@ -389,8 +404,11 @@ export function useClientsManager() {
   }
 
   function updateField(id: number, field: ClientFieldKey, value: unknown, options: UpdateFieldOptions = {}) {
+    const target = clients.value.find(client => client.id === id)
+
     if (field === 'name') {
       patchClientLocally(id, { name: String(value ?? '').slice(0, 120) })
+      syncSimulationClientOptions()
     }
 
     if (field === 'status') {
@@ -420,12 +438,19 @@ export function useClientsManager() {
       }
       if (mode === 'single') {
         nextPatch.stores = []
+      } else {
+        nextPatch.monthlyPaymentAmount = storesTotal(target?.stores || [])
       }
 
       patchClientLocally(id, nextPatch)
     }
 
     if (field === 'monthlyPaymentAmount') {
+      if (target?.billingMode === 'per_store') {
+        patchClientLocally(id, { monthlyPaymentAmount: storesTotal(target.stores || []) })
+        return
+      }
+
       patchClientLocally(id, { monthlyPaymentAmount: parseAmount(value) })
     }
 
@@ -463,6 +488,7 @@ export function useClientsManager() {
           status: 'active'
         }))
       })
+      syncSimulationClientOptions()
     }
 
     queueFieldPersist(id, field, value, options)

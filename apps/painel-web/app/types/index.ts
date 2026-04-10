@@ -210,6 +210,17 @@ export interface WhatsAppQrCodeResponse {
   connectionState?: Record<string, unknown>;
 }
 
+export interface WhatsAppConversationHistoryClearResponse {
+  tenantId: string;
+  scope: "tenant" | "instance";
+  instanceId: string | null;
+  instanceName: string | null;
+  deletedAuditEvents: number;
+  deletedMessages: number;
+  deletedConversations: number;
+  message: string;
+}
+
 export type WhatsAppEndpointValidationStatus =
   | "ok"
   | "validation_error"

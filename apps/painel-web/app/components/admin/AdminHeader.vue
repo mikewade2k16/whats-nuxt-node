@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AvatarProps, DropdownMenuItem } from '@nuxt/ui'
 import AdminSessionSimulationBar from '~/components/admin/AdminSessionSimulationBar.vue'
+import adminAuthBrandLogo from '~/assets/images/logo.png'
 
 export interface AdminHeaderMenuItem {
   label: string
@@ -13,6 +14,18 @@ export interface AdminHeaderActionItem {
   label: string
   to?: string
   onClick?: () => void
+}
+
+interface AdminHeaderNavLink {
+  label: string
+  to: string
+  icon?: string
+}
+
+interface AdminHeaderMobileSection {
+  key: string
+  title: string
+  links: AdminHeaderNavLink[]
 }
 
 const props = withDefaults(
@@ -138,6 +151,78 @@ const themeMenuItems = computed<DropdownMenuItem[][]>(() => [
   ]
 ])
 
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+function resolveMobileLink(item: Partial<DropdownMenuItem>): AdminHeaderNavLink | null {
+  const label = normalizeText(item.label)
+  const to = normalizeText(item.to)
+  if (!label || !to) {
+    return null
+  }
+
+  const icon = normalizeText((item as { icon?: unknown }).icon)
+  return {
+    label,
+    to,
+    icon: icon || undefined
+  }
+}
+
+function flattenMenuChildren(children?: DropdownMenuItem[][]) {
+  if (!children?.length) {
+    return [] as AdminHeaderNavLink[]
+  }
+
+  const output: AdminHeaderNavLink[] = []
+  const seen = new Set<string>()
+
+  for (const group of children) {
+    for (const child of group) {
+      const link = resolveMobileLink(child)
+      if (!link) {
+        continue
+      }
+
+      const key = `${link.label}::${link.to}`
+      if (seen.has(key)) {
+        continue
+      }
+
+      seen.add(key)
+      output.push(link)
+    }
+  }
+
+  return output
+}
+
+const mobilePrimaryLinks = computed<AdminHeaderNavLink[]>(() =>
+  props.menuItems
+    .filter(item => !item.children?.length && normalizeText(item.to) !== '')
+    .map(item => ({
+      label: item.label,
+      to: String(item.to),
+      icon: undefined
+    }))
+)
+
+const mobileMenuSections = computed<AdminHeaderMobileSection[]>(() =>
+  props.menuItems
+    .filter(item => item.children?.length)
+    .map((item) => ({
+      key: getMenuItemKey(item),
+      title: item.label,
+      links: flattenMenuChildren(item.children)
+    }))
+    .filter(section => section.links.length > 0)
+)
+
+const slideoverActionItems = computed(() =>
+  props.actionItems.filter(action => Boolean(normalizeText(action.to)) || typeof action.onClick === 'function')
+)
+
 function routeMatches(target?: string) {
   if (!target) return false
   return route.path === target || route.path.startsWith(`${target}/`)
@@ -181,7 +266,7 @@ function getMenuItemKey(item: AdminHeaderMenuItem) {
 
 function isDesktopMenuMode() {
   if (!import.meta.client) return false
-  return window.matchMedia('(min-width: 1024px)').matches
+  return window.matchMedia('(min-width: 1280px)').matches
 }
 
 function clearMenuCloseTimer(key: string) {
@@ -283,6 +368,15 @@ function onMenuOpenUpdate(item: AdminHeaderMenuItem, open: boolean) {
   setMenuOpen(item, false)
 }
 
+function closeSidebar() {
+  sidebarOpen.value = false
+}
+
+function onMobileActionSelect(action: AdminHeaderActionItem) {
+  closeSidebar()
+  action.onClick?.()
+}
+
 function closeAllMenus() {
   Object.keys(menuOpenState).forEach((key) => {
     menuOpenState[key] = false
@@ -295,6 +389,7 @@ function closeAllMenus() {
 watch(
   () => route.path,
   () => {
+    closeSidebar()
     closeAllMenus()
   }
 )
@@ -312,24 +407,40 @@ onBeforeUnmount(() => {
   <header class="admin-header">
     <div class="admin-header__row">
       <div class="admin-header__brand">
-        <div class="admin-header__brand-inner">
+        <div class="admin-header__brand-inner admin-header__brand-inner--standalone">
           <UButton
-            icon="i-lucide-panel-left-open"
+            icon="i-lucide-menu"
             color="neutral"
             variant="ghost"
             aria-label="Abrir menu lateral"
-            class="admin-header__icon-btn"
+            class="admin-header__icon-btn admin-header__menu-toggle-btn admin-header__menu-toggle-btn--brand"
             @click="sidebarOpen = true"
           />
 
           <NuxtLink :to="logoTo" class="admin-header__brand-link">
-            <p class="admin-header__brand-title">{{ logoTitle }}</p>
-            <p class="admin-header__brand-subtitle">{{ logoSubtitle }}</p>
+            <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" class="admin-header__brand-logo">
           </NuxtLink>
         </div>
       </div>
 
       <div class="admin-header__panel">
+        <div class="admin-header__panel-start">
+          <div class="admin-header__brand-inner admin-header__brand-inner--panel">
+            <UButton
+              icon="i-lucide-menu"
+              color="neutral"
+              variant="ghost"
+              aria-label="Abrir menu lateral"
+              class="admin-header__icon-btn admin-header__menu-toggle-btn"
+              @click="sidebarOpen = true"
+            />
+
+            <NuxtLink :to="logoTo" class="admin-header__brand-link">
+              <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" class="admin-header__brand-logo">
+            </NuxtLink>
+          </div>
+        </div>
+
         <nav class="admin-header__nav h-full">
           <template v-for="item in menuItems" :key="item.label">
             <div
@@ -353,7 +464,7 @@ onBeforeUnmount(() => {
                     color="neutral"
                     variant="ghost"
                     trailing-icon="i-lucide-chevron-down"
-                    class="admin-header__menu-btn h-full"
+                    class="admin-header__menu-btn admin-header__nav-btn admin-header__nav-btn--group h-full"
                     :class="[
                       isItemActive(item) ? 'is-active' : '',
                       Boolean(menuOpenState[getMenuItemKey(item)]) ? 'is-open' : ''
@@ -368,7 +479,7 @@ onBeforeUnmount(() => {
                 :label="item.label"
                 color="neutral"
                 variant="ghost"
-                class="admin-header__menu-btn  h-full"
+                class="admin-header__menu-btn admin-header__nav-btn h-full"
                 :class="isItemActive(item) ? 'is-active' : ''"
               />
             </NuxtLink>
@@ -387,22 +498,21 @@ onBeforeUnmount(() => {
           >
             <UButton
               :icon="themeButton.icon"
-              label="Tema"
               color="neutral"
               variant="ghost"
               :aria-label="`Selecionar tema. Tema atual: ${themeButton.label}`"
-              class="admin-header__icon-btn admin-header__theme-btn"
+              class="admin-header__icon-btn admin-header__action-btn admin-header__action-btn--theme admin-header__theme-btn"
             />
           </UDropdownMenu>
 
           <template v-for="action in actionItems" :key="action.label">
-            <NuxtLink v-if="action.to" :to="action.to">
+            <NuxtLink v-if="action.to" :to="action.to" class="admin-header__utility-action">
               <UButton
                 :icon="action.icon"
                 color="neutral"
                 variant="ghost"
                 :aria-label="action.label"
-                class="admin-header__icon-btn"
+                class="admin-header__icon-btn admin-header__action-btn"
               />
             </NuxtLink>
 
@@ -412,14 +522,14 @@ onBeforeUnmount(() => {
               color="neutral"
               variant="ghost"
               :aria-label="action.label"
-              class="admin-header__icon-btn"
+              class="admin-header__icon-btn admin-header__action-btn admin-header__utility-action"
               @click="action.onClick?.()"
             />
           </template>
 
           <div class="admin-header__profile-wrap">
             <UDropdownMenu :items="profileItems" :modal="false" :content="{ align: 'end' }" :ui="{ content: 'w-56' }">
-              <UButton color="neutral" variant="ghost" class="admin-header__profile-btn">
+              <UButton color="neutral" variant="ghost" class="admin-header__profile-btn admin-header__profile-trigger-btn">
                 <template #default>
                   <div class="admin-header__profile-content">
                     <div class="admin-header__profile-text">
@@ -447,23 +557,98 @@ onBeforeUnmount(() => {
       side="left"
       :title="slideoverTitle"
       :description="slideoverDescription"
-      :ui="{ content: 'max-w-xs' }"
+      :ui="{ content: 'w-full sm:w-[22rem]' }"
     >
       <template #body>
-        <nav class="admin-header__mobile-nav">
-          <template v-for="item in menuItems" :key="`mobile-${item.label}`">
-            <NuxtLink v-if="item.to" :to="item.to" @click="sidebarOpen = false">
-              <UButton
-                :label="item.label"
-                color="neutral"
-                variant="ghost"
-                block
-                class="admin-header__mobile-btn"
-                :class="isItemActive(item) ? 'is-active' : ''"
-              />
-            </NuxtLink>
-          </template>
-        </nav>
+        <div class="admin-header__mobile-nav">
+          <section v-if="mobilePrimaryLinks.length" class="admin-header__mobile-section">
+            <p class="admin-header__mobile-section-title">Navegacao</p>
+
+            <div class="admin-header__mobile-links">
+              <NuxtLink
+                v-for="link in mobilePrimaryLinks"
+                :key="`mobile-link-${link.to}`"
+                :to="link.to"
+                @click="closeSidebar()"
+              >
+                <UButton
+                  :label="link.label"
+                  :icon="link.icon"
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  class="admin-header__mobile-btn admin-header__mobile-nav-btn admin-header__mobile-link"
+                  :class="routeMatches(link.to) ? 'is-active' : ''"
+                />
+              </NuxtLink>
+            </div>
+          </section>
+
+          <section
+            v-for="section in mobileMenuSections"
+            :key="section.key"
+            class="admin-header__mobile-section"
+          >
+            <p class="admin-header__mobile-section-title">{{ section.title }}</p>
+
+            <div class="admin-header__mobile-links">
+              <NuxtLink
+                v-for="link in section.links"
+                :key="`${section.key}:${link.to}`"
+                :to="link.to"
+                @click="closeSidebar()"
+              >
+                <UButton
+                  :label="link.label"
+                  :icon="link.icon"
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  class="admin-header__mobile-btn admin-header__mobile-nav-btn admin-header__mobile-link"
+                  :class="routeMatches(link.to) ? 'is-active' : ''"
+                />
+              </NuxtLink>
+            </div>
+          </section>
+
+          <section v-if="slideoverActionItems.length" class="admin-header__mobile-section">
+            <p class="admin-header__mobile-section-title">Acoes rapidas</p>
+
+            <div class="admin-header__mobile-links">
+              <template v-for="action in slideoverActionItems" :key="`mobile-action-${action.label}`">
+                <NuxtLink v-if="action.to" :to="action.to" @click="closeSidebar()">
+                  <UButton
+                    :label="action.label"
+                    :icon="action.icon"
+                    color="neutral"
+                    variant="ghost"
+                    block
+                    class="admin-header__mobile-btn admin-header__mobile-action-btn admin-header__mobile-link"
+                  />
+                </NuxtLink>
+
+                <UButton
+                  v-else
+                  :label="action.label"
+                  :icon="action.icon"
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  class="admin-header__mobile-btn admin-header__mobile-action-btn admin-header__mobile-link"
+                  @click="onMobileActionSelect(action)"
+                />
+              </template>
+            </div>
+          </section>
+
+          <section v-if="canShowSessionSimulation" class="admin-header__mobile-section">
+            <p class="admin-header__mobile-section-title">Sessao simulada</p>
+
+            <div class="admin-header__mobile-session">
+              <AdminSessionSimulationBar compact :show-summary="false" :show-refresh="false" title="Sessao simulada" />
+            </div>
+          </section>
+        </div>
       </template>
     </USlideover>
   </header>

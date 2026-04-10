@@ -40,33 +40,38 @@ services:
     ports: !reset []
 
   atendimento-online-api:
-    command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
-      npm run prisma:generate &&
-      npm run build &&
-      npm run start"
+    image: omnichannel-mvp-atendimento-online-api:prod
+    build:
+      context: ./apps/atendimento-online-api
+      dockerfile: Dockerfile.prod
+      target: prod
+    command: null
     environment:
       NODE_ENV: production
+    volumes: !reset []
     ports: !reset []
 
   atendimento-online-worker:
-    command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
-      rm -rf node_modules/.prisma/client &&
-      npm run prisma:generate &&
-      npm run build &&
-      npm run worker:start"
+    image: omnichannel-mvp-atendimento-online-worker:prod
+    build:
+      context: ./apps/atendimento-online-api
+      dockerfile: Dockerfile.prod
+      target: worker
+    command: null
     environment:
       NODE_ENV: production
+    volumes: !reset []
 
   atendimento-online-retencao-worker:
-    command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
-      npm run prisma:generate &&
-      npm run build &&
-      npm run worker:retention:start"
+    image: omnichannel-mvp-atendimento-online-retencao-worker:prod
+    build:
+      context: ./apps/atendimento-online-api
+      dockerfile: Dockerfile.prod
+      target: retention
+    command: null
     environment:
       NODE_ENV: production
+    volumes: !reset []
 
   plataforma-api:
     ports: !reset []
@@ -88,10 +93,11 @@ services:
     ports: !reset []
 
   painel-web:
-    command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci --no-audit --no-fund; fi;
-      npm run build &&
-      node .output/server/index.mjs"
+    image: omnichannel-mvp-painel-web:prod
+    build:
+      context: .
+      dockerfile: apps/painel-web/Dockerfile.prod
+    command: null
     environment:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
@@ -99,6 +105,7 @@ services:
       NUXT_PUBLIC_FILA_ATENDIMENTO_BASE: ${NUXT_PUBLIC_FILA_ATENDIMENTO_BASE:-https://app.${DOMAIN}}
       NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE: ${NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE:-https://app.${DOMAIN}/api/admin/modules/fila-atendimento}
       NUXT_FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET: ${FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET:-fila-atendimento-shell-bridge-dev}
+    volumes: !reset []
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports: !reset []

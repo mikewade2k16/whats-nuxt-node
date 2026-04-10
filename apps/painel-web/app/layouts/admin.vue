@@ -15,6 +15,9 @@ const sessionSimulation = useSessionSimulationStore()
 const { user, coreUser, legacyRole, tenantSlug, isAuthenticated, validateSession, logout: performLogout, hydrate } = useAdminSession()
 const { apiFetch } = useApi()
 const { bffFetch } = useBffFetch()
+const route = useRoute()
+const realtime = useTenantRealtime()
+realtime.start()
 
 const layoutReady = ref(false)
 const resolvedTenantName = ref('')
@@ -22,7 +25,7 @@ const resolvedNick = ref('')
 const resolvedProfileImage = ref('')
 const SESSION_HEARTBEAT_INTERVAL_MS = 60_000
 
-let sessionHeartbeatTimer: ReturnType<typeof window.setInterval> | null = null
+let sessionHeartbeatTimer: number | null = null
 
 function normalizeText(value: unknown) {
   return String(value ?? '').trim()
@@ -37,7 +40,7 @@ const accessContext = computed(() => ({
   sessionUserType: sessionSimulation.userType,
   sessionUserLevel: sessionSimulation.userLevel,
   preferences: sessionSimulation.profilePreferences,
-  hasModule: moduleCode => sessionSimulation.hasModule(moduleCode)
+  hasModule: (moduleCode: unknown) => sessionSimulation.hasModule(moduleCode)
 }))
 const accessFlags = computed(() => resolveAdminAccessFlags(accessContext.value))
 const canAccessRootManage = computed(() => evaluateAdminRouteAccess('/admin/manage/clientes', accessContext.value).allowed)
@@ -257,8 +260,7 @@ const menuItems = computed(() => {
 
 const actionItems = [
   { icon: 'i-lucide-expand', label: 'Fullscreen' },
-  { icon: 'i-lucide-bell', label: 'Notificacoes' },
-  { icon: 'i-lucide-settings', label: 'Configuracoes', to: '/admin/settings' }
+  { icon: 'i-lucide-bell', label: 'Notificacoes' }
 ]
 
 const profileItems = computed<DropdownMenuItem[][]>(() => [
@@ -360,6 +362,75 @@ async function refreshSessionContext() {
   await sessionSimulation.refreshClientOptions()
 }
 
+async function ensureCurrentRouteAccess() {
+  if (!import.meta.client) {
+    return
+  }
+
+  const currentPath = normalizeText(route.fullPath || route.path)
+  if (!currentPath.startsWith('/admin') || isPublicAdminPath(currentPath)) {
+    return
+  }
+
+  const access = evaluateAdminRouteAccess(currentPath, accessContext.value)
+  if (access.allowed) {
+    return
+  }
+
+  if (access.reason === 'login-required') {
+    await navigateTo('/admin/login', { replace: true })
+    return
+  }
+
+  const redirectPath = resolveAccessibleAdminRedirect(currentPath, accessContext.value)
+  if (redirectPath === currentPath) {
+    return
+  }
+
+  await navigateTo(redirectPath, { replace: true })
+}
+
+function isCurrentUserRealtimeEvent(event: { payload?: unknown }) {
+  const payload = event?.payload && typeof event.payload === 'object'
+    ? event.payload as Record<string, unknown>
+    : null
+
+  const targetCoreUserId = normalizeText(payload?.coreUserId)
+  const currentCoreUserId = normalizeText(coreUser.value?.id)
+  if (targetCoreUserId && currentCoreUserId && targetCoreUserId === currentCoreUserId) {
+    return true
+  }
+
+  const targetEmail = normalizeText(payload?.email).toLowerCase()
+  const currentEmail = normalizeText(coreUser.value?.email).toLowerCase()
+  return Boolean(targetEmail) && Boolean(currentEmail) && targetEmail === currentEmail
+}
+
+const stopClientsRealtimeSubscription = realtime.subscribeEntity('clients', (event) => {
+  if (Number(event.clientId || 0) > 0 && Number(event.clientId) !== Number(sessionSimulation.effectiveClientId || 0)) {
+    return
+  }
+
+  void (async () => {
+    await refreshSessionContext()
+    await ensureCurrentRouteAccess()
+  })()
+})
+
+const stopUsersRealtimeSubscription = realtime.subscribeEntity('users', (event) => {
+  if (!isCurrentUserRealtimeEvent(event)) {
+    return
+  }
+
+  void (async () => {
+    await Promise.all([
+      refreshSessionContext(),
+      resolveProfileIdentity()
+    ])
+    await ensureCurrentRouteAccess()
+  })()
+})
+
 async function resolveTenantName() {
   if (isRootAdmin.value) {
     resolvedTenantName.value = ''
@@ -414,10 +485,19 @@ onBeforeUnmount(() => {
 watch(isAuthenticated, () => {
 	startSessionHeartbeat()
 })
+
+watch(() => sessionSimulation.requestContextHash, () => {
+  void ensureCurrentRouteAccess()
+})
+
+onBeforeUnmount(() => {
+  stopClientsRealtimeSubscription()
+  stopUsersRealtimeSubscription()
+})
 </script>
 
 <template>
-  <div class="min-h-screen bg-[rgb(var(--bg))] text-[rgb(var(--text))]">
+  <div class="admin-layout">
     <ClientOnly>
       <AdminHeader logo-title="crow" logo-subtitle="visuais" :menu-items="menuItems" :action-items="actionItems"
         :profile-name="profileDisplayName" :profile-role="profileRoleLabel" :profile-items="profileItems"
@@ -428,8 +508,8 @@ watch(isAuthenticated, () => {
       </template>
     </ClientOnly>
 
-    <main class="mx-auto w-full  px-1 pb-2 sm:px-6 lg:px-3">
-      <section class="min-h-[calc(100vh-6.5rem)] rounded-[var(--radius-lg)] ">
+    <main class="admin-layout__main">
+      <section class="admin-layout__content">
         <div v-if="layoutReady">
           <slot />
         </div>
@@ -443,3 +523,40 @@ watch(isAuthenticated, () => {
     </main>
   </div>
 </template>
+
+<style scoped>
+.admin-layout {
+  min-height: 100vh;
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+}
+
+.admin-layout__main {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 0.75rem 1rem;
+}
+
+.admin-layout__content {
+  min-height: calc(100vh - 7rem);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 640px) {
+  .admin-layout__main {
+    padding: 0 1rem 1.25rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .admin-layout__main {
+    padding: 0 1.25rem 1.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .admin-layout__main {
+    padding: 0 0.75rem 1rem;
+  }
+}
+</style>

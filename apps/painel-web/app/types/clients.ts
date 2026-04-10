@@ -32,6 +32,7 @@ export interface ClientModuleAccess {
 
 export interface ClientItem {
   id: number
+  coreTenantId: string
   name: string
   status: ClientStatus
   userCount: number

@@ -2,9 +2,12 @@
 import OmniSelectMenuInput from '~/components/inputs/OmniSelectMenuInput.vue'
 import OmniMoneyInput from '~/components/omni/inputs/OmniMoneyInput.vue'
 import FinanceLineCard from '~/components/admin/finance/FinanceLineCard.vue'
+import FinanceRecurringGroupCard from '~/components/admin/finance/FinanceRecurringGroupCard.vue'
 import {
   createFinanceUuid,
   financeRecurringRowId,
+  financeRecurringStoreRowId,
+  isFinanceRecurringStoreRowId,
   normalizeFinanceEntityId,
   normalizeFinanceLinkedUuid,
   parseFinanceRecurringClientId
@@ -12,6 +15,7 @@ import {
 import type {
   FinanceCategoryConfig,
   FinanceConfigKind,
+  FinanceRecurringClientEntry,
   FinanceRecurringEntryConfig,
   FinanceFixedAccountConfig,
   FinanceLineAdjustment,
@@ -72,6 +76,8 @@ const {
   fetchConfig,
   saveConfig
 } = useFinancesConfigManager()
+const realtime = useTenantRealtime()
+realtime.start()
 
 const selectedSheetId = ref<string | null>(null)
 const configOpen = ref(false)
@@ -108,12 +114,42 @@ const fixedEditDraft = reactive<{
   kind: 'saida',
   categoryId: ''
 })
-const clientRecurringEntries = ref<Array<{
-  id: number
+const targetClientId = computed(() => Number(sessionSimulation.effectiveClientId || DEFAULT_ADMIN_CLIENT_ID))
+const clientRecurringEntries = ref<FinanceRecurringClientEntry[]>([])
+
+interface FinanceRecurringGroupStoreLine {
+  key: string
+  rowId: string
+  row: FinanceLineItem
   name: string
   amount: number
-  dueDay: string
-}>>([])
+}
+
+interface FinanceRecurringGroupView {
+  key: string
+  entryId: number
+  title: string
+  category: string
+  baseAmount: number
+  totalAmount: number
+  adjustmentAmount: number
+  effective: boolean
+  effectiveDate: string
+  rows: FinanceRecurringGroupStoreLine[]
+}
+
+type FinanceEntradaDisplayItem =
+  | {
+      kind: 'line'
+      key: string
+      row: FinanceLineItem
+      index: number
+    }
+  | {
+      kind: 'group'
+      key: string
+      group: FinanceRecurringGroupView
+    }
 
 const draft = reactive<{
   title: string
@@ -205,6 +241,13 @@ function currentPeriod() {
 function formatMoney(value: unknown) {
   const parsed = Number(value || 0)
   return moneyFormatter.format(Number.isFinite(parsed) ? parsed : 0)
+}
+
+function formatRecurringStoreBreakdown(entry: FinanceRecurringClientEntry) {
+  return entry.stores
+    .filter(store => store.name)
+    .map(store => `${store.name} (${formatMoney(store.amount)})`)
+    .join(' | ')
 }
 
 function normalizeText(value: unknown, max = 240) {
@@ -300,12 +343,188 @@ function recurringRowId(clientId: number) {
   return financeRecurringRowId(clientId)
 }
 
-function isRecurringFixedRowId(value: string) {
-  return parseFinanceRecurringClientId(value) > 0
+function recurringStoreRowId(clientId: number, storeName: string) {
+  return financeRecurringStoreRowId(clientId, storeName)
+}
+
+function isRecurringRowId(value: string) {
+  return parseFinanceRecurringClientId(value) > 0 || isFinanceRecurringStoreRowId(value)
 }
 
 function recurringEntryForClient(clientId: number) {
   return configDraft.recurringEntries.find(item => Number(item.sourceClientId) === Number(clientId))
+}
+
+function buildRecurringDetails(entry: FinanceRecurringClientEntry, options: { storeName?: string; storeBreakdown?: string; notes?: string }) {
+  return [
+    options.notes ? `Ajuste: ${options.notes}` : '',
+    entry.dueDay ? `Vencimento: ${entry.dueDay}` : '',
+    options.storeName ? `Loja: ${options.storeName}` : '',
+    !options.storeName && entry.billingMode === 'per_store' && options.storeBreakdown ? `Lojas: ${options.storeBreakdown}` : ''
+  ].filter(Boolean).join(' | ')
+}
+
+function buildRecurringRows(entry: FinanceRecurringClientEntry, defaultCategory: string) {
+  const recurringConfig = recurringEntryForClient(entry.id)
+  const adjustment = Number(recurringConfig?.adjustmentAmount || 0)
+  const notes = recurringConfig?.notes || ''
+  const storeBreakdown = formatRecurringStoreBreakdown(entry)
+
+  if (entry.billingMode === 'per_store' && entry.stores.length > 0) {
+    return entry.stores.map((store, index) => ({
+      id: recurringStoreRowId(entry.id, store.name),
+      description: `Mensalidade ${entry.name} - ${store.name}`,
+      amount: Number((Number(store.amount || 0) + (index === 0 ? adjustment : 0)).toFixed(2)),
+      category: defaultCategory,
+      details: buildRecurringDetails(entry, {
+        storeName: store.name,
+        storeBreakdown,
+        notes: index === 0 ? notes : ''
+      })
+    }))
+  }
+
+  return [{
+    id: recurringRowId(entry.id),
+    description: `Mensalidade ${entry.name}`,
+    amount: Number((entry.amount + adjustment).toFixed(2)),
+    category: defaultCategory,
+    details: buildRecurringDetails(entry, {
+      storeBreakdown,
+      notes
+    })
+  }]
+}
+
+function buildRecurringGroup(entry: FinanceRecurringClientEntry): FinanceRecurringGroupView | null {
+  if (entry.billingMode !== 'per_store' || entry.stores.length === 0) {
+    return null
+  }
+
+  const rows = entry.stores
+    .map((store) => {
+      const rowId = recurringStoreRowId(entry.id, store.name)
+      const row = draft.entradas.find(item => item.id === rowId)
+      if (!row) return null
+
+      return {
+        key: `${entry.id}:${rowId}`,
+        rowId,
+        row,
+        name: store.name,
+        amount: Number(lineTotal(row).toFixed(2))
+      }
+    })
+    .filter((item): item is FinanceRecurringGroupStoreLine => Boolean(item))
+
+  if (rows.length === 0) {
+    return null
+  }
+
+  const totalAmount = Number(rows.reduce((sum, item) => sum + item.amount, 0).toFixed(2))
+  const baseAmount = Number(entry.stores.reduce((sum, store) => sum + Number(store.amount || 0), 0).toFixed(2))
+  const effective = rows.length > 0 && rows.every(item => item.row.effective)
+  const effectiveDates = rows
+    .map(item => normalizeAdjustmentDate(item.row.effectiveDate))
+    .filter(Boolean)
+    .sort()
+
+  return {
+    key: `recurring-group:${entry.id}`,
+    entryId: entry.id,
+    title: `Mensalidade ${entry.name}`,
+    category: rows.find(item => normalizeText(item.row.category, 120))?.row.category || 'Receita mensalidade',
+    baseAmount,
+    totalAmount,
+    adjustmentAmount: Number((totalAmount - baseAmount).toFixed(2)),
+    effective,
+    effectiveDate: effective && effectiveDates.length === rows.length
+      ? effectiveDates[effectiveDates.length - 1] || ''
+      : '',
+    rows
+  }
+}
+
+function applyLineEffectiveState(row: FinanceLineItem, effective: boolean, effectiveDate: string) {
+  row.effective = effective
+  if (!effective) {
+    row.effectiveDate = ''
+    return
+  }
+
+  row.effectiveDate = normalizeAdjustmentDate(effectiveDate) || todayIsoDate()
+}
+
+async function refreshActiveSheetDraft() {
+  const id = String(selectedSheetId.value || '').trim().toLowerCase()
+  if (!id) return
+
+  const detail = await fetchSheetDetail(id)
+  if (selectedSheetId.value !== id || !detail) return
+  hydrate(detail)
+}
+
+async function persistRecurringStoreRowEffective(row: FinanceLineItem, options: { effective: boolean, effectiveDate?: string }) {
+  const previous = snapshotLine(row)
+  applyLineEffectiveState(row, options.effective, options.effectiveDate || row.effectiveDate)
+  return persistLineEffective(row, previous)
+}
+
+async function persistRecurringGroupEffective(group: FinanceRecurringGroupView, options: { effective: boolean, effectiveDate?: string }) {
+  const nextEffectiveDate = options.effective
+    ? normalizeAdjustmentDate(options.effectiveDate) || group.effectiveDate || todayIsoDate()
+    : ''
+
+  const results = await Promise.all(
+    group.rows.map(item => persistRecurringStoreRowEffective(item.row, {
+      effective: options.effective,
+      effectiveDate: nextEffectiveDate
+    }))
+  )
+
+  if (results.some(result => !result)) {
+    await refreshActiveSheetDraft()
+  }
+}
+
+async function onRecurringGroupEffectiveToggle(group: FinanceRecurringGroupView, next: boolean) {
+  await persistRecurringGroupEffective(group, {
+    effective: next,
+    effectiveDate: next ? group.effectiveDate || todayIsoDate() : ''
+  })
+}
+
+async function onRecurringGroupEffectiveDateChange(group: FinanceRecurringGroupView, value: string) {
+  await persistRecurringGroupEffective(group, {
+    effective: true,
+    effectiveDate: normalizeAdjustmentDate(value) || todayIsoDate()
+  })
+}
+
+async function onRecurringStoreEffectiveToggle(group: FinanceRecurringGroupView, rowId: string, next: boolean) {
+  const storeRow = group.rows.find(item => item.rowId === rowId)
+  if (!storeRow) return
+
+  const saved = await persistRecurringStoreRowEffective(storeRow.row, {
+    effective: next,
+    effectiveDate: next ? group.effectiveDate || storeRow.row.effectiveDate || todayIsoDate() : ''
+  })
+  if (!saved) {
+    await refreshActiveSheetDraft()
+  }
+}
+
+async function onRecurringStoreEffectiveDateChange(group: FinanceRecurringGroupView, rowId: string, value: string) {
+  const storeRow = group.rows.find(item => item.rowId === rowId)
+  if (!storeRow) return
+
+  const saved = await persistRecurringStoreRowEffective(storeRow.row, {
+    effective: true,
+    effectiveDate: normalizeAdjustmentDate(value) || todayIsoDate()
+  })
+  if (!saved) {
+    await refreshActiveSheetDraft()
+  }
 }
 
 function syncFixedRowsWithDraft(kind: 'entrada' | 'saida', shouldPersist = false) {
@@ -316,7 +535,7 @@ function syncFixedRowsWithDraft(kind: 'entrada' | 'saida', shouldPersist = false
   for (let index = list.length - 1; index >= 0; index -= 1) {
     const row = list[index]
     if (!row?.fixedAccountId) continue
-    if (isRecurringFixedRowId(row.fixedAccountId)) continue
+    if (isRecurringRowId(row.id)) continue
     if (!fixedById.has(row.fixedAccountId)) {
       list.splice(index, 1)
     }
@@ -357,46 +576,38 @@ function syncFixedRowsWithDraft(kind: 'entrada' | 'saida', shouldPersist = false
 
 function syncRecurringRowsWithDraft(shouldPersist = false) {
   const list = draft.entradas
-  const recurringMap = new Map(clientRecurringEntries.value.map(entry => [entry.id, entry] as const))
+  const defaultCategory = configDraft.categories.find(category => category.kind === 'entrada' || category.kind === 'ambas')?.name || 'Receita mensalidade'
+  const recurringRowsInput = clientRecurringEntries.value.flatMap(entry => buildRecurringRows(entry, defaultCategory))
+  const recurringRowIds = new Set(recurringRowsInput.map(row => row.id))
 
   for (let index = list.length - 1; index >= 0; index -= 1) {
     const row = list[index]
-    if (!row?.fixedAccountId || !isRecurringFixedRowId(row.fixedAccountId)) continue
-    const clientId = parseFinanceRecurringClientId(row.fixedAccountId)
-    if (!Number.isFinite(clientId) || !recurringMap.has(clientId)) {
+    if (!row || !isRecurringRowId(row.id)) continue
+    if (!recurringRowIds.has(row.id)) {
       list.splice(index, 1)
     }
   }
 
-  const defaultCategory = configDraft.categories.find(category => category.kind === 'entrada' || category.kind === 'ambas')?.name || 'Receita mensalidade'
-
-  clientRecurringEntries.value.forEach((entry, index) => {
-    const recurringConfig = recurringEntryForClient(entry.id)
-    const adjustment = Number(recurringConfig?.adjustmentAmount || 0)
-    const recurringId = recurringRowId(entry.id)
-    const detailsText = [
-      recurringConfig?.notes ? `Ajuste: ${recurringConfig.notes}` : '',
-      entry.dueDay ? `Vencimento: ${entry.dueDay}` : ''
-    ].filter(Boolean).join(' | ')
-
-    let row = list.find(item => item.fixedAccountId === recurringId)
+  recurringRowsInput.forEach((sourceRow, index) => {
+    let row = list.find(item => item.id === sourceRow.id)
     if (!row) {
       row = makeLine('entrada', index)
-      row.fixedAccountId = recurringId
+      row.id = sourceRow.id
       row.effective = false
       list.unshift(row)
     }
 
-    row.description = `Mensalidade ${entry.name}`
-    row.category = defaultCategory
-    row.amount = Number((entry.amount + adjustment).toFixed(2))
-    row.details = detailsText
+    row.description = sourceRow.description
+    row.category = sourceRow.category
+    row.amount = sourceRow.amount
+    row.details = sourceRow.details
+    row.fixedAccountId = ''
   })
 
-  const recurringRows = clientRecurringEntries.value
-    .map(entry => list.find(item => item.fixedAccountId === recurringRowId(entry.id)))
+  const recurringRows = recurringRowsInput
+    .map(sourceRow => list.find(item => item.id === sourceRow.id))
     .filter((item): item is FinanceLineItem => Boolean(item))
-  const otherRows = list.filter(row => !isRecurringFixedRowId(row.fixedAccountId))
+  const otherRows = list.filter(row => !isRecurringRowId(row.id))
   list.splice(0, list.length, ...recurringRows, ...otherRows)
 
   ensureRows()
@@ -415,7 +626,7 @@ function hydrate(sheet: FinanceSheetItem | null) {
     draft.period = currentPeriod()
     draft.status = 'aberta'
     draft.notes = ''
-    draft.clientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
+    draft.clientId = targetClientId.value
     draft.entradas = [makeLine('entrada')]
     draft.saidas = [makeLine('saida')]
     return
@@ -424,7 +635,7 @@ function hydrate(sheet: FinanceSheetItem | null) {
   draft.period = sheet.period || currentPeriod()
   draft.status = sheet.status || 'aberta'
   draft.notes = sheet.notes || ''
-  draft.clientId = sheet.clientId || Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
+  draft.clientId = sheet.clientId || targetClientId.value
   draft.entradas = (sheet.entradas || []).map(row => ({
     ...row,
     adjustments: Array.isArray(row.adjustments)
@@ -720,6 +931,54 @@ function resolveFixedById(id: string) {
 
 const filteredSheets = computed(() => sheets.value)
 
+const recurringGroupByRowId = computed(() => {
+  const groups = new Map<string, FinanceRecurringGroupView>()
+
+  clientRecurringEntries.value.forEach((entry) => {
+    const group = buildRecurringGroup(entry)
+    if (!group) return
+
+    group.rows.forEach((item) => {
+      groups.set(item.rowId, group)
+    })
+  })
+
+  return groups
+})
+
+const entradaDisplayItems = computed<FinanceEntradaDisplayItem[]>(() => {
+  const consumed = new Set<string>()
+  const output: FinanceEntradaDisplayItem[] = []
+
+  draft.entradas.forEach((row, index) => {
+    if (consumed.has(row.id)) {
+      return
+    }
+
+    const recurringGroup = recurringGroupByRowId.value.get(row.id)
+    if (recurringGroup) {
+      output.push({
+        kind: 'group',
+        key: recurringGroup.key,
+        group: recurringGroup
+      })
+      recurringGroup.rows.forEach((item) => {
+        consumed.add(item.rowId)
+      })
+      return
+    }
+
+    output.push({
+      kind: 'line',
+      key: row.id || `entrada:${index}`,
+      row,
+      index
+    })
+  })
+
+  return output
+})
+
 const categoryConfigOptions = computed(() => configDraft.categories.map(category => ({
   label: category.name,
   value: category.id
@@ -796,16 +1055,15 @@ function buildSheetPersistPayload() {
     period: draft.period,
     status: draft.status,
     notes: draft.notes,
-    clientId: Number(sessionSimulation.clientId || draft.clientId || DEFAULT_ADMIN_CLIENT_ID),
+    clientId: Number(targetClientId.value || draft.clientId || DEFAULT_ADMIN_CLIENT_ID),
     entradas: draft.entradas.map(snapshotLine),
     saidas: draft.saidas.map(snapshotLine)
   }
 }
 
 function buildConfigPersistPayload() {
-  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
   return {
-    clientId: targetClientId,
+    clientId: targetClientId.value,
     categories: configDraft.categories.map(category => ({ ...category })),
     fixedAccounts: configDraft.fixedAccounts.map(account => ({
       ...account,
@@ -1109,30 +1367,53 @@ async function fetchClientRecurringEntries() {
         name: string
         monthlyPaymentAmount: number
         paymentDueDay: string
+        billingMode: 'single' | 'per_store'
+        stores: Array<{
+          id: string
+          name: string
+          amount: number
+        }>
       }>
     }>('/api/admin/finance-config/recurring-clients', {
       query: {
-        limit: 300
+        limit: 300,
+        clientId: targetClientId.value
       }
     })
 
     clientRecurringEntries.value = (response.data || [])
-      .filter(client => Number(client.monthlyPaymentAmount || 0) > 0)
-      .map(client => ({
-        id: Number(client.id),
-        name: String(client.name || `Cliente #${client.id}`),
-        amount: Number(client.monthlyPaymentAmount || 0),
-        dueDay: String(client.paymentDueDay || '')
-      }))
+      .map((client) => {
+        const stores = Array.isArray(client.stores)
+          ? client.stores
+            .map(store => ({
+              id: String(store.id || '').trim(),
+              name: String(store.name || '').trim(),
+              amount: Number(store.amount || 0)
+            }))
+            .filter(store => store.name)
+          : []
+        const billingMode = client.billingMode === 'per_store' ? 'per_store' : 'single'
+
+        return {
+          id: Number(client.id),
+          name: String(client.name || `Cliente #${client.id}`),
+          amount: billingMode === 'per_store'
+            ? Number(stores.reduce((sum, store) => sum + Number(store.amount || 0), 0).toFixed(2))
+            : Number(client.monthlyPaymentAmount || 0),
+          dueDay: String(client.paymentDueDay || ''),
+          billingMode,
+          stores
+        }
+      })
+      .filter(client => Number(client.amount || 0) > 0)
   } catch {
     clientRecurringEntries.value = []
   }
 }
 
 async function openConfigPanel() {
-  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
   await Promise.all([
-    fetchConfig(targetClientId),
+    fetchConfig(targetClientId.value),
     fetchClientRecurringEntries()
   ])
   syncConfigDraft()
@@ -1144,7 +1425,7 @@ async function onCreateSheet() {
     title: `Finance ${currentPeriod()}`,
     period: currentPeriod(),
     status: 'aberta',
-    clientId: Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
+    clientId: targetClientId.value
   })
   if (!created) return
   selectedSheetId.value = created.id
@@ -1167,6 +1448,21 @@ function removeRow(kind: 'entrada' | 'saida', index: number) {
   if (list.length === 0) list.push(makeLine(kind))
   queuePersist()
 }
+
+async function refreshRecurringRealtimeState() {
+  await Promise.all([
+    fetchConfig(targetClientId.value),
+    fetchClientRecurringEntries()
+  ])
+}
+
+const stopFinanceRealtimeSubscription = realtime.subscribeEntity('finances', () => {
+  void refreshRecurringRealtimeState()
+})
+
+const stopClientsRealtimeSubscription = realtime.subscribeEntity('clients', () => {
+  void fetchClientRecurringEntries()
+})
 
 watch(filteredSheets, () => {
   if (filteredSheets.value.length === 0) {
@@ -1238,24 +1534,24 @@ watch(
 )
 
 watch(() => sessionSimulation.requestContextHash, () => {
-  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
-  void fetchSheets()
-  void fetchConfig(targetClientId)
+  void fetchSheets({ clientId: targetClientId.value })
+  void fetchConfig(targetClientId.value)
   void fetchClientRecurringEntries()
 })
 
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
   if (saveConfigTimer.value) clearTimeout(saveConfigTimer.value)
+  stopFinanceRealtimeSubscription()
+  stopClientsRealtimeSubscription()
   clearSheetSaveIndicator()
 })
 
 onMounted(async () => {
   sessionSimulation.initialize()
-  const targetClientId = Number(sessionSimulation.clientId || DEFAULT_ADMIN_CLIENT_ID)
   await Promise.all([
-    fetchSheets(),
-    fetchConfig(targetClientId),
+    fetchSheets({ clientId: targetClientId.value }),
+    fetchConfig(targetClientId.value),
     fetchClientRecurringEntries()
   ])
   syncConfigDraft()
@@ -1335,47 +1631,73 @@ onMounted(async () => {
               <UCard class="finances-page__table-card finances-page__table-card--entrada">
                 <template #header><div class="finances-page__table-header flex items-center justify-between"><h3 class="finances-page__table-title text-sm font-semibold">Entradas</h3><UButton class="finances-page__table-add-line finances-page__table-add-line--entrada" icon="i-lucide-plus" size="xs" label="Linha" @click="draft.entradas.push(makeLine('entrada', draft.entradas.length)); queuePersist()" /></div></template>
                 <div class="space-y-2">
-                  <FinanceLineCard
-                    v-for="(row, index) in draft.entradas"
-                    :key="row.id"
-                    kind="entrada"
-                    :row="row"
-                    :index="index"
-                    :category-options="categoryOptions('entrada')"
-                    :details-open="isLineDetailsOpen('entrada', row, index)"
-                    :effective-date-modal-open="isEffectiveDateModalOpen('entrada', row, index)"
-                    :adjustment-modal-open="isAdjustmentModalOpen('entrada', row, index)"
-                    :adjustment-history-open="isAdjustmentHistoryOpen('entrada', row, index)"
-                    :adjustment-draft="ensureAdjustmentDraft('entrada', row, index)"
-                    :adjustment-input-hint="formatAdjustmentInputHint('entrada')"
-                    :line-total="lineTotal(row)"
-                    :fixed-account="resolveFixedById(row.fixedAccountId)"
-                    :format-money="formatMoney"
-                    :format-signed-money="formatSignedMoney"
-                    @line-card-click="onLineCardClick('entrada', row, index, $event)"
-                    @persist="queuePersist"
-                    @effective-toggle="onEffectiveToggle('entrada', row, index, $event)"
-                    @effective-date-open="setEffectiveDateModalOpen('entrada', row, index, $event)"
-                    @effective-date-changed="onEffectiveDateChanged(row)"
-                    @effective-date-submit-shortcut="onEffectiveDateSubmitShortcut('entrada', row, index, $event)"
-                    @effective-date-cancel-shortcut="onEffectiveDateCancelShortcut('entrada', row, index)"
-                    @effective-today="setEffectiveToday(row)"
-                    @effective-clear="clearEffectiveDate(row)"
-                    @effective-close="closeEffectiveDateModal('entrada', row, index)"
-                    @line-total-input="onLineTotalInput(row, $event)"
-                    @adjustment-open="setAdjustmentModalOpen('entrada', row, index, $event)"
-                    @adjustment-submit-shortcut="onAdjustmentSubmitShortcut('entrada', row, index, $event)"
-                    @adjustment-cancel-shortcut="onAdjustmentCancelShortcut('entrada', row, index)"
-                    @adjustment-add="addLineAdjustment('entrada', row, index)"
-                    @adjustment-close="closeAdjustmentModal('entrada', row, index)"
-                    @toggle-details="toggleLineDetails('entrada', row, index)"
-                    @remove-line="removeRow('entrada', index)"
-                    @toggle-adjustment-history="toggleAdjustmentHistory('entrada', row, index)"
-                    @set-adjustment-sign="setAdjustmentSign(row, $event.adjustment, $event.sign)"
-                    @set-adjustment-absolute="setAdjustmentAbsoluteAmount(row, $event.adjustment, $event.value)"
-                    @adjustment-history-changed="onAdjustmentHistoryChanged(row)"
-                    @remove-adjustment="removeLineAdjustment(row, $event)"
-                  />
+                  <template v-for="item in entradaDisplayItems" :key="item.key">
+                    <FinanceRecurringGroupCard
+                      v-if="item.kind === 'group'"
+                      :title="item.group.title"
+                      :category="item.group.category"
+                      :base-amount="item.group.baseAmount"
+                      :adjustment-amount="item.group.adjustmentAmount"
+                      :total-amount="item.group.totalAmount"
+                      :effective="item.group.effective"
+                      :effective-date="item.group.effectiveDate"
+                      :stores="item.group.rows.map((row) => ({
+                        key: row.key,
+                        rowId: row.rowId,
+                        name: row.name,
+                        amount: row.amount,
+                        effective: row.row.effective,
+                        effectiveDate: row.row.effectiveDate
+                      }))"
+                      :format-money="formatMoney"
+                      :format-signed-money="formatSignedMoney"
+                      @group-effective-toggle="onRecurringGroupEffectiveToggle(item.group, $event)"
+                      @group-effective-date-change="onRecurringGroupEffectiveDateChange(item.group, $event)"
+                      @child-effective-toggle="onRecurringStoreEffectiveToggle(item.group, $event.rowId, $event.next)"
+                      @child-effective-date-change="onRecurringStoreEffectiveDateChange(item.group, $event.rowId, $event.value)"
+                    />
+
+                    <FinanceLineCard
+                      v-else
+                      kind="entrada"
+                      :row="item.row"
+                      :index="item.index"
+                      :category-options="categoryOptions('entrada')"
+                      :details-open="isLineDetailsOpen('entrada', item.row, item.index)"
+                      :effective-date-modal-open="isEffectiveDateModalOpen('entrada', item.row, item.index)"
+                      :adjustment-modal-open="isAdjustmentModalOpen('entrada', item.row, item.index)"
+                      :adjustment-history-open="isAdjustmentHistoryOpen('entrada', item.row, item.index)"
+                      :adjustment-draft="ensureAdjustmentDraft('entrada', item.row, item.index)"
+                      :adjustment-input-hint="formatAdjustmentInputHint('entrada')"
+                      :line-total="lineTotal(item.row)"
+                      :fixed-account="resolveFixedById(item.row.fixedAccountId)"
+                      :format-money="formatMoney"
+                      :format-signed-money="formatSignedMoney"
+                      @line-card-click="onLineCardClick('entrada', item.row, item.index, $event)"
+                      @persist="queuePersist"
+                      @effective-toggle="onEffectiveToggle('entrada', item.row, item.index, $event)"
+                      @effective-date-open="setEffectiveDateModalOpen('entrada', item.row, item.index, $event)"
+                      @effective-date-changed="onEffectiveDateChanged(item.row)"
+                      @effective-date-submit-shortcut="onEffectiveDateSubmitShortcut('entrada', item.row, item.index, $event)"
+                      @effective-date-cancel-shortcut="onEffectiveDateCancelShortcut('entrada', item.row, item.index)"
+                      @effective-today="setEffectiveToday(item.row)"
+                      @effective-clear="clearEffectiveDate(item.row)"
+                      @effective-close="closeEffectiveDateModal('entrada', item.row, item.index)"
+                      @line-total-input="onLineTotalInput(item.row, $event)"
+                      @adjustment-open="setAdjustmentModalOpen('entrada', item.row, item.index, $event)"
+                      @adjustment-submit-shortcut="onAdjustmentSubmitShortcut('entrada', item.row, item.index, $event)"
+                      @adjustment-cancel-shortcut="onAdjustmentCancelShortcut('entrada', item.row, item.index)"
+                      @adjustment-add="addLineAdjustment('entrada', item.row, item.index)"
+                      @adjustment-close="closeAdjustmentModal('entrada', item.row, item.index)"
+                      @toggle-details="toggleLineDetails('entrada', item.row, item.index)"
+                      @remove-line="removeRow('entrada', item.index)"
+                      @toggle-adjustment-history="toggleAdjustmentHistory('entrada', item.row, item.index)"
+                      @set-adjustment-sign="setAdjustmentSign(item.row, $event.adjustment, $event.sign)"
+                      @set-adjustment-absolute="setAdjustmentAbsoluteAmount(item.row, $event.adjustment, $event.value)"
+                      @adjustment-history-changed="onAdjustmentHistoryChanged(item.row)"
+                      @remove-adjustment="removeLineAdjustment(item.row, $event)"
+                    />
+                  </template>
                 </div>
                 <template #footer>
                   <div class="finances-page__table-footer text-xs text-[rgb(var(--muted))]">Esperado: {{ formatMoney(entriesExpected) }} | Efetivado: {{ formatMoney(entriesEffective) }}</div>
@@ -1493,6 +1815,9 @@ onMounted(async () => {
                       </UBadge>
                     </div>
                     <p class="text-xs text-[rgb(var(--muted))]">Base: {{ formatMoney(entry.amount) }} | Vencimento: {{ entry.dueDay || '--' }}</p>
+                    <p v-if="entry.billingMode === 'per_store' && entry.stores.length > 0" class="text-xs text-[rgb(var(--muted))]">
+                      Lojas: {{ formatRecurringStoreBreakdown(entry) }}
+                    </p>
                     <div class="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
                       <UInput
                         class="finances-config__input finances-config__input--recurring-adjustment"

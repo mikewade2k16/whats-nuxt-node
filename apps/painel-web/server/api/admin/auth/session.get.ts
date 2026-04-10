@@ -1,5 +1,6 @@
 import { coreAdminFetch } from "~~/server/utils/core-admin-fetch";
 import { clearCoreSessionToken, getCoreSessionToken } from "~~/server/utils/core-session-cookie";
+import { hasRememberedSessionTenantMismatch } from "~~/server/utils/remembered-core-session";
 
 interface CoreMeResponse {
   user: Record<string, unknown>;
@@ -16,6 +17,14 @@ export default defineEventHandler(async (event) => {
 
   try {
     const response = await coreAdminFetch<CoreMeResponse>(event, "/core/auth/me");
+
+    if (hasRememberedSessionTenantMismatch(accessToken, response.user)) {
+      clearCoreSessionToken(event);
+      return {
+        ok: false,
+        reason: "remembered-session-stale"
+      };
+    }
 
     return {
       ok: true,

@@ -6,19 +6,22 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"plataforma-api/internal/domain/finance"
 	authmw "plataforma-api/internal/httpapi/middleware"
+	"plataforma-api/internal/realtime"
 )
 
 type FinanceHandler struct {
 	service *finance.Service
+	hub     *realtime.Hub
 }
 
-func NewFinanceHandler(service *finance.Service) *FinanceHandler {
-	return &FinanceHandler{service: service}
+func NewFinanceHandler(service *finance.Service, hub *realtime.Hub) *FinanceHandler {
+	return &FinanceHandler{service: service, hub: hub}
 }
 
 type createFinanceSheetRequest struct {
@@ -149,6 +152,14 @@ func (h *FinanceHandler) CreateAdminFinance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, clientID)
+	if tenantErr == nil {
+		h.broadcastFinanceEvent(tenantID, "created", sheet.ClientID, map[string]any{
+			"scope":   "sheet",
+			"sheetId": sheet.ID,
+		})
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"item": sheet})
 }
 
@@ -194,6 +205,14 @@ func (h *FinanceHandler) ReplaceAdminFinance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	tenantID, tenantErr := h.service.ResolveSheetRealtimeTenant(r.Context(), sheetID)
+	if tenantErr == nil {
+		h.broadcastFinanceEvent(tenantID, "updated", sheet.ClientID, map[string]any{
+			"scope":   "sheet",
+			"sheetId": sheet.ID,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"item": sheet})
 }
 
@@ -236,6 +255,15 @@ func (h *FinanceHandler) UpdateAdminFinanceLine(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	tenantID, tenantErr := h.service.ResolveSheetRealtimeTenant(r.Context(), sheetID)
+	if tenantErr == nil {
+		h.broadcastFinanceEvent(tenantID, "updated", 0, map[string]any{
+			"scope":   "line",
+			"sheetId": sheetID,
+			"lineId":  lineID,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"item": result})
 }
 
@@ -252,6 +280,8 @@ func (h *FinanceHandler) DeleteAdminFinance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	tenantID, tenantErr := h.service.ResolveSheetRealtimeTenant(r.Context(), sheetID)
+
 	if err := h.service.DeleteSheet(r.Context(), finance.DeleteSheetInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
@@ -260,6 +290,13 @@ func (h *FinanceHandler) DeleteAdminFinance(w http.ResponseWriter, r *http.Reque
 	}); err != nil {
 		h.writeFinanceError(w, err, "failed to delete finance sheet")
 		return
+	}
+
+	if tenantErr == nil {
+		h.broadcastFinanceEvent(tenantID, "deleted", 0, map[string]any{
+			"scope":   "sheet",
+			"sheetId": sheetID,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -319,7 +356,31 @@ func (h *FinanceHandler) ReplaceAdminFinanceConfig(w http.ResponseWriter, r *htt
 		return
 	}
 
+	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, clientID)
+	if tenantErr == nil {
+		h.broadcastFinanceEvent(tenantID, "updated", config.ClientID, map[string]any{
+			"scope":    "config",
+			"clientId": config.ClientID,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"config": config})
+}
+
+func (h *FinanceHandler) broadcastFinanceEvent(tenantID, action string, clientID int, payload map[string]any) {
+	if h.hub == nil || strings.TrimSpace(tenantID) == "" {
+		return
+	}
+
+	envelope := map[string]any{
+		"entity":    "finances",
+		"action":    action,
+		"clientId":  clientID,
+		"payload":   payload,
+		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+	}
+
+	h.hub.BroadcastTenant(tenantID, envelope)
 }
 
 func (h *FinanceHandler) writeFinanceError(w http.ResponseWriter, err error, fallbackMessage string) {

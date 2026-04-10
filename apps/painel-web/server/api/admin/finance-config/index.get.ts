@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const clientIdRaw = Number.parseInt(String(query.clientId ?? ''), 10)
   const clientId = Number.isFinite(clientIdRaw) && clientIdRaw > 0
     ? (access.isAdmin ? clientIdRaw : access.clientId)
-    : (access.isAdmin ? 0 : access.clientId)
+    : access.clientId
 
   const response = await coreAdminFetch<{ config: FinanceConfigData }>(
     event,

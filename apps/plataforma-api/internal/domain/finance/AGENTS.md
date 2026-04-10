@@ -32,6 +32,12 @@
 - `ReplaceConfigInput`
 - endpoints administrativos `finance-sheets` e `finance-config`
 
+## Regras atuais de escopo e recorrencia
+
+- o shell admin consome `finance-sheets` e `finance-config` no cliente selecionado; quando nenhum `clientId` explicito vier do root, o BFF deve cair no cliente ativo da sessao simulada, nao em visao global
+- recorrencias vindas de clientes administrativos podem carregar breakdown de lojas para apoio operacional quando o cliente usa `billingMode = per_store`
+- o valor mensal de cliente por loja e derivado fora do modulo financeiro, mas a UI financeira deve receber o total canonico e a composicao de lojas sem exigir digitacao manual do valor agregado
+
 ## Persistência sob responsabilidade do módulo
 
 - schema: `platform_core`

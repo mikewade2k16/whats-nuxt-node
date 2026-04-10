@@ -51,6 +51,7 @@ const moduleSelectOptions = computed(() => {
   const known = new Map<string, string>([
     ['core_panel', 'Core Panel'],
     ['atendimento', 'Atendimento'],
+    ['fila-atendimento', 'Fila de Atendimento'],
     ['finance', 'Finance'],
     ['kanban', 'Kanban']
   ])
@@ -163,6 +164,7 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     label: 'Valor mensal',
     type: 'money',
     editable: true,
+    editableWhen: row => canEditMonthlyPaymentAmount(row),
     minWidth: 170
   },
   {
@@ -260,6 +262,10 @@ function modulesSummary(client: ClientItem) {
   }
 
   return modules.map(module => module.name || module.code).join(', ')
+}
+
+function canEditMonthlyPaymentAmount(row: Record<string, unknown>) {
+  return toClient(row).billingMode !== 'per_store'
 }
 
 function onCellUpdate(payload: OmniTableCellUpdate) {

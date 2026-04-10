@@ -1,10 +1,8 @@
 import { UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { env } from "../config.js";
 import { prisma } from "../db.js";
 import { requireAdmin, requireAtendimentoModuleAccess } from "../lib/guards.js";
-import { invalidateCoreAtendimentoAccessCacheByEmail } from "../services/core-atendimento-access.js";
 import { CoreApiError, type CoreTenant, platformCoreClient } from "../services/core-client.js";
 import {
   listCoreTenantUsersWithLegacyRoles,
@@ -150,23 +148,6 @@ export async function userRoutes(app: FastifyInstance) {
         }, {
           accessToken: request.coreAccessToken
         });
-
-        if (parsed.data.role === UserRole.ADMIN) {
-          try {
-            await platformCoreClient.assignTenantUserToModule(
-              coreTenant.id,
-              env.CORE_ATENDIMENTO_MODULE_CODE,
-              invited.tenantUserId,
-              { accessToken: request.coreAccessToken }
-            );
-            await invalidateCoreAtendimentoAccessCacheByEmail(parsed.data.email);
-          } catch (assignmentError) {
-            request.log.warn(
-              { error: assignmentError, tenantId: coreTenant.id, tenantUserId: invited.tenantUserId },
-              "Falha ao vincular usuario admin ao modulo atendimento no plataforma-api"
-            );
-          }
-        }
 
         const coreUsers = await listCoreTenantUsersWithLegacyRoles(coreTenant.id, {
           accessToken: request.coreAccessToken

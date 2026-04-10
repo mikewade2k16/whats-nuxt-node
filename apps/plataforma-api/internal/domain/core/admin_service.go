@@ -367,14 +367,29 @@ func (s *Service) ListTenantModules(ctx context.Context, tenantID string) ([]Ten
 		        m.code,
 		        m.name,
 		        m.is_core,
-		        COALESCE(tm.status::text, 'inactive') AS status,
-		        tm.source::text,
+		        CASE
+		          WHEN tm.status IS NOT NULL THEN tm.status::text
+		          WHEN inherited_module.is_active THEN 'active'
+		          ELSE 'inactive'
+		        END AS status,
+		        COALESCE(tm.source::text, CASE WHEN inherited_module.is_active THEN 'plan' ELSE '' END) AS source,
 		        tm.activated_at,
 		        tm.deactivated_at
 		 FROM modules m
 		 LEFT JOIN tenant_modules tm
 		   ON tm.module_id = m.id
 		  AND tm.tenant_id = $1
+		 LEFT JOIN LATERAL (
+		   SELECT true AS is_active
+		   FROM tenant_subscriptions ts
+		   JOIN plan_modules pm
+		     ON pm.plan_id = ts.plan_id
+		    AND pm.enabled = true
+		   WHERE ts.tenant_id = $1
+		     AND ts.status IN ('trialing', 'active')
+		     AND pm.module_id = m.id
+		   LIMIT 1
+		 ) inherited_module ON true
 		 WHERE m.is_active = true
 		 ORDER BY m.is_core DESC, m.code ASC`,
 		tenantID,

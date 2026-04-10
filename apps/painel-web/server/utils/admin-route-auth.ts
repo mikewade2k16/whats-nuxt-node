@@ -5,6 +5,10 @@ import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch
 import { resolveTrustedEventClientIp } from '~~/server/utils/trusted-proxy'
 
 interface CoreAdminClientModulesPayload {
+  modules?: Array<{ code?: string }>
+}
+
+interface CoreAdminClientsListPayload {
   items?: Array<{
     id?: number
     modules?: Array<{ code?: string }>
@@ -24,11 +28,27 @@ function normalizeModuleCode(value: unknown) {
     .replace(/\s+/g, '_')
 }
 
-async function resolveClientModuleCodes(event: H3Event, access: AccessContext) {
-  if (access.isSuperRoot && access.userType === 'admin' && access.userLevel === 'admin') {
-    return [] as string[]
+function shouldFallbackToClientsList(error: unknown) {
+  const statusCode = getErrorStatusCode(error)
+  return statusCode === 404 || statusCode === 405
+}
+
+async function resolveClientModuleCodesFromList(event: H3Event, access: AccessContext) {
+  const response = await coreAdminFetch<CoreAdminClientsListPayload>(
+    event,
+    `/core/admin/clients${buildCoreQuery({
+      page: 1,
+      limit: 300
+    })}`
+  )
+
+  const matched = (response.items || []).find(item => Number(item.id) === access.clientId)
+  return Array.isArray(matched?.modules)
+    ? matched.modules.map(module => normalizeModuleCode(module?.code)).filter(Boolean)
+    : []
   }
 
+async function resolveClientModuleCodes(event: H3Event, access: AccessContext) {
   if (access.clientId <= 0) {
     return [] as string[]
   }
@@ -38,18 +58,24 @@ async function resolveClientModuleCodes(event: H3Event, access: AccessContext) {
     return cached.map(entry => normalizeModuleCode(entry)).filter(Boolean)
   }
 
-  const response = await coreAdminFetch<CoreAdminClientModulesPayload>(
-    event,
-    `/core/admin/clients${buildCoreQuery({
-      page: 1,
-      limit: 300
-    })}`
-  )
+  let moduleCodes: string[] = []
 
-  const matched = (response.items || []).find(item => Number(item.id) === access.clientId)
-  const moduleCodes = Array.isArray(matched?.modules)
-    ? matched.modules.map(module => normalizeModuleCode(module?.code)).filter(Boolean)
-    : []
+  try {
+	const response = await coreAdminFetch<CoreAdminClientModulesPayload>(
+	  event,
+	  `/core/admin/clients/${access.clientId}`
+	)
+
+	moduleCodes = Array.isArray(response.modules)
+	  ? response.modules.map(module => normalizeModuleCode(module?.code)).filter(Boolean)
+	  : []
+  } catch (error) {
+	if (!shouldFallbackToClientsList(error)) {
+	  throw error
+	}
+
+	moduleCodes = await resolveClientModuleCodesFromList(event, access)
+  }
 
   event.context.adminClientModuleCodes = moduleCodes
   return moduleCodes
@@ -144,20 +170,7 @@ async function requireResolvedFeatureAccessInternal(
         return false
       }
 
-      const clientHasModule = moduleCodes.includes(normalized)
-      if (!clientHasModule) {
-        return false
-      }
-
-      if (normalized === 'finance') {
-        return true
-      }
-
-      if (access.isSuperRoot) {
-        return true
-      }
-
-      return access.profileModuleCodes.includes(normalized)
+      return moduleCodes.includes(normalized)
     })
   })
 
@@ -170,7 +183,7 @@ async function requireResolvedFeatureAccessInternal(
 
     throw createError({
       statusCode: 403,
-      statusMessage: result.reason === 'module-atendimento' || result.reason === 'module-finance'
+      statusMessage: result.reason === 'module-atendimento' || result.reason === 'module-fila-atendimento' || result.reason === 'module-finance'
         ? 'Modulo indisponivel para esta sessao.'
         : result.reason === 'login-required'
           ? 'Sessao nao autenticada.'

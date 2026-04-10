@@ -128,3 +128,18 @@ export interface FinanceRecurringEntryConfig {
   adjustmentAmount: number
   notes: string
 }
+
+export interface FinanceRecurringClientStore {
+  id: string
+  name: string
+  amount: number
+}
+
+export interface FinanceRecurringClientEntry {
+  id: number
+  name: string
+  amount: number
+  dueDay: string
+  billingMode: 'single' | 'per_store'
+  stores: FinanceRecurringClientStore[]
+}

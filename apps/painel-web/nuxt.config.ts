@@ -47,7 +47,7 @@ export default defineNuxtConfig({
       filaAtendimentoBase: process.env.NUXT_PUBLIC_FILA_ATENDIMENTO_BASE ?? 'http://localhost:3000',
       filaAtendimentoApiBase: process.env.NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE ?? 'http://localhost:3000/api/admin/modules/fila-atendimento',
       websocketUrl: process.env.NUXT_PUBLIC_WEBSOCKET_URL || '/ws/tenant',
-      websocketEnabled: process.env.NUXT_PUBLIC_WEBSOCKET_ENABLED === 'true'
+      websocketEnabled: process.env.NUXT_PUBLIC_WEBSOCKET_ENABLED !== 'false'
     }
   },
   experimental: {

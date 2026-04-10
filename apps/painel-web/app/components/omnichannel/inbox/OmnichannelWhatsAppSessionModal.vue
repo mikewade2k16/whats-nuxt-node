@@ -11,6 +11,7 @@ import {
 } from "#components";
 import { computed, onBeforeUnmount, watch } from "vue";
 import { useOmnichannelWhatsAppSession } from "~/composables/omnichannel/useOmnichannelWhatsAppSession";
+import { useUiStore } from "~/stores/ui";
 
 const props = defineProps<{
   open: boolean;
@@ -18,11 +19,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "update:open", value: boolean): void;
+  (event: "history-cleared"): void;
 }>();
+
+const ui = useUiStore();
 
 const {
   activate,
   canManageChannel,
+  clearConversationHistory,
+  clearingHistory,
   connectionAlertColor,
   connectionAlertDescription,
   connectionAlertTitle,
@@ -97,13 +103,35 @@ async function handleSelectionChange(value: unknown) {
 async function handleDisplayNameBlur() {
   await persistDisplayName();
 }
+
+async function handleClearConversationHistory() {
+  if (!selectedInstance.value) {
+    return;
+  }
+
+  const confirmation = await ui.confirm({
+    title: "Limpar conversas do WhatsApp?",
+    message: "Esta acao remove o historico de conversas, mensagens e eventos operacionais da conexao selecionada. A sessao do WhatsApp continua conectada.",
+    confirmLabel: "Limpar historico",
+    cancelLabel: "Cancelar"
+  });
+
+  if (!confirmation.confirmed) {
+    return;
+  }
+
+  const result = await clearConversationHistory();
+  if (result) {
+    emit("history-cleared");
+  }
+}
 </script>
 
 <template>
   <UModal
     v-model:open="openModel"
     title="Conexao WhatsApp"
-    description="Gere o QR Code, acompanhe o status da sessao e desconecte quando precisar."
+    description="Gere o QR Code, acompanhe o status da sessao, limpe o historico e desconecte quando precisar."
     :ui="{ content: 'max-w-3xl' }"
   >
     <template #body>
@@ -223,10 +251,20 @@ async function handleDisplayNameBlur() {
         </UButton>
         <UButton
           v-if="canManageChannel"
+          color="error"
+          variant="outline"
+          :loading="clearingHistory"
+          :disabled="clearingHistory || disconnecting || !selectedInstance"
+          @click="handleClearConversationHistory"
+        >
+          Limpar conversas
+        </UButton>
+        <UButton
+          v-if="canManageChannel"
           color="neutral"
           variant="outline"
           :loading="disconnecting"
-          :disabled="disconnecting || !selectedInstance"
+          :disabled="disconnecting || clearingHistory || !selectedInstance"
           @click="disconnectSession()"
         >
           Desconectar sessao

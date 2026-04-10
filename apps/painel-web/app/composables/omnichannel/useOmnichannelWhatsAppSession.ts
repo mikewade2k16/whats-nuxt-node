@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import type {
   WhatsAppBootstrapResponse,
+  WhatsAppConversationHistoryClearResponse,
   WhatsAppInstanceManagementResponse,
   WhatsAppInstanceRecord,
   WhatsAppQrCodeResponse,
@@ -33,6 +34,7 @@ export function useOmnichannelWhatsAppSession() {
   const fetchingQr = ref(false);
   const generatingQr = ref(false);
   const disconnecting = ref(false);
+  const clearingHistory = ref(false);
   const savingDisplayName = ref(false);
 
   const instances = ref<WhatsAppInstanceRecord[]>([]);
@@ -389,6 +391,41 @@ export function useOmnichannelWhatsAppSession() {
     }
   }
 
+  async function clearConversationHistory() {
+    if (!canManageChannel.value) {
+      errorMessage.value = "Perfil sem permissao para limpar o historico do WhatsApp.";
+      return null;
+    }
+
+    if (!selectedInstance.value) {
+      errorMessage.value = "Selecione uma conexao existente para limpar o historico.";
+      return null;
+    }
+
+    clearingHistory.value = true;
+    clearMessages();
+
+    try {
+      const response = await apiFetch<WhatsAppConversationHistoryClearResponse>(
+        "/tenant/whatsapp/conversations/clear",
+        {
+          method: "POST",
+          body: {
+            instanceId: selectedInstance.value.id
+          }
+        }
+      );
+
+      infoMessage.value = `${response.message}. ${response.deletedConversations} conversa(s) e ${response.deletedMessages} mensagem(ns) removida(s).`;
+      return response;
+    } catch (error) {
+      errorMessage.value = extractAdminError(error);
+      return null;
+    } finally {
+      clearingHistory.value = false;
+    }
+  }
+
   return {
     NEW_WHATSAPP_INSTANCE_VALUE,
     loadingInstances,
@@ -396,6 +433,7 @@ export function useOmnichannelWhatsAppSession() {
     fetchingQr,
     generatingQr,
     disconnecting,
+    clearingHistory,
     savingDisplayName,
     instances,
     statusResult,
@@ -427,6 +465,7 @@ export function useOmnichannelWhatsAppSession() {
     selectInstance,
     persistDisplayName,
     generateQrCode,
-    disconnectSession
+    disconnectSession,
+    clearConversationHistory
   };
 }

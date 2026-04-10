@@ -1045,6 +1045,22 @@ export function useOmnichannelInbox() {
     ]);
   }
 
+  async function refreshAfterConversationHistoryClear() {
+    activeConversationId.value = null;
+    messages.value = [];
+    visibleMessagesConversationId.value = null;
+    hasMoreMessages.value = false;
+    showLoadOlderMessagesButton.value = false;
+    showScrollToLatestButton.value = false;
+    clearReplyTarget();
+
+    await Promise.allSettled([
+      loadWhatsAppStatus({ force: true }),
+      loadConversations({ skipOpenSync: true }),
+      loadContacts()
+    ]);
+  }
+
   const {
     saveActiveConversationContact,
     createContactAndOpenConversation,
@@ -1438,6 +1454,7 @@ export function useOmnichannelInbox() {
     reactToMessage,
     updateConversationStatus,
     updateConversationAssignee,
+    refreshAfterConversationHistoryClear,
     loadContacts,
     loadGroupParticipants,
     openMentionConversation,

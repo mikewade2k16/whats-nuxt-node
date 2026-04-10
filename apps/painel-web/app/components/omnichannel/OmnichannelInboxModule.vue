@@ -20,20 +20,7 @@ function normalizeModuleCode(value: unknown) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
-const activeClientHasAtendimento = computed(() => {
-  if (!sessionSimulation.canSimulate) {
-    return sessionSimulation.profileAtendimentoAccess || sessionSimulation.profileModuleCodes.includes("atendimento");
-  }
-
-  const found = sessionSimulation.clientOptions.find(
-    (option) => option.value === sessionSimulation.effectiveClientId
-  );
-  if (!found?.moduleCodes) {
-    return true;
-  }
-
-  return found.moduleCodes.some((code) => normalizeModuleCode(code) === "atendimento");
-});
+const activeClientHasAtendimento = computed(() => sessionSimulation.hasModule("atendimento"));
 
 const tenantSwitchOptions = computed(() =>
   sessionSimulation.clientOptions.map((option) => {
@@ -168,6 +155,7 @@ const {
   reactToMessage,
   updateConversationStatus,
   updateConversationAssignee,
+  refreshAfterConversationHistoryClear,
   openMentionConversation,
   switchTenant,
   switchingTenant,
@@ -367,11 +355,16 @@ async function handleSidebarTenantSwitch(clientId: string) {
 
   await handleSwitchTenant(parsedClientId);
 }
+
+async function handleConversationHistoryCleared() {
+  await refreshAfterConversationHistoryClear();
+}
 </script>
 <template>
   <div class="chat-page">
     <OmnichannelWhatsAppSessionModal
       v-model:open="whatsappSessionModalOpen"
+      @history-cleared="handleConversationHistoryCleared"
     />
 
     <InboxSaveContactModal

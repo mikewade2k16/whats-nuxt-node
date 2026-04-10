@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -103,6 +104,33 @@ func (h *CoreHandler) ListAdminClients(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *CoreHandler) GetAdminClient(w http.ResponseWriter, r *http.Request) {
+	claims, ok := authmw.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing auth context")
+		return
+	}
+
+	clientID, err := parseLegacyIDParam(r, "clientId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	item, err := h.service.GetAdminClient(r.Context(), core.GetAdminClientInput{
+		UserID:          claims.Subject,
+		TenantID:        claims.TenantID,
+		IsPlatformAdmin: claims.IsPlatformAdmin,
+		ClientID:        clientID,
+	})
+	if err != nil {
+		h.writeCoreError(w, err, "failed to load admin client")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (h *CoreHandler) CreateAdminClient(w http.ResponseWriter, r *http.Request) {
 	claims, ok := authmw.ClaimsFromContext(r.Context())
 	if !ok {
@@ -165,6 +193,16 @@ func (h *CoreHandler) UpdateAdminClientField(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if h.hub != nil {
+		h.hub.BroadcastTenant(item.CoreTenantID, map[string]any{
+			"entity":    "clients",
+			"action":    "updated",
+			"clientId":  item.ID,
+			"payload":   map[string]any{"field": strings.TrimSpace(request.Field)},
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	}
+
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -197,6 +235,16 @@ func (h *CoreHandler) ReplaceAdminClientStores(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		h.writeCoreError(w, err, "failed to replace admin client stores")
 		return
+	}
+
+	if h.hub != nil {
+		h.hub.BroadcastTenant(item.CoreTenantID, map[string]any{
+			"entity":    "clients",
+			"action":    "updated",
+			"clientId":  item.ID,
+			"payload":   map[string]any{"field": "stores"},
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		})
 	}
 
 	writeJSON(w, http.StatusOK, item)
@@ -304,7 +352,7 @@ func (h *CoreHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.service.CreateAdminUser(r.Context(), core.CreateAdminUserInput{
+	item, tenantID, err := h.service.CreateAdminUser(r.Context(), core.CreateAdminUserInput{
 		UserID:                claims.Subject,
 		TenantID:              claims.TenantID,
 		IsPlatformAdmin:       claims.IsPlatformAdmin,
@@ -322,6 +370,8 @@ func (h *CoreHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		h.writeCoreError(w, err, "failed to create admin user")
 		return
 	}
+
+	h.broadcastAdminUserEvent(tenantID, "created", item, nil)
 
 	writeJSON(w, http.StatusCreated, item)
 }
@@ -345,7 +395,7 @@ func (h *CoreHandler) UpdateAdminUserField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	item, err := h.service.UpdateAdminUserField(r.Context(), core.UpdateAdminUserFieldInput{
+	item, tenantID, err := h.service.UpdateAdminUserField(r.Context(), core.UpdateAdminUserFieldInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
@@ -357,6 +407,10 @@ func (h *CoreHandler) UpdateAdminUserField(w http.ResponseWriter, r *http.Reques
 		h.writeCoreError(w, err, "failed to update admin user")
 		return
 	}
+
+	h.broadcastAdminUserEvent(tenantID, "updated", item, map[string]any{
+		"field": strings.TrimSpace(request.Field),
+	})
 
 	writeJSON(w, http.StatusOK, item)
 }
@@ -374,7 +428,7 @@ func (h *CoreHandler) ApproveAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.service.ApproveAdminUser(r.Context(), core.ApproveAdminUserInput{
+	item, tenantID, err := h.service.ApproveAdminUser(r.Context(), core.ApproveAdminUserInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
@@ -384,6 +438,11 @@ func (h *CoreHandler) ApproveAdminUser(w http.ResponseWriter, r *http.Request) {
 		h.writeCoreError(w, err, "failed to approve admin user")
 		return
 	}
+
+	h.broadcastAdminUserEvent(tenantID, "updated", item, map[string]any{
+		"field":  "status",
+		"reason": "approved",
+	})
 
 	writeJSON(w, http.StatusOK, item)
 }
@@ -401,7 +460,7 @@ func (h *CoreHandler) DeleteAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteAdminUser(r.Context(), core.DeleteAdminUserInput{
+	item, tenantID, err := h.service.DeleteAdminUser(r.Context(), core.DeleteAdminUserInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
@@ -412,7 +471,37 @@ func (h *CoreHandler) DeleteAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcastAdminUserEvent(tenantID, "deleted", item, nil)
+
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+}
+
+func (h *CoreHandler) broadcastAdminUserEvent(tenantID, action string, item core.AdminUser, payload map[string]any) {
+	if h.hub == nil || strings.TrimSpace(tenantID) == "" {
+		return
+	}
+
+	clientID := 0
+	if item.ClientID != nil && *item.ClientID > 0 {
+		clientID = *item.ClientID
+	}
+
+	envelopePayload := map[string]any{
+		"userId":     item.ID,
+		"coreUserId": strings.TrimSpace(item.CoreUserID),
+		"email":      strings.TrimSpace(strings.ToLower(item.Email)),
+	}
+	for key, value := range payload {
+		envelopePayload[key] = value
+	}
+
+	h.hub.BroadcastTenant(tenantID, map[string]any{
+		"entity":    "users",
+		"action":    action,
+		"clientId":  clientID,
+		"payload":   envelopePayload,
+		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func parseLegacyIDParam(r *http.Request, param string) (int, error) {

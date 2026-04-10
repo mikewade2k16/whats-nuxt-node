@@ -8,6 +8,7 @@ export type SessionSimulationUserLevel = 'admin' | 'manager' | 'marketing' | 'fi
 export interface SessionSimulationClientOption {
   label: string
   value: number
+  coreTenantId?: string
   moduleCodes?: string[]
 }
 
@@ -32,6 +33,7 @@ interface CoreTenantResponse {
 interface CoreTenantModulesResponse {
   items?: Array<{
     code?: string
+    status?: string
   }>
 }
 
@@ -41,7 +43,7 @@ interface PersistedSimulationState {
   clientId?: unknown
 }
 
-const STORAGE_KEY = 'omni.session-simulation.v2'
+const STORAGE_KEY = 'omni.session-simulation.v3'
 export const DEFAULT_ADMIN_CLIENT_ID = 1
 const UNASSIGNED_CLIENT_ID = 0
 const DEFAULT_CLIENT_OPTIONS: SessionSimulationClientOption[] = []
@@ -76,6 +78,10 @@ function normalizeModuleCodes(value: unknown) {
   }
 
   return output
+}
+
+function normalizeCoreTenantId(value: unknown) {
+  return String(value ?? '').trim()
 }
 
 function normalizeUserType(value: unknown): SessionSimulationUserType {
@@ -135,11 +141,38 @@ function dedupeClientOptions(options: SessionSimulationClientOption[]) {
     merged.set(clientId, {
       value: clientId,
       label,
+      coreTenantId: normalizeCoreTenantId(option.coreTenantId) || normalizeCoreTenantId(current?.coreTenantId),
       moduleCodes: moduleCodes.length > 0 ? moduleCodes : normalizeModuleCodes(current?.moduleCodes)
     })
   })
 
   return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+}
+
+export function resolveSessionSimulationFallbackClientId(options: {
+  canSimulate: boolean
+  currentClientId: number
+  profileClientId: number
+  availableOptions: SessionSimulationClientOption[]
+}) {
+  const normalizedCurrentClientId = options.canSimulate
+    ? normalizeSimulatedClientId(options.currentClientId)
+    : normalizeOptionalClientId(options.currentClientId)
+  const normalizedProfileClientId = normalizeOptionalClientId(options.profileClientId)
+  const normalizedOptions = dedupeClientOptions(options.availableOptions)
+
+  if (normalizedOptions.some(option => option.value === normalizedCurrentClientId)) {
+    return normalizedCurrentClientId
+  }
+
+  if (normalizedProfileClientId > 0 && normalizedOptions.some(option => option.value === normalizedProfileClientId)) {
+    return normalizedProfileClientId
+  }
+
+  const nextClientId = normalizedOptions[0]?.value ?? UNASSIGNED_CLIENT_ID
+  return options.canSimulate
+    ? normalizeSimulatedClientId(nextClientId)
+    : normalizeOptionalClientId(nextClientId)
 }
 
 export function buildSessionRequestHeaders(options: {
@@ -224,7 +257,6 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
   })
   const isAdmin = computed(() => effectiveUserType.value === 'admin')
   const isClient = computed(() => effectiveUserType.value === 'client')
-  const requestContextHash = computed(() => `${effectiveUserType.value}:${effectiveUserLevel.value}:${effectiveClientId.value}:${profilePreferences.value}:${profileModuleCodes.value.join(',')}`)
   const requestHeaders = computed(() => buildSessionRequestHeaders({
     canSimulate: canSimulate.value,
     userType: userType.value,
@@ -237,10 +269,23 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     if (found) return found.label
     return resolveClientLabel(effectiveClientId.value)
   })
+  const activeClientCoreTenantId = computed(() => {
+    const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
+    return normalizeCoreTenantId(found?.coreTenantId)
+  })
   const activeClientModuleCodes = computed(() => {
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
     return normalizeModuleCodes(found?.moduleCodes)
   })
+  const requestContextHash = computed(() => [
+    effectiveUserType.value,
+    effectiveUserLevel.value,
+    String(effectiveClientId.value),
+    activeClientCoreTenantId.value,
+    activeClientModuleCodes.value.join(','),
+    profilePreferences.value,
+    profileModuleCodes.value.join(',')
+  ].join(':'))
   const effectiveAccessOverrides = computed(() => parseAdminPreferences(profilePreferences.value).adminAccess)
 
   function persist() {
@@ -373,20 +418,23 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
         ? normalizeSimulatedClientId(clientId.value)
         : normalizeOptionalClientId(effectiveClientId.value)
       clientOptions.value = dedupeClientOptions([
-        { value: fallbackClientId, label: resolveClientLabel(fallbackClientId, activeClientLabel.value) }
+        {
+          value: fallbackClientId,
+          label: resolveClientLabel(fallbackClientId, activeClientLabel.value),
+          coreTenantId: activeClientCoreTenantId.value
+        }
       ])
       modulesHydrated.value = false
       persist()
       return
     }
 
-    const hasCurrent = normalized.some(option => option.value === clientId.value)
-    if (!hasCurrent) {
-      const nextClientId = normalized[0]?.value ?? UNASSIGNED_CLIENT_ID
-      clientId.value = canSimulate.value
-        ? normalizeSimulatedClientId(nextClientId)
-        : normalizeOptionalClientId(nextClientId)
-    }
+    clientId.value = resolveSessionSimulationFallbackClientId({
+      canSimulate: canSimulate.value,
+      currentClientId: clientId.value,
+      profileClientId: profileClientId.value,
+      availableOptions: normalized
+    })
 
     clientOptions.value = normalized
     modulesHydrated.value = true
@@ -399,26 +447,9 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
   }
 
   function hasModule(moduleCode: unknown) {
-    if (canSimulate.value && effectiveUserType.value === 'admin' && effectiveUserLevel.value === 'admin') {
-      return true
-    }
-
     const normalized = normalizeModuleCode(moduleCode)
     if (!normalized) return false
-    const clientHasModule = activeClientModuleCodes.value.includes(normalized)
-    if (!clientHasModule) {
-      return false
-    }
-
-    if (normalized === 'finance') {
-      return true
-    }
-
-    if (canSimulate.value) {
-      return true
-    }
-
-    return profileModuleCodes.value.includes(normalized)
+    return activeClientModuleCodes.value.includes(normalized)
   }
 
   async function refreshClientOptions() {
@@ -478,7 +509,8 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
         const fallbackClientOptions: SessionSimulationClientOption[] = [{
           value: resolvedClientId,
           label: fallbackClientLabel,
-          moduleCodes: profileModuleCodes.value
+          coreTenantId: normalizeCoreTenantId(coreAuth.user?.tenantId),
+          moduleCodes: resolvedClientId > 0 ? profileModuleCodes.value : []
         }]
 
         if (resolvedClientId <= 0) {
@@ -522,11 +554,16 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
         }
 
         const resolvedTenantName = resolveClientLabel(resolvedClientId, tenantResponse?.name ?? fallbackClientLabel)
-        const moduleCodes = normalizeModuleCodes((tenantModulesResponse?.items || []).map(module => module.code))
+        const moduleCodes = normalizeModuleCodes(
+          (tenantModulesResponse?.items || [])
+            .filter(module => String(module?.status ?? '').trim().toLowerCase() === 'active')
+            .map(module => module.code)
+        )
 
         replaceClientOptions([{
           value: resolvedClientId,
           label: resolvedTenantName,
+          coreTenantId: normalizeCoreTenantId(tenantResponse?.id ?? tenantId),
           moduleCodes: moduleCodes.length > 0 ? moduleCodes : profileModuleCodes.value
         }])
         markClientOptionsSynced()
@@ -538,6 +575,7 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
         data: Array<{
           id: number
           name: string
+          coreTenantId?: string
           modules?: Array<{ code?: string }>
         }>
       }>('/api/admin/clients', {
@@ -558,6 +596,7 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
         .map(item => ({
           value: normalizeOptionalClientId(item.id),
           label: String(item.name ?? '').trim() || `Cliente #${item.id}`,
+          coreTenantId: normalizeCoreTenantId(item.coreTenantId),
           moduleCodes: normalizeModuleCodes((item.modules || []).map(module => module.code))
         }))
         .filter(item => Number.isFinite(item.value) && item.value > 0)
@@ -600,6 +639,7 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     requestContextHash,
     requestHeaders,
     activeClientLabel,
+    activeClientCoreTenantId,
     activeClientModuleCodes,
     initialize,
     setUserType,

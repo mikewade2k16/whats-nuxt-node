@@ -233,7 +233,8 @@ services:
         npm run build &&
         NITRO_HOST=0.0.0.0 NITRO_PORT=3000 NODE_ENV=production node .output/server/index.mjs;
       else
-          rm -rf .nuxt .output .nitro &&
+          mkdir -p .nuxt .output .nitro;
+          rm -rf .nuxt/* .nuxt/.[!.]* .nuxt/..?* .output/* .output/.[!.]* .output/..?* .nitro/* .nitro/.[!.]* .nitro/..?* 2>/dev/null || true;
           npm run dev -- --host 0.0.0.0 --port 3000;
       fi"
     environment:
@@ -261,6 +262,9 @@ services:
       - ./apps/painel-web:/app
       - ./docs:/project-docs:ro
       - painel_web_node_modules:/app/node_modules
+      - painel_web_nuxt:/app/.nuxt
+      - painel_web_output:/app/.output
+      - painel_web_nitro:/app/.nitro
     restart: unless-stopped
 
   whatsapp-evolution-gateway:
@@ -299,8 +303,19 @@ volumes:
   postgres_data:
   redis_data:
   atendimento_online_api_node_modules:
+    name: omnichannel-mvp_api_node_modules
   atendimento_online_worker_node_modules:
+    name: omnichannel-mvp_worker_node_modules
   atendimento_online_retencao_worker_node_modules:
+    name: omnichannel-mvp_retention_worker_node_modules
   painel_web_node_modules:
+    name: omnichannel-mvp_web_node_modules
+  painel_web_nuxt:
+    name: omnichannel-mvp_web_nuxt
+  painel_web_output:
+    name: omnichannel-mvp_web_output
+  painel_web_nitro:
+    name: omnichannel-mvp_web_nitro
   whatsapp_evolution_instances:
+    name: omnichannel-mvp_evolution_instances
   fila_atendimento_uploads:

@@ -92,6 +92,68 @@ func resolveAdminUserRoleCodes(level string, isPlatformAdmin bool) []string {
 	}
 }
 
+func adminUserModuleScopeJoinClause() string {
+	return `
+LEFT JOIN LATERAL (
+	WITH tenant_effective_modules AS (
+		SELECT module_state.code
+		FROM (
+			SELECT
+				m.code,
+				CASE
+					WHEN tm.status IS NOT NULL THEN tm.status::text
+					WHEN inherited_module.is_active THEN 'active'
+					ELSE 'inactive'
+				END AS status,
+				CASE WHEN tm.status IS NOT NULL THEN 0 ELSE 1 END AS source_priority,
+				m.is_core
+			FROM modules m
+			LEFT JOIN tenant_modules tm
+			  ON tm.module_id = m.id
+			 AND tm.tenant_id = scope.tenant_id
+			LEFT JOIN LATERAL (
+				SELECT true AS is_active
+				FROM tenant_subscriptions ts
+				JOIN plan_modules pm
+				  ON pm.plan_id = ts.plan_id
+				 AND pm.enabled = true
+				WHERE ts.tenant_id = scope.tenant_id
+				  AND ts.status IN ('trialing', 'active')
+				  AND pm.module_id = m.id
+				LIMIT 1
+			) inherited_module ON true
+			WHERE m.is_active = true
+		) module_state
+		WHERE module_state.status = 'active'
+	),
+	effective_user_modules AS (
+		SELECT tenant_effective_modules.code
+		FROM tenant_effective_modules
+		WHERE scope.id IS NOT NULL
+		  AND (
+			scope.is_owner
+			OR COALESCE(scope.access_level, '') = 'admin'
+			OR COALESCE(scope.user_type, '') = 'admin'
+		  )
+		UNION
+		SELECT tenant_effective_modules.code
+		FROM tenant_user_modules tum
+		JOIN modules m ON m.id = tum.module_id
+		JOIN tenant_effective_modules ON tenant_effective_modules.code = m.code
+		WHERE tum.tenant_user_id = scope.id
+		  AND tum.status = 'active'
+	)
+	SELECT
+		COALESCE(json_agg(mod.code ORDER BY mod.code), '[]'::json) AS module_codes,
+		COALESCE(bool_or(mod.code = 'atendimento'), false) AS atendimento_access
+	FROM (
+		SELECT DISTINCT code
+		FROM effective_user_modules
+	) mod
+) module_scope ON true
+`
+}
+
 func (s *Service) resolveRootTenantID(ctx context.Context) (string, error) {
 	var tenantID string
 	err := s.pool.QueryRow(
@@ -284,7 +346,14 @@ SELECT
 	COALESCE(t.project_count, 0),
 	COALESCE(array_to_string(t.project_segments, ', '), ''),
 	COALESCE(NULLIF(t.billing_mode, ''), 'single'),
-	COALESCE(t.monthly_payment_amount, 0)::float8,
+	CASE
+		WHEN COALESCE(NULLIF(t.billing_mode, ''), 'single') = 'per_store' THEN COALESCE((
+			SELECT SUM(sc.amount)::float8
+			FROM tenant_store_charges sc
+			WHERE sc.tenant_id = t.id
+		), 0)
+		ELSE COALESCE(t.monthly_payment_amount, 0)::float8
+	END,
 	t.billing_day,
 	COALESCE(t.logo_url, ''),
 	COALESCE(t.webhook_enabled, false),
@@ -315,7 +384,6 @@ SELECT
 			FROM tenant_modules tm
 			JOIN modules m ON m.id = tm.module_id
 			WHERE tm.tenant_id = t.id
-			  AND tm.status = 'active'
 
 			UNION ALL
 
@@ -353,6 +421,7 @@ SELECT
 			ORDER BY md.source_priority ASC, md.is_core DESC, md.code ASC
 		)
 		FROM module_dedupe md
+		WHERE md.status = 'active'
 	), '[]'::json),
 	COUNT(*) OVER()
 FROM tenants t
@@ -422,6 +491,28 @@ LIMIT %s OFFSET %s
 	}
 
 	return items, total, nil
+}
+
+func (s *Service) GetAdminClient(ctx context.Context, input GetAdminClientInput) (AdminClient, error) {
+	if input.ClientID <= 0 {
+		return AdminClient{}, ErrInvalidInput
+	}
+
+	item, tenantID, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	if err != nil {
+		return AdminClient{}, err
+	}
+
+	if !input.IsPlatformAdmin {
+		if strings.TrimSpace(input.TenantID) == "" {
+			return AdminClient{}, ErrForbidden
+		}
+		if strings.TrimSpace(input.TenantID) != strings.TrimSpace(tenantID) {
+			return AdminClient{}, ErrForbidden
+		}
+	}
+
+	return item, nil
 }
 
 func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClientInput) (AdminClient, error) {
@@ -738,13 +829,45 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 		_, err = s.pool.Exec(ctx, `UPDATE tenants SET status = $2::tenant_status, updated_at = now() WHERE id = $1`, tenantID, status)
 	case "billingMode":
 		mode := normalizeBillingModeValue(stringValue(input.Value))
-		_, err = s.pool.Exec(ctx, `UPDATE tenants SET billing_mode = $2, updated_at = now() WHERE id = $1`, tenantID, mode)
+		if mode == "per_store" {
+			_, err = s.pool.Exec(
+				ctx,
+				`UPDATE tenants
+				 SET billing_mode = $2,
+				     monthly_payment_amount = COALESCE((
+				       SELECT SUM(sc.amount)::float8
+				       FROM tenant_store_charges sc
+				       WHERE sc.tenant_id = $1
+				     ), 0),
+				     updated_at = now()
+				 WHERE id = $1`,
+				tenantID,
+				mode,
+			)
+		} else {
+			_, err = s.pool.Exec(ctx, `UPDATE tenants SET billing_mode = $2, updated_at = now() WHERE id = $1`, tenantID, mode)
+		}
 	case "monthlyPaymentAmount":
 		amount := numericValue(input.Value)
 		if amount < 0 {
 			amount = 0
 		}
-		_, err = s.pool.Exec(ctx, `UPDATE tenants SET monthly_payment_amount = $2, updated_at = now() WHERE id = $1`, tenantID, amount)
+		_, err = s.pool.Exec(
+			ctx,
+			`UPDATE tenants
+			 SET monthly_payment_amount = CASE
+			       WHEN billing_mode = 'per_store' THEN COALESCE((
+			         SELECT SUM(sc.amount)::float8
+			         FROM tenant_store_charges sc
+			         WHERE sc.tenant_id = $1
+			       ), 0)
+			       ELSE $2
+			     END,
+			     updated_at = now()
+			 WHERE id = $1`,
+			tenantID,
+			amount,
+		)
 	case "paymentDueDay":
 		day := normalizeBillingDay(input.Value)
 		if day == 0 {
@@ -833,7 +956,9 @@ func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdm
 		return AdminClient{}, fmt.Errorf("clear tenant stores: %w", err)
 	}
 
+	totalAmount := 0.0
 	for index, store := range stores {
+		totalAmount += store.Amount
 		if _, err := tx.Exec(
 			ctx,
 			`INSERT INTO tenant_store_charges (tenant_id, store_name, amount, sort_order, metadata)
@@ -845,6 +970,18 @@ func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdm
 		); err != nil {
 			return AdminClient{}, fmt.Errorf("insert tenant store: %w", err)
 		}
+	}
+
+	if _, err := tx.Exec(
+		ctx,
+		`UPDATE tenants
+		 SET monthly_payment_amount = $2,
+		     updated_at = now()
+		 WHERE id = $1`,
+		tenantID,
+		totalAmount,
+	); err != nil {
+		return AdminClient{}, fmt.Errorf("sync tenant monthly payment from stores: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -954,7 +1091,7 @@ func (s *Service) ListAdminUsers(ctx context.Context, input ListAdminUsersInput)
 
 	conditions := []string{"u.deleted_at IS NULL"}
 
-	joinClause := `
+	joinClause := fmt.Sprintf(`
 LEFT JOIN LATERAL (
 	SELECT
 		tu.id,
@@ -978,19 +1115,8 @@ LEFT JOIN LATERAL (
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN LATERAL (
-	SELECT
-		COALESCE(
-			json_agg(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
-			'[]'::json
-		) AS module_codes,
-		COALESCE(bool_or(m.code = 'atendimento'), false) AS atendimento_access
-	FROM tenant_user_modules tum
-	JOIN modules m ON m.id = tum.module_id
-	WHERE tum.tenant_user_id = scope.id
-	  AND tum.status = 'active'
-) module_scope ON true
-`
+%s
+`, adminUserModuleScopeJoinClause())
 
 	if !input.IsPlatformAdmin {
 		tenantPlaceholder := arg(strings.TrimSpace(input.TenantID))
@@ -999,19 +1125,8 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN LATERAL (
-	SELECT
-		COALESCE(
-			json_agg(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
-			'[]'::json
-		) AS module_codes,
-		COALESCE(bool_or(m.code = 'atendimento'), false) AS atendimento_access
-	FROM tenant_user_modules tum
-	JOIN modules m ON m.id = tum.module_id
-	WHERE tum.tenant_user_id = scope.id
-	  AND tum.status = 'active'
-) module_scope ON true
-`, tenantPlaceholder)
+%s
+`, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
 
 	queryText := strings.TrimSpace(strings.ToLower(input.Query))
@@ -1149,11 +1264,11 @@ LIMIT %s OFFSET %s
 	return items, total, nil
 }
 
-func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInput) (AdminUser, error) {
+func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInput) (AdminUser, string, error) {
 	name := strings.TrimSpace(input.Name)
 	email := strings.TrimSpace(strings.ToLower(input.Email))
 	if name == "" || email == "" {
-		return AdminUser{}, ErrInvalidInput
+		return AdminUser{}, "", ErrInvalidInput
 	}
 
 	targetIsPlatformAdmin := input.TargetIsPlatformAdmin && input.IsPlatformAdmin
@@ -1168,7 +1283,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			targetTenantID, err = s.resolveTargetTenantForUserMutation(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
 		}
 		if err != nil {
-			return AdminUser{}, err
+			return AdminUser{}, "", err
 		}
 	}
 
@@ -1184,7 +1299,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return AdminUser{}, fmt.Errorf("begin create user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("begin create user tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -1208,7 +1323,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		},
 	)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 
 	if shouldCreateTenantMembership {
@@ -1249,7 +1364,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			level,
 			userType,
 		).Scan(&tenantUserID); err != nil {
-			return AdminUser{}, fmt.Errorf("create tenant user membership: %w", err)
+			return AdminUser{}, "", fmt.Errorf("create tenant user membership: %w", err)
 		}
 
 		if err := s.syncManagedTenantUserRoles(
@@ -1261,12 +1376,12 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			level,
 			targetIsPlatformAdmin,
 		); err != nil {
-			return AdminUser{}, err
+			return AdminUser{}, "", err
 		}
 
 		if targetIsPlatformAdmin {
 			if err := s.grantPlatformAdminModules(ctx, tx, targetTenantID, tenantUserID, strings.TrimSpace(input.UserID)); err != nil {
-				return AdminUser{}, err
+				return AdminUser{}, "", err
 			}
 		} else if level == "admin" && userType == "admin" {
 			if _, err := tx.Exec(
@@ -1304,21 +1419,21 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 				tenantUserID,
 				nullableString(strings.TrimSpace(input.UserID)),
 			); err != nil {
-				return AdminUser{}, fmt.Errorf("assign atendimento module to tenant admin: %w", err)
+				return AdminUser{}, "", fmt.Errorf("assign atendimento module to tenant admin: %w", err)
 			}
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return AdminUser{}, fmt.Errorf("commit create user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("commit create user tx: %w", err)
 	}
 
 	item, _, err := s.getAdminUserByLegacyID(ctx, legacyID, targetTenantID, false)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 
-	return item, nil
+	return item, targetTenantID, nil
 }
 
 type adminManagedUserInput struct {
@@ -1436,36 +1551,36 @@ func upsertAdminManagedUserByEmail(ctx context.Context, tx pgx.Tx, input adminMa
 	return userID, legacyID, nil
 }
 
-func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUserFieldInput) (AdminUser, error) {
+func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUserFieldInput) (AdminUser, string, error) {
 	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 
 	field := strings.TrimSpace(input.Field)
 	switch field {
 	case "clientId":
 		if !input.IsPlatformAdmin {
-			return AdminUser{}, ErrForbidden
+			return AdminUser{}, "", ErrForbidden
 		}
 
 		nextClientID := intValue(input.Value)
 		if nextClientID <= 0 {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 
 		if current.ClientID != nil && *current.ClientID == nextClientID {
-			return current, nil
+			return current, scopeTenantID, nil
 		}
 
 		nextTenantID, resolveErr := s.resolveTargetTenantForUserMutation(ctx, input.TenantID, true, &nextClientID)
 		if resolveErr != nil {
-			return AdminUser{}, resolveErr
+			return AdminUser{}, "", resolveErr
 		}
 
 		tx, beginErr := s.pool.Begin(ctx)
 		if beginErr != nil {
-			return AdminUser{}, fmt.Errorf("begin reassign admin user tenant tx: %w", beginErr)
+			return AdminUser{}, "", fmt.Errorf("begin reassign admin user tenant tx: %w", beginErr)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 
@@ -1481,7 +1596,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			   AND tum.status = 'active'`,
 			current.CoreUserID,
 		); execErr != nil {
-			return AdminUser{}, fmt.Errorf("deactivate old tenant user modules on user reassign: %w", execErr)
+			return AdminUser{}, "", fmt.Errorf("deactivate old tenant user modules on user reassign: %w", execErr)
 		}
 
 		if _, execErr := tx.Exec(
@@ -1494,7 +1609,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			   AND status IN ('active', 'invited')`,
 			current.CoreUserID,
 		); execErr != nil {
-			return AdminUser{}, fmt.Errorf("suspend previous tenant memberships on user reassign: %w", execErr)
+			return AdminUser{}, "", fmt.Errorf("suspend previous tenant memberships on user reassign: %w", execErr)
 		}
 
 		var nextTenantUserID string
@@ -1533,7 +1648,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			normalizeAccessLevel(current.Level),
 			normalizeUserType(current.UserType),
 		).Scan(&nextTenantUserID); scanErr != nil {
-			return AdminUser{}, fmt.Errorf("upsert reassigned tenant user membership: %w", scanErr)
+			return AdminUser{}, "", fmt.Errorf("upsert reassigned tenant user membership: %w", scanErr)
 		}
 
 		if _, execErr := tx.Exec(
@@ -1544,7 +1659,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			 WHERE id = $1`,
 			current.CoreUserID,
 		); execErr != nil {
-			return AdminUser{}, fmt.Errorf("reactivate user after client assignment: %w", execErr)
+			return AdminUser{}, "", fmt.Errorf("reactivate user after client assignment: %w", execErr)
 		}
 
 		if _, execErr := tx.Exec(
@@ -1562,7 +1677,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			   updated_at = now()`,
 			nextTenantID,
 		); execErr != nil {
-			return AdminUser{}, fmt.Errorf("ensure core_panel module active on user reassign: %w", execErr)
+			return AdminUser{}, "", fmt.Errorf("ensure core_panel module active on user reassign: %w", execErr)
 		}
 
 		if _, execErr := tx.Exec(
@@ -1597,17 +1712,17 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			nextTenantUserID,
 			nullableString(strings.TrimSpace(input.UserID)),
 		); execErr != nil {
-			return AdminUser{}, fmt.Errorf("assign core_panel module on user reassign: %w", execErr)
+			return AdminUser{}, "", fmt.Errorf("assign core_panel module on user reassign: %w", execErr)
 		}
 
 		if commitErr := tx.Commit(ctx); commitErr != nil {
-			return AdminUser{}, fmt.Errorf("commit user tenant reassignment: %w", commitErr)
+			return AdminUser{}, "", fmt.Errorf("commit user tenant reassignment: %w", commitErr)
 		}
 
 		scopeTenantID = nextTenantID
 	case "level":
 		if scopeTenantID == "" {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		_, err = s.pool.Exec(
 			ctx,
@@ -1622,7 +1737,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		)
 	case "userType":
 		if scopeTenantID == "" {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		_, err = s.pool.Exec(
 			ctx,
@@ -1638,7 +1753,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 	case "name":
 		value := strings.TrimSpace(stringValue(input.Value))
 		if value == "" {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		_, err = s.pool.Exec(
 			ctx,
@@ -1655,7 +1770,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 	case "email":
 		email := strings.TrimSpace(strings.ToLower(stringValue(input.Value)))
 		if email == "" {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		_, err = s.pool.Exec(ctx, `UPDATE users SET email = $2, updated_at = now() WHERE id = $1`, current.CoreUserID, email)
 	case "phone":
@@ -1663,17 +1778,17 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 	case "password":
 		password := strings.TrimSpace(stringValue(input.Value))
 		if len(password) < 6 {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		passwordHash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if hashErr != nil {
-			return AdminUser{}, fmt.Errorf("hash password for admin user update: %w", hashErr)
+			return AdminUser{}, "", fmt.Errorf("hash password for admin user update: %w", hashErr)
 		}
 		_, err = s.pool.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, current.CoreUserID, string(passwordHash))
 	case "status":
 		normalized := normalizeUserRecordStatus(stringValue(input.Value))
 		if normalized == "active" && !canActivateManagedAdminUser(current, scopeTenantID) {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		tenantUserStatus := "suspended"
 		if normalized == "active" {
@@ -1713,7 +1828,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 	case "createdAt":
 		timestamp := parseTimestamp(input.Value)
 		if timestamp == nil {
-			return AdminUser{}, ErrInvalidInput
+			return AdminUser{}, "", ErrInvalidInput
 		}
 		_, err = s.pool.Exec(ctx, `UPDATE users SET created_at = $2, updated_at = now() WHERE id = $1`, current.CoreUserID, *timestamp)
 	case "preferences":
@@ -1721,11 +1836,11 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		_, err = s.pool.Exec(ctx, `UPDATE users SET preferences = $2::jsonb, updated_at = now() WHERE id = $1`, current.CoreUserID, preferences)
 	case "atendimentoAccess":
 		if current.IsPlatformAdmin || scopeTenantID == "" {
-			return AdminUser{}, ErrForbidden
+			return AdminUser{}, "", ErrForbidden
 		}
 		tenantUserID, lookupErr := s.findTenantUserIDByUserID(ctx, scopeTenantID, current.CoreUserID)
 		if lookupErr != nil {
-			return AdminUser{}, lookupErr
+			return AdminUser{}, "", lookupErr
 		}
 		if boolValue(input.Value) {
 			_, err = s.AssignTenantUserToModule(ctx, AssignTenantUserInput{
@@ -1744,15 +1859,15 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			})
 		}
 	default:
-		return AdminUser{}, ErrInvalidInput
+		return AdminUser{}, "", ErrInvalidInput
 	}
 	if err != nil {
-		return AdminUser{}, fmt.Errorf("update admin user field: %w", err)
+		return AdminUser{}, "", fmt.Errorf("update admin user field: %w", err)
 	}
 
 	updated, _, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 
 	_ = s.insertAudit(ctx, auditInput{
@@ -1768,7 +1883,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		},
 	})
 
-	return updated, nil
+	return updated, scopeTenantID, nil
 }
 
 // UpdateOwnProfileField updates a single self-serviceable field for the authenticated user,
@@ -1838,18 +1953,18 @@ func (s *Service) UpdateOwnProfileField(ctx context.Context, input UpdateOwnProf
 	return nil
 }
 
-func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserInput) (AdminUser, error) {
+func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserInput) (AdminUser, string, error) {
 	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 	if !canActivateManagedAdminUser(current, scopeTenantID) {
-		return AdminUser{}, ErrInvalidInput
+		return AdminUser{}, "", ErrInvalidInput
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return AdminUser{}, fmt.Errorf("begin approve user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("begin approve user tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -1862,7 +1977,7 @@ func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserIn
 		 WHERE id = $1`,
 		current.CoreUserID,
 	); err != nil {
-		return AdminUser{}, fmt.Errorf("approve user status: %w", err)
+		return AdminUser{}, "", fmt.Errorf("approve user status: %w", err)
 	}
 
 	if scopeTenantID != "" {
@@ -1877,31 +1992,31 @@ func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserIn
 			scopeTenantID,
 			current.CoreUserID,
 		); err != nil {
-			return AdminUser{}, fmt.Errorf("approve tenant user status: %w", err)
+			return AdminUser{}, "", fmt.Errorf("approve tenant user status: %w", err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return AdminUser{}, fmt.Errorf("commit approve user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("commit approve user tx: %w", err)
 	}
 
 	updated, _, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
-		return AdminUser{}, err
+		return AdminUser{}, "", err
 	}
 
-	return updated, nil
+	return updated, scopeTenantID, nil
 }
 
-func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInput) error {
+func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInput) (AdminUser, string, error) {
 	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
-		return err
+		return AdminUser{}, "", err
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin delete user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("begin delete user tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -1914,7 +2029,7 @@ func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInpu
 		 WHERE id = $1`,
 		current.CoreUserID,
 	); err != nil {
-		return fmt.Errorf("soft delete user: %w", err)
+		return AdminUser{}, "", fmt.Errorf("soft delete user: %w", err)
 	}
 
 	if scopeTenantID != "" {
@@ -1928,15 +2043,15 @@ func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInpu
 			scopeTenantID,
 			current.CoreUserID,
 		); err != nil {
-			return fmt.Errorf("suspend tenant user: %w", err)
+			return AdminUser{}, "", fmt.Errorf("suspend tenant user: %w", err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit delete user tx: %w", err)
+		return AdminUser{}, "", fmt.Errorf("commit delete user tx: %w", err)
 	}
 
-	return nil
+	return current, scopeTenantID, nil
 }
 
 func (s *Service) getAdminClientByLegacyID(ctx context.Context, clientID int) (AdminClient, string, error) {
@@ -1953,7 +2068,14 @@ SELECT
 	COALESCE(t.project_count, 0),
 	COALESCE(array_to_string(t.project_segments, ', '), ''),
 	COALESCE(NULLIF(t.billing_mode, ''), 'single'),
-	COALESCE(t.monthly_payment_amount, 0)::float8,
+	CASE
+		WHEN COALESCE(NULLIF(t.billing_mode, ''), 'single') = 'per_store' THEN COALESCE((
+			SELECT SUM(sc.amount)::float8
+			FROM tenant_store_charges sc
+			WHERE sc.tenant_id = t.id
+		), 0)
+		ELSE COALESCE(t.monthly_payment_amount, 0)::float8
+	END,
 	t.billing_day,
 	COALESCE(t.logo_url, ''),
 	COALESCE(t.webhook_enabled, false),
@@ -1984,7 +2106,6 @@ SELECT
 			FROM tenant_modules tm
 			JOIN modules m ON m.id = tm.module_id
 			WHERE tm.tenant_id = t.id
-			  AND tm.status = 'active'
 
 			UNION ALL
 
@@ -2022,6 +2143,7 @@ SELECT
 			ORDER BY md.source_priority ASC, md.is_core DESC, md.code ASC
 		)
 		FROM module_dedupe md
+		WHERE md.status = 'active'
 	), '[]'::json)
 FROM tenants t
 WHERE t.legacy_id = $1
@@ -2091,7 +2213,7 @@ func (s *Service) getAdminUserByLegacyID(ctx context.Context, legacyUserID int, 
 	}
 
 	userPlaceholder := arg(legacyUserID)
-	joinClause := `
+	joinClause := fmt.Sprintf(`
 LEFT JOIN LATERAL (
 	SELECT
 		tu.id,
@@ -2115,19 +2237,8 @@ LEFT JOIN LATERAL (
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN LATERAL (
-	SELECT
-		COALESCE(
-			json_agg(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
-			'[]'::json
-		) AS module_codes,
-		COALESCE(bool_or(m.code = 'atendimento'), false) AS atendimento_access
-	FROM tenant_user_modules tum
-	JOIN modules m ON m.id = tum.module_id
-	WHERE tum.tenant_user_id = scope.id
-	  AND tum.status = 'active'
-) module_scope ON true
-`
+%s
+`, adminUserModuleScopeJoinClause())
 	conditions := []string{
 		fmt.Sprintf("u.legacy_id = %s", userPlaceholder),
 		"u.deleted_at IS NULL",
@@ -2140,19 +2251,8 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN LATERAL (
-	SELECT
-		COALESCE(
-			json_agg(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
-			'[]'::json
-		) AS module_codes,
-		COALESCE(bool_or(m.code = 'atendimento'), false) AS atendimento_access
-	FROM tenant_user_modules tum
-	JOIN modules m ON m.id = tum.module_id
-	WHERE tum.tenant_user_id = scope.id
-	  AND tum.status = 'active'
-) module_scope ON true
-`, tenantPlaceholder)
+%s
+`, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
 
 	query := fmt.Sprintf(`

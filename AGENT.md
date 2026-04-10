@@ -48,6 +48,7 @@ Memoria operacional do projeto para agentes e para as proximas rodadas de deploy
 - sem isso, endpoints como `/core/tenants/{tenantId}` e `/modules` falham com `401` e o frontend mostra `Falha no backend core`
 - a criacao de usuario admin/root foi ajustada para suportar `isPlatformAdmin`
 - o login do painel autentica no `plataforma-api` e o `apps/atendimento-online-api` aceita esse mesmo token como sessao principal
+- o modal `Conexao WhatsApp` da inbox agora expõe limpeza manual de historico por instancia via `POST /tenant/whatsapp/conversations/clear`; a acao remove conversas, mensagens e eventos operacionais do tenant/instancia selecionados sem derrubar a sessao da Evolution
 - o modulo operacional nao expoe mais `POST /auth/login`; o JWT local do modulo foi removido e o login principal ficou em `POST /core/auth/login`
 - `POST /session/context` devolve o mesmo token do `plataforma-api` com contexto explicito do tenant selecionado
 - quando `isPlatformAdmin = true`, o usuario deve:
@@ -89,6 +90,16 @@ scp -i ~/.ssh/vps_deploy "CAMINHO_LOCAL" root@85.31.62.33:/opt/omnichannel/CAMIN
 
 ```bash
 ssh -i ~/.ssh/vps_deploy root@85.31.62.33 "cd /opt/omnichannel && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d --build --force-recreate plataforma-api painel-web"
+```
+
+### Deploy rapido seletivo apos git push
+
+- o `docker-compose.prod.yml` passou a usar `Dockerfile.prod` para `painel-web`, `atendimento-online-api` e workers, evitando `npm ci` + `build` no startup do container de producao
+- na VPS, o script `scripts/deploy-vps-fast.ps1` faz `git pull --ff-only`, `docker compose build` seletivo e `up -d --no-deps` so dos servicos pedidos
+- exemplo local Windows:
+
+```powershell
+./scripts/deploy-vps-fast.ps1 -Services painel-web,atendimento-online-api -ForceRecreate
 ```
 
 ### Smoke test minimo de auth

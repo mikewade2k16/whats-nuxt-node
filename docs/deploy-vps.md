@@ -4,6 +4,13 @@ Guia operacional do runtime oficial em produção.
 
 ## Premissa importante
 
+Atualizacao de 2026-04-09:
+
+- o override `docker-compose.prod.yml` agora usa `Dockerfile.prod` para `painel-web`, `atendimento-online-api`, `atendimento-online-worker` e `atendimento-online-retencao-worker`
+- isso remove o ciclo de `npm ci` + `build` no startup dos containers de producao
+- o rebuild continua acontecendo na VPS quando voce roda `docker compose build`, mas o container sobe pronto logo depois da criacao
+- para deploy seletivo apos `git push`, preferir o script `scripts/deploy-vps-fast.ps1`
+
 O projeto deve subir em produção usando os mesmos serviços principais já existentes:
 
 - `postgres`
@@ -78,6 +85,28 @@ omnichannel-mvp-whatsapp-evolution-gateway-1
 omnichannel-mvp-mailpit-1
 omnichannel-mvp-caddy-1
 ```
+
+## Volumes preservados no rename
+
+O rename de serviços e containers não deve recriar volumes de dados.
+Para manter continuidade de banco, Redis, sessão do WhatsApp e caches de build, a stack atual reaproveita estes volumes nomeados:
+
+```text
+omnichannel-mvp_postgres_data
+omnichannel-mvp_redis_data
+omnichannel-mvp_evolution_instances
+omnichannel-mvp_api_node_modules
+omnichannel-mvp_worker_node_modules
+omnichannel-mvp_retention_worker_node_modules
+omnichannel-mvp_web_node_modules
+```
+
+Regra operacional:
+
+- não remover volumes durante o rename dos serviços
+- não trocar manualmente o nome desses volumes na VPS sem plano de migração
+- se precisar recriar containers, usar `docker compose up -d --build --force-recreate` sem `down -v`
+- a sessão da Evolution fica em `omnichannel-mvp_evolution_instances`; apagar esse volume derruba conexões existentes
 
 ## Estrutura esperada em `/opt/omnichannel`
 
@@ -158,6 +187,25 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channe
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod ps
 ```
 
+Deploy seletivo mais rapido a partir da maquina local Windows:
+
+```powershell
+./scripts/deploy-vps-fast.ps1 -Services painel-web,atendimento-online-api -ForceRecreate
+```
+
+Exemplos uteis:
+
+```powershell
+# so o painel
+./scripts/deploy-vps-fast.ps1 -Services painel-web -ForceRecreate
+
+# API + workers sem tocar no painel
+./scripts/deploy-vps-fast.ps1 -Services atendimento-online-api,atendimento-online-worker,atendimento-online-retencao-worker -ForceRecreate
+
+# quando o repo remoto ja foi atualizado por outro processo
+./scripts/deploy-vps-fast.ps1 -Services painel-web -SkipGitPull -ForceRecreate
+```
+
 Adminer, somente se realmente necessário:
 
 ```bash
@@ -206,6 +254,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channe
 - não expor subdomínio separado do módulo se o host oficial está dentro do `painel-web`
 - não deixar `Adminer` exposto permanentemente no domínio público
 - não depender de `npm run dev`, `tsx watch` ou bootstrap automático de schema para manter produção viva
+- não voltar a bind mount de `apps/painel-web` e `apps/atendimento-online-api` no runtime de produção; isso reintroduz build lento no startup
 
 ## Observação de arquitetura
 

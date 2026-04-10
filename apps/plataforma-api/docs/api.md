@@ -263,6 +263,8 @@ Request:
 
 Query: `page`, `limit`, `q`, `status`.
 
+### GET /core/admin/clients/{clientId}
+
 ### POST /core/admin/clients
 
 Request:

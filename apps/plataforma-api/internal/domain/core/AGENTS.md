@@ -74,6 +74,7 @@
 - publicados: nenhum evento de domínio formal no momento
 - consumidos: nenhum evento de domínio formal no momento
 - sinais indiretos: notificações via hub realtime quando handlers administrativos precisarem refletir contexto ao painel
+- mutacoes em `admin clients` que alterem campos ou lojas devem publicar no tenant room um evento curto `entity=clients`, `action=updated`, com `clientId` e `payload.field`, para o shell atualizar contexto sem reload
 
 ## O que o módulo não pode conhecer
 
@@ -90,3 +91,10 @@
 - `go test ./...`
 - validar rotas de tenant, RBAC e módulos tocadas pela mudança
 - revisar se a alteração não inflou payload de listagem administrativa
+
+## Regras atuais de clientes e modulos
+
+- a lista administrativa de clientes e `ListTenantModules` devem expor o conjunto efetivo de modulos do tenant, nao apenas overrides ativos isolados
+- precedencia obrigatoria: `tenant_modules.status` explicito vence heranca do plano; se o tenant marcou um modulo como `inactive`, esse override deve derrubar a heranca vinda de `plan_modules`
+- payload administrativo de cliente deve continuar leve, mas precisa carregar `coreTenantId` e modulos efetivamente ativos para o shell resolver menu, rota, websocket e escopo
+- quando `billing_mode = per_store`, o core deve derivar `monthly_payment_amount` pela soma de `tenant_store_charges`; update manual do valor mensal nao pode sobrescrever esse total enquanto o modo por loja estiver ativo

@@ -595,8 +595,8 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 		clientID           *int
 		moduleCodesJSON    []byte
 	)
-	err := s.pool.QueryRow(
-		ctx,
+	profileTenantFilter := resolveProfileTenantFilter(claims)
+	query := fmt.Sprintf(
 		`SELECT
 			u.id,
 			u.name,
@@ -645,21 +645,15 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 			LIMIT 1
 		 ) scope ON true
 		 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-		 LEFT JOIN LATERAL (
-			SELECT
-				COALESCE(
-					json_agg(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
-					'[]'::json
-				) AS module_codes,
-				COALESCE(bool_or(m.code = 'atendimento'), false) AS atendimento_access
-			FROM tenant_user_modules tum
-			JOIN modules m ON m.id = tum.module_id
-			WHERE tum.tenant_user_id = scope.id
-			  AND tum.status = 'active'
-		 ) module_scope ON true
+		 %s
 		 WHERE u.id = $1::uuid AND u.status = 'active' AND u.deleted_at IS NULL`,
+		authUserModuleScopeJoinClause(),
+	)
+	err := s.pool.QueryRow(
+		ctx,
+		query,
 		claims.Subject,
-		claims.TenantID,
+		profileTenantFilter,
 	).Scan(
 		&user.ID,
 		&user.Name,
@@ -684,11 +678,7 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 		return MeOutput{}, fmt.Errorf("fetch me: %w", err)
 	}
 
-	if claims.TenantID != "" {
-		user.TenantID = &claims.TenantID
-	} else if resolvedTenantID != "" {
-		user.TenantID = &resolvedTenantID
-	}
+	user.TenantID = resolveProfileTenantID(claims, resolvedTenantID)
 	if resolvedTenantSlug != "" {
 		user.TenantSlug = &resolvedTenantSlug
 	}
@@ -702,6 +692,88 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 	}
 
 	return MeOutput{User: user}, nil
+}
+
+func resolveProfileTenantFilter(claims Claims) string {
+	if claims.IsPlatformAdmin {
+		return ""
+	}
+
+	return strings.TrimSpace(claims.TenantID)
+}
+
+func resolveProfileTenantID(claims Claims, resolvedTenantID string) *string {
+	normalizedResolvedTenantID := strings.TrimSpace(resolvedTenantID)
+	if normalizedResolvedTenantID != "" {
+		return &normalizedResolvedTenantID
+	}
+
+	normalizedClaimsTenantID := strings.TrimSpace(claims.TenantID)
+	if normalizedClaimsTenantID == "" {
+		return nil
+	}
+
+	return &normalizedClaimsTenantID
+}
+
+func authUserModuleScopeJoinClause() string {
+	return `LEFT JOIN LATERAL (
+		WITH tenant_effective_modules AS (
+			SELECT module_state.code
+			FROM (
+				SELECT
+					m.code,
+					CASE
+						WHEN tm.status IS NOT NULL THEN tm.status::text
+						WHEN inherited_module.is_active THEN 'active'
+						ELSE 'inactive'
+					END AS status,
+					CASE WHEN tm.status IS NOT NULL THEN 0 ELSE 1 END AS source_priority,
+					m.is_core
+				FROM modules m
+				LEFT JOIN tenant_modules tm
+				  ON tm.module_id = m.id
+				 AND tm.tenant_id = scope.tenant_id
+				LEFT JOIN LATERAL (
+					SELECT true AS is_active
+					FROM tenant_subscriptions ts
+					JOIN plan_modules pm
+					  ON pm.plan_id = ts.plan_id
+					 AND pm.enabled = true
+					WHERE ts.tenant_id = scope.tenant_id
+					  AND ts.status IN ('trialing', 'active')
+					  AND pm.module_id = m.id
+					LIMIT 1
+				) inherited_module ON true
+				WHERE m.is_active = true
+			) module_state
+			WHERE module_state.status = 'active'
+		),
+		effective_user_modules AS (
+			SELECT tenant_effective_modules.code
+			FROM tenant_effective_modules
+			WHERE scope.id IS NOT NULL
+			  AND (
+				scope.is_owner
+				OR COALESCE(scope.access_level, '') = 'admin'
+				OR COALESCE(scope.user_type, '') = 'admin'
+			  )
+			UNION
+			SELECT tenant_effective_modules.code
+			FROM tenant_user_modules tum
+			JOIN modules m ON m.id = tum.module_id
+			JOIN tenant_effective_modules ON tenant_effective_modules.code = m.code
+			WHERE tum.tenant_user_id = scope.id
+			  AND tum.status = 'active'
+		)
+		SELECT
+			COALESCE(json_agg(mod.code ORDER BY mod.code), '[]'::json) AS module_codes,
+			COALESCE(bool_or(mod.code = 'atendimento'), false) AS atendimento_access
+		FROM (
+			SELECT DISTINCT code
+			FROM effective_user_modules
+		) mod
+	) module_scope ON true`
 }
 
 func (s *Service) ensureSessionConfig(ctx context.Context) error {

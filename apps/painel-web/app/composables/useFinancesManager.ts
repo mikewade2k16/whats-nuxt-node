@@ -277,13 +277,15 @@ export function useFinancesManager() {
     errorMessage.value = ''
     setSaving(keyFor(COLLECTION_KEY, 'fetch'), true)
 
+    const scopedClientId = normalizeClientId(options.clientId || sessionSimulation.effectiveClientId)
+
     try {
       const response = await bffFetch<FinancesListResponse>(FINANCE_SHEETS_API_BASE, {
         query: {
           page: 1,
           limit: DEFAULT_FETCH_LIMIT,
           q: normalizeText(options.q, 120),
-          clientId: normalizeClientId(options.clientId),
+          clientId: scopedClientId,
           period: normalizePeriod(options.period)
         }
       })

@@ -521,6 +521,32 @@ func (s *Service) ReplaceConfig(ctx context.Context, input ReplaceConfigInput) (
 	return s.loadConfig(ctx, configUUID, clientLegacyID)
 }
 
+func (s *Service) ResolveRealtimeTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, error) {
+	tenantUUID, _, err := s.resolveFinanceTenantUUID(ctx, jwtTenantID, isPlatformAdmin, clientLegacyID)
+	if err != nil {
+		return "", err
+	}
+
+	return tenantUUID, nil
+}
+
+func (s *Service) ResolveSheetRealtimeTenant(ctx context.Context, sheetID string) (string, error) {
+	sheetUUID := normalizeUUID(sheetID)
+	if sheetUUID == "" {
+		return "", ErrInvalidInput
+	}
+
+	var tenantUUID string
+	if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM finance_sheets WHERE id = $1::uuid`, sheetUUID).Scan(&tenantUUID); err != nil {
+		if err == pgx.ErrNoRows {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+
+	return tenantUUID, nil
+}
+
 // ---- Internal helpers ----
 
 func (s *Service) resolveFinanceTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, int, string, error) {

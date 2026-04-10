@@ -1,6 +1,26 @@
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEGACY_RECURRING_PREFIX = 'recurring-client-'
 const RECURRING_ROW_UUID_RE = /^00000000-0000-4000-8000-([0-9a-f]{12})$/i
+const RECURRING_STORE_ROW_UUID_RE = /^11111111-1111-4111-8111-([0-9a-f]{12})$/i
+
+function normalizeDeterministicSeed(value: unknown) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function hashSeedToHex(seed: string) {
+  let hashA = 0x811c9dc5
+  let hashB = 0x9e3779b1
+
+  for (let index = 0; index < seed.length; index += 1) {
+    const code = seed.charCodeAt(index)
+    hashA = Math.imul(hashA ^ code, 0x01000193)
+    hashB = Math.imul(hashB ^ code, 0x85ebca6b)
+  }
+
+  const hexA = (hashA >>> 0).toString(16).padStart(8, '0')
+  const hexB = (hashB >>> 0).toString(16).padStart(8, '0')
+  return `${hexA}${hexB}`
+}
 
 export function isFinanceUuid(value: unknown): value is string {
   return UUID_RE.test(String(value ?? '').trim())
@@ -40,6 +60,17 @@ export function financeRecurringRowId(clientId: number) {
   return `00000000-0000-4000-8000-${normalized.toString(16).padStart(12, '0').slice(-12)}`
 }
 
+export function financeRecurringStoreRowId(clientId: number, storeName: string) {
+  const normalizedClientId = Math.trunc(Number(clientId || 0))
+  const normalizedStoreName = normalizeDeterministicSeed(storeName)
+  if (!Number.isFinite(normalizedClientId) || normalizedClientId <= 0 || !normalizedStoreName) {
+    return ''
+  }
+
+  const hash = hashSeedToHex(`${normalizedClientId}:${normalizedStoreName}`).slice(0, 12)
+  return `11111111-1111-4111-8111-${hash}`
+}
+
 export function parseFinanceRecurringClientId(value: unknown) {
   const raw = String(value ?? '').trim().toLowerCase()
   if (!raw) return 0
@@ -54,6 +85,11 @@ export function parseFinanceRecurringClientId(value: unknown) {
 
   const parsed = Number.parseInt(recurringMatch[1] || '', 16)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+export function isFinanceRecurringStoreRowId(value: unknown) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  return RECURRING_STORE_ROW_UUID_RE.test(raw)
 }
 
 export function normalizeFinanceEntityId(value: unknown) {

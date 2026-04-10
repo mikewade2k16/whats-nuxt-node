@@ -2,8 +2,17 @@
 !.dockerignore
 !apps/
 apps/*
+!apps/painel-web/
+!apps/painel-web/**
+apps/painel-web/node_modules
+apps/painel-web/.nuxt
+apps/painel-web/.output
+apps/painel-web/.nitro
+apps/painel-web/.logs
 !apps/plataforma-api/
 !apps/plataforma-api/**
+!docs/
+!docs/**
 !modules/
 modules/*
 !modules/fila-atendimento/

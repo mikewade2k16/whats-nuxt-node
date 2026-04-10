@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSessionRequestHeaders } from "~/stores/session-simulation";
+import { buildSessionRequestHeaders, resolveSessionSimulationFallbackClientId } from "~/stores/session-simulation";
 
 describe("buildSessionRequestHeaders", () => {
   it("mantem x-client-id efetivo mesmo fora do modo de simulacao", () => {
@@ -26,5 +26,31 @@ describe("buildSessionRequestHeaders", () => {
       "x-user-level": "manager",
       "x-client-id": "12"
     });
+  });
+
+  it("prefere o clientId do perfil quando o fallback do root admin nao existe na lista", () => {
+    expect(resolveSessionSimulationFallbackClientId({
+      canSimulate: true,
+      currentClientId: 1,
+      profileClientId: 2,
+      availableOptions: [
+        { value: 4, label: "ACME" },
+        { value: 3, label: "Pérola" },
+        { value: 2, label: "Root" }
+      ]
+    })).toBe(2);
+  });
+
+  it("mantem o client atual quando ele ja existe na lista", () => {
+    expect(resolveSessionSimulationFallbackClientId({
+      canSimulate: true,
+      currentClientId: 4,
+      profileClientId: 2,
+      availableOptions: [
+        { value: 4, label: "ACME" },
+        { value: 3, label: "Pérola" },
+        { value: 2, label: "Root" }
+      ]
+    })).toBe(4);
   });
 });

@@ -38,7 +38,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	healthHandler := handlers.NewHealthHandler(deps.StartedAt)
 	authHandler := handlers.NewAuthHandler(deps.AuthService)
 	coreHandler := handlers.NewCoreHandler(deps.CoreService, deps.Hub)
-	financeHandler := handlers.NewFinanceHandler(deps.FinanceService)
+	financeHandler := handlers.NewFinanceHandler(deps.FinanceService, deps.Hub)
 	wsHandler := handlers.NewWSHandler(deps.AuthService, deps.Hub)
 
 	r.Get("/health", healthHandler.Get)
@@ -89,6 +89,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/permissions", coreHandler.ListPermissions)
 
 			r.Get("/admin/clients", coreHandler.ListAdminClients)
+			r.Get("/admin/clients/{clientId}", coreHandler.GetAdminClient)
 			r.Post("/admin/clients", coreHandler.CreateAdminClient)
 			r.Patch("/admin/clients/{clientId}", coreHandler.UpdateAdminClientField)
 			r.Delete("/admin/clients/{clientId}", coreHandler.DeleteAdminClient)

@@ -1,11 +1,9 @@
 import { UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { env } from "../../config.js";
 import { prisma } from "../../db.js";
 import { requireAdmin, requirePlatformAdmin } from "../../lib/guards.js";
 import { CoreApiError, type CoreTenant, platformCoreClient } from "../../services/core-client.js";
-import { invalidateCoreAtendimentoAccessCacheByEmail } from "../../services/core-atendimento-access.js";
 import {
   listCoreTenantUsersWithLegacyRoles,
   mapCoreUsersToLegacyFallback,
@@ -278,20 +276,6 @@ async function createCoreUserForContext(
   }, {
     accessToken: options.accessToken
   });
-
-  if (input.role === UserRole.ADMIN) {
-    try {
-      await platformCoreClient.assignTenantUserToModule(
-        context.coreTenant.id,
-        env.CORE_ATENDIMENTO_MODULE_CODE,
-        invited.tenantUserId,
-        { accessToken: options.accessToken }
-      );
-      await invalidateCoreAtendimentoAccessCacheByEmail(normalizedEmail);
-    } catch {
-      // Best effort: user can still exist in core even if module assignment fails.
-    }
-  }
 
   const coreUsers = await listCoreTenantUsersWithLegacyRoles(context.coreTenant.id, {
     accessToken: options.accessToken
