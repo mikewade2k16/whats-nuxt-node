@@ -25,7 +25,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       ADMINER_USER: ${ADMINER_USER:-dbadmin}
-      ADMINER_PASSWORD_HASH: ${ADMINER_PASSWORD_HASH}
+      ADMINER_PASSWORD_HASH: ${ADMINER_PASSWORD_HASH:-$$2a$$14$$YWnevtAHvtC3U0y8lDKvJ.OK9Xoy46MQ1wNww.0PJP8Tb.iQElBkS}
     depends_on:
       - atendimento-online-api
       - painel-web

@@ -32,7 +32,7 @@ COPY --from=builder /app/prisma ./prisma
 
 # Health check
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=20s \
-  CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1:4000/health || exit 1
 
 # Port
 EXPOSE 4000
@@ -96,7 +96,7 @@ COPY . .
 
 # Health check
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=20s \
-  CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1:4000/health || exit 1
 
 # Port
 EXPOSE 4000
