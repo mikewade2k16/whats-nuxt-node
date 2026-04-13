@@ -2,6 +2,17 @@
 
 Guia operacional do runtime oficial em produção.
 
+Para o fluxo simples de `main -> deploy automatico na VPS`, com clone persistente do repo e politica de branches, ver tambem:
+
+- `docs/deploy-main-vps-auto.md`
+
+Resumo operacional novo:
+
+- commit so de `docs/**`, `*.md` ou `.github/workflows/**` nao dispara deploy automatico
+- o deploy automatico normal roda `docker compose up -d` e recria apenas os containers que realmente precisarem
+- o reinicio forcado fica disponivel no `workflow_dispatch` com `force_recreate=true`
+- rollback previsivel pode ser feito pelo `workflow_dispatch` informando `git_ref` com commit ou tag alvo
+
 ## Premissa importante
 
 Atualizacao de 2026-04-09:
@@ -22,6 +33,45 @@ O projeto deve subir em produção usando os mesmos serviços principais já exi
 - `painel-web`
 - `whatsapp-evolution-gateway` quando o profile `channels` estiver habilitado
 - `caddy` no override de produção
+
+## Pré-requisitos da VPS
+
+Para a VPS oficial, o host precisa ter apenas dependências de infraestrutura. Não é necessário instalar `node`, `npm`, `go` ou `pnpm` no host para rodar a stack em produção.
+
+Pacotes mínimos no host:
+
+- `docker-ce`
+- `docker-ce-cli`
+- `containerd.io`
+- `docker-buildx-plugin`
+- `docker-compose-plugin`
+- `git`
+- `curl`
+- `ca-certificates`
+
+Exemplo para Ubuntu/Debian:
+
+```bash
+apt-get update
+apt-get install -y ca-certificates curl gnupg git
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+Regra operacional:
+
+- o deploy oficial da VPS depende só de Docker + Compose + Git
+- dependências Node do `painel-web` e do `atendimento-online` são instaladas dentro das imagens Docker de produção
+- binários Go e migrations do `plataforma-api` também são empacotados na imagem; não há bootstrap manual de Go no host
 
 O módulo `fila-atendimento` não sobe mais com `fila-atendimento-postgres`, `fila-atendimento-api` ou `fila-atendimento-web` próprios no deploy principal.
 
@@ -164,7 +214,8 @@ Observações:
 
 - em ambiente local/dev, os emails de recuperação de senha vão para o Mailpit em `http://localhost:8025`
 - antes do go-live na VPS, configurar `CORE_SMTP_*` real no `.env.prod` e validar o reset de senha com envio externo real
-- `ADMINER_PASSWORD_HASH` só é necessário se você decidir subir o `Adminer` com `--profile ops`
+- se `ADMINER_PASSWORD_HASH` ficar ausente, o compose de produção aplica um hash bloqueado apenas para manter o `Caddy` válido; para usar `Adminer` com `--profile ops`, defina seu próprio `ADMINER_PASSWORD_HASH`
+- manter `CORE_AUTO_MIGRATE=true` na produção para aplicar migrations do módulo `indicators`, incluindo o seed do template sistêmico `indicators_default` (`0024`) e correções de consistência como a restauração do tenant `root` (`0025`)
 
 ## Bootstrap inicial do schema operacional
 
@@ -175,6 +226,28 @@ No primeiro deploy, rode o bootstrap explicitamente:
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod run --rm atendimento-online-api \
   sh -c 'if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then npm ci --no-audit --no-fund; fi; npm run prisma:generate && npm run prisma:push'
+```
+
+## Dependências de produção do painel
+
+O `painel-web` de produção usa `apps/painel-web/Dockerfile.prod`, que executa `npm ci` no build e embute as dependências de runtime na imagem final.
+
+Dependências já obrigatórias para a superfície atual do módulo `indicators`:
+
+- `xlsx` para exportação CSV/XLSX
+- `pdf-lib` para exportação PDF
+
+Regras operacionais:
+
+- não rodar `npm install` manual dentro do container de produção do `painel-web`
+- sempre rebuildar a imagem do `painel-web` quando `apps/painel-web/package.json` ou `apps/painel-web/package-lock.json` mudar
+- quando houver mudança conjunta de migration no `plataforma-api` e dependência do `painel-web`, rebuildar e recriar os dois serviços no mesmo deploy
+
+Exemplo seguro para mudanças do módulo `indicators`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod build plataforma-api painel-web
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d --force-recreate plataforma-api painel-web
 ```
 
 ## Subida oficial
@@ -230,6 +303,14 @@ Smoke funcional recomendado:
 5. validar contexto do módulo e leitura inicial da operação
 6. validar `esqueceu a senha` com email entregue por SMTP real configurado na VPS
 
+Smoke adicional quando o deploy incluir o módulo `indicators`:
+
+1. fazer login administrativo no painel
+2. abrir `https://app.${DOMAIN}/admin/indicadores`
+3. validar carregamento do perfil ativo e do dashboard sem erro de bootstrap
+4. validar a rota de exportação administrativa do módulo
+5. se o operador usar contexto root, validar a troca para o cliente alvo e leitura com `clientId` correspondente
+
 ## Comandos úteis
 
 ```bash
@@ -255,6 +336,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channe
 - não deixar `Adminer` exposto permanentemente no domínio público
 - não depender de `npm run dev`, `tsx watch` ou bootstrap automático de schema para manter produção viva
 - não voltar a bind mount de `apps/painel-web` e `apps/atendimento-online-api` no runtime de produção; isso reintroduz build lento no startup
+- não corrigir dependência faltante de produção com `npm install` dentro do container; em produção o caminho correto é rebuildar a imagem correspondente
 
 ## Observação de arquitetura
 

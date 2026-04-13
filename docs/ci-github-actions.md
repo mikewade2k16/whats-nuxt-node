@@ -7,12 +7,70 @@ Objetivo: garantir gate minimo de qualidade em PR/push sem depender de execucao 
 Arquivo:
 
 1. `.github/workflows/ci.yml`
+2. `.github/workflows/deploy-vps-main.yml`
 
 Triggers:
 
 1. `push` em `main`
 2. `pull_request`
 3. `workflow_dispatch`
+
+Observacao:
+
+1. o `ci.yml` continua sendo gate de qualidade
+2. o `deploy-vps-main.yml` faz deploy automatico somente quando ha `push` na `main` com mudanca real de runtime
+3. `dev` e outras branches nao disparam deploy automatico na VPS de producao
+4. o workflow nao provisiona a VPS do zero; usuario, chaves, clone inicial e `.env.prod` precisam existir antes da primeira execucao automatica
+5. commit so de `docs/**`, arquivos `*.md` ou workflow em `.github/workflows/**` nao dispara deploy automatico
+
+## Workflow de deploy da producao
+
+Arquivo:
+
+1. `.github/workflows/deploy-vps-main.yml`
+
+Trigger:
+
+1. `push` em `main`, exceto quando a alteracao for apenas docs/markdown/workflow
+2. `workflow_dispatch`
+
+Fluxo:
+
+1. abre SSH na VPS usando secrets do repo
+2. entra no clone persistente em `/opt/omnichannel`
+3. sincroniza o clone com o `ref` alvo usando `git fetch + git checkout main + git reset --hard <ref>`
+4. valida se o path remoto existe, se o clone e Git valido e se `.env.prod` esta presente
+5. builda apenas os servicos selecionados que realmente possuem imagem local
+6. roda `docker compose up -d` nos servicos selecionados
+7. so forca recriacao total quando o dispatch manual usar `force_recreate=true`
+
+Inputs uteis no `workflow_dispatch`:
+
+1. `git_ref`: commit, tag ou branch para redeploy e rollback controlado
+2. `services`: lista de servicos separados por espaco ou virgula
+3. `build_images`: permite pular `docker compose build` em redeploy manual
+4. `force_recreate`: permite reiniciar tudo explicitamente quando necessario
+
+Precondicoes fora do repo:
+
+1. a VPS ja precisa ter Docker, Git e Compose funcionando
+2. o repo ja precisa estar clonado em `/opt/omnichannel`
+3. o arquivo `.env.prod` ja precisa existir na VPS
+4. a VPS ja precisa aceitar a chave SSH do GitHub Actions
+5. os secrets do GitHub Actions ja precisam estar cadastrados
+
+Secrets esperados:
+
+1. `VPS_HOST`
+2. `VPS_PORT`
+3. `VPS_USER`
+4. `VPS_REMOTE_PATH`
+5. `VPS_SSH_KEY`
+6. `VPS_KNOWN_HOSTS`
+
+Documento simples do fluxo:
+
+1. `docs/deploy-main-vps-auto.md`
 
 Jobs:
 
