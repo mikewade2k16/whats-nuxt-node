@@ -590,10 +590,12 @@ func (s *Service) RevokeUserSessions(ctx context.Context, claims Claims, userID 
 func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 	var user UserSummary
 	var (
-		resolvedTenantID   string
-		resolvedTenantSlug string
-		clientID           *int
-		moduleCodesJSON    []byte
+		resolvedTenantID     string
+		resolvedTenantSlug   string
+		resolvedStoreID      string
+		resolvedBusinessRole string
+		clientID             *int
+		moduleCodesJSON      []byte
 	)
 	profileTenantFilter := resolveProfileTenantFilter(claims)
 	query := fmt.Sprintf(
@@ -618,6 +620,9 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 				WHEN u.is_platform_admin THEN 'admin'
 				ELSE 'client'
 			END,
+			COALESCE(scope.business_role, ''),
+			COALESCE(scope.store_id::text, ''),
+			COALESCE(scope.registration_number, ''),
 			COALESCE(u.preferences::text, '{}'),
 			COALESCE(module_scope.module_codes, '[]'::json),
 			COALESCE(module_scope.atendimento_access, false)
@@ -628,6 +633,9 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 				tu.tenant_id,
 				tu.access_level,
 				tu.user_type,
+				tu.business_role,
+				tu.store_id,
+				tu.registration_number,
 				tu.is_owner,
 				tu.created_at
 			FROM tenant_users tu
@@ -667,6 +675,9 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 		&user.ClientName,
 		&user.Level,
 		&user.UserType,
+		&resolvedBusinessRole,
+		&resolvedStoreID,
+		&user.RegistrationNumber,
 		&user.Preferences,
 		&moduleCodesJSON,
 		&user.AtendimentoAccess,
@@ -682,6 +693,10 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 	if resolvedTenantSlug != "" {
 		user.TenantSlug = &resolvedTenantSlug
 	}
+	if resolvedStoreID != "" {
+		user.StoreID = &resolvedStoreID
+	}
+	user.BusinessRole = resolvedBusinessRole
 	user.ClientID = clientID
 	if err := json.Unmarshal(moduleCodesJSON, &user.ModuleCodes); err != nil {
 		user.ModuleCodes = []string{}

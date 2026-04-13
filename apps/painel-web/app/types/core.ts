@@ -11,6 +11,9 @@ export interface CoreAuthUser {
   clientName?: string;
   level?: string;
   userType?: string;
+  businessRole?: string;
+  storeId?: string | null;
+  registrationNumber?: string;
   preferences?: string;
   moduleCodes?: string[];
   atendimentoAccess?: boolean;

@@ -17,6 +17,8 @@ const allowedFields = new Set([
   'contactPhone',
   'contactSite',
   'contactAddress',
+  'requireUserStoreLink',
+  'requireUserRegistration',
   'modules'
 ])
 

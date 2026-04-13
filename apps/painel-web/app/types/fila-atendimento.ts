@@ -349,7 +349,6 @@ export interface FilaAtendimentoConsultantProfilePayload {
 
 export interface FilaAtendimentoConsultantMutationResult extends FilaAtendimentoOperationCommandResult {
   consultant?: FilaAtendimentoConsultantView | null
-  access?: FilaAtendimentoConsultantAccess | null
 }
 
 export interface FilaAtendimentoReportsOverviewMetrics {

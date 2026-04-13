@@ -116,3 +116,23 @@ func TestResolveLoginUserStatusError(t *testing.T) {
 		})
 	}
 }
+
+func TestUsesImplicitSMTPTLS(t *testing.T) {
+	tests := []struct {
+		name string
+		port int
+		want bool
+	}{
+		{name: "uses tls on port 465", port: 465, want: true},
+		{name: "does not use tls on mailpit port", port: 1025, want: false},
+		{name: "does not use tls on submission port", port: 587, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesImplicitSMTPTLS(tt.port); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}

@@ -94,6 +94,135 @@ func TestCanActivateManagedAdminUser(t *testing.T) {
 	}
 }
 
+func TestResolveAdminUserBusinessRole(t *testing.T) {
+	tests := []struct {
+		name            string
+		raw             string
+		level           string
+		userType        string
+		isPlatformAdmin bool
+		want            string
+	}{
+		{name: "platform admin always resolves to system admin", raw: "marketing", level: "admin", userType: "admin", isPlatformAdmin: true, want: "system_admin"},
+		{name: "tenant admin defaults to owner", raw: "", level: "admin", userType: "admin", want: "owner"},
+		{name: "consultant level defaults to consultant", raw: "", level: "consultant", userType: "client", want: "consultant"},
+		{name: "manager defaults to general manager", raw: "", level: "manager", userType: "client", want: "general_manager"},
+		{name: "explicit consultant is preserved", raw: "consultant", level: "consultant", userType: "client", want: "consultant"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveAdminUserBusinessRole(tt.raw, tt.level, tt.userType, tt.isPlatformAdmin, false)
+			if got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestValidateAdminUserDirectoryRequirements(t *testing.T) {
+	tests := []struct {
+		name  string
+		state adminUserDirectoryState
+		rules tenantUserDirectoryRules
+		want  error
+	}{
+		{
+			name: "consultant in multi store requires store and registration",
+			state: adminUserDirectoryState{
+				BusinessRole:       "consultant",
+				StoreID:            "",
+				RegistrationNumber: "",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          3,
+			},
+			want: ErrInvalidInput,
+		},
+		{
+			name: "consultant with registration only still needs store in multi store",
+			state: adminUserDirectoryState{
+				BusinessRole:       "consultant",
+				StoreID:            "",
+				RegistrationNumber: "321",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          4,
+			},
+			want: ErrInvalidInput,
+		},
+		{
+			name: "consultant in single store can omit store but keeps registration rule",
+			state: adminUserDirectoryState{
+				BusinessRole:       "consultant",
+				StoreID:            "",
+				RegistrationNumber: "321",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          1,
+			},
+			want: nil,
+		},
+		{
+			name: "marketing can stay global",
+			state: adminUserDirectoryState{
+				BusinessRole:       "marketing",
+				StoreID:            "",
+				RegistrationNumber: "",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          5,
+			},
+			want: nil,
+		},
+		{
+			name: "general manager can stay global but still requires registration",
+			state: adminUserDirectoryState{
+				BusinessRole:       "general_manager",
+				StoreID:            "",
+				RegistrationNumber: "",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          4,
+			},
+			want: ErrInvalidInput,
+		},
+		{
+			name: "general manager with registration can stay global",
+			state: adminUserDirectoryState{
+				BusinessRole:       "general_manager",
+				StoreID:            "",
+				RegistrationNumber: "301",
+			},
+			rules: tenantUserDirectoryRules{
+				RequireStoreLink:    true,
+				RequireRegistration: true,
+				StoreCount:          4,
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAdminUserDirectoryRequirements(tt.state, tt.rules)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestNormalizeOwnProfileUpdateErrorMapsDuplicateEmail(t *testing.T) {
 	err := normalizeOwnProfileUpdateError("email", &pgconn.PgError{
 		Code:           "23505",

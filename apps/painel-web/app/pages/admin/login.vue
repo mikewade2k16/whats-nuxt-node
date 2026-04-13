@@ -71,7 +71,7 @@ function normalizeUserType(value: unknown) {
 
 function normalizeUserLevel(value: unknown) {
   const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "admin" || normalized === "manager" || normalized === "finance" || normalized === "viewer") {
+  if (normalized === "admin" || normalized === "consultant" || normalized === "manager" || normalized === "finance" || normalized === "viewer") {
     return normalized;
   }
 

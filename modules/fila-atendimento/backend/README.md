@@ -120,12 +120,6 @@ Agora o auth ja usa PostgreSQL real para `users`, `user_platform_roles`, `user_t
 - `GET /v1/analytics/ranking`
 - `GET /v1/analytics/data`
 - `GET /v1/analytics/intelligence`
-- `GET /v1/users`
-- `POST /v1/users`
-- `PATCH /v1/users/{id}`
-- `POST /v1/users/{id}/invite`
-- `POST /v1/users/{id}/reset-password`
-- `POST /v1/users/{id}/archive`
 - `GET /v1/dev/ping`
   - protegido para `platform_admin`
 
@@ -139,20 +133,14 @@ Todos os usuarios abaixo usam a senha `dev123456`:
 - `proprietario@demo.local`
 - `plataforma@demo.local`
 
-## Onboarding por convite
+## Gestao de acesso no runtime hospedado
 
-Fluxo atual:
+No runtime hospedado atual:
 
-1. admin cria o usuario sem senha em `POST /v1/users`
-2. a API gera `user_invitations` com token em hash e devolve um `inviteUrl`
-3. o usuario abre `/auth/convite/:token` no Nuxt
-4. `POST /v1/auth/invitations/accept` grava a primeira senha e devolve sessao valida
-
-Observacoes:
-
-- `users.password_hash` pode ficar nulo enquanto o convite estiver pendente
-- `POST /v1/auth/login` responde `onboarding_required` se a conta ainda nao definiu a primeira senha
-- `POST /v1/users/{id}/invite` regenera o convite de um usuario ainda nao onboarded
+- cadastro, nivel, loja vinculada e liberacao de acesso ficam centralizados no shell
+- o modulo nao expoe mais CRUD administrativo proprio de usuarios
+- o painel entra no modulo pelo bridge em `POST /v1/auth/shell/exchange`
+- consultores continuam nascendo pelo roster de `consultants`, com identidade local minima para operar
 
 ## Politica atual para consultores
 

@@ -3,7 +3,7 @@ import { parseAdminPreferences } from '~/utils/admin-access'
 import { useCoreAuthStore } from '~/stores/core-auth'
 
 export type SessionSimulationUserType = 'admin' | 'client'
-export type SessionSimulationUserLevel = 'admin' | 'manager' | 'marketing' | 'finance' | 'viewer'
+export type SessionSimulationUserLevel = 'admin' | 'consultant' | 'manager' | 'marketing' | 'finance' | 'viewer'
 
 export interface SessionSimulationClientOption {
   label: string
@@ -90,7 +90,7 @@ function normalizeUserType(value: unknown): SessionSimulationUserType {
 
 function normalizeUserLevel(value: unknown): SessionSimulationUserLevel {
   const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'admin' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
+  if (normalized === 'admin' || normalized === 'consultant' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
     return normalized
   }
   return 'marketing'

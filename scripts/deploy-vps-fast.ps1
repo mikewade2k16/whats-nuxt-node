@@ -20,7 +20,17 @@ if ([string]::IsNullOrWhiteSpace($serviceList)) {
 }
 
 $composeBase = "docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod"
-$gitStep = if ($SkipGitPull) { "echo 'Skip git pull'" } else { "git pull --ff-only" }
+$gitStep = if ($SkipGitPull) {
+@"
+echo 'Skip git sync'
+"@
+} else {
+@"
+git fetch --prune origin
+git checkout main
+git reset --hard origin/main
+"@
+}
 $upFlags = @("up", "-d")
 
 if (-not $WithDeps) {

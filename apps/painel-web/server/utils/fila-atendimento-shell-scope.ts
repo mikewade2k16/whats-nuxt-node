@@ -1,5 +1,6 @@
 import { getHeader, type H3Event } from 'h3'
 import type { AccessContext } from '~~/server/utils/access-context'
+import type { ResolvedAdminProfile } from '~~/server/utils/admin-profile'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 interface CoreAdminClientListPayload {
@@ -20,6 +21,7 @@ export interface ResolvedFilaAtendimentoShellScope {
   coreTenantId: string
   tenantSlug: string
   scopeMode: FilaAtendimentoShellScopeMode
+  storeIds: string[]
 }
 
 function normalizeText(value: unknown) {
@@ -35,7 +37,15 @@ function parsePositiveInteger(value: unknown) {
   return parsed
 }
 
-function resolveScopeMode(access: AccessContext, simulatedClientId: number): FilaAtendimentoShellScopeMode {
+function normalizeBusinessRole(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function resolveScopeMode(
+  access: AccessContext,
+  profile: ResolvedAdminProfile,
+  simulatedClientId: number
+): FilaAtendimentoShellScopeMode {
   const isPlatformScope = Boolean(
     simulatedClientId <= 0
     && access.isPlatformAdmin
@@ -47,11 +57,30 @@ function resolveScopeMode(access: AccessContext, simulatedClientId: number): Fil
     return 'platform'
   }
 
-  if (access.userLevel === 'manager') {
+  const businessRole = normalizeBusinessRole(profile.businessRole)
+  if (businessRole === 'consultant' || businessRole === 'store_manager') {
+    return 'first_store'
+  }
+
+  if (businessRole === 'general_manager') {
+    return 'all_stores'
+  }
+
+  if (access.userLevel === 'consultant' || access.userLevel === 'manager') {
     return 'first_store'
   }
 
   return 'all_stores'
+}
+
+function resolveStoreIds(profile: ResolvedAdminProfile) {
+  const businessRole = normalizeBusinessRole(profile.businessRole)
+  if (businessRole !== 'consultant' && businessRole !== 'store_manager') {
+    return [] as string[]
+  }
+
+  const storeId = normalizeText(profile.storeId)
+  return storeId ? [storeId] : []
 }
 
 async function resolveCoreTenantId(event: H3Event, access: AccessContext, simulatedClientId: number) {
@@ -84,15 +113,21 @@ async function resolveTenantSlug(event: H3Event, coreTenantId: string) {
   return normalizeText(tenant?.slug)
 }
 
-export async function resolveFilaAtendimentoShellScope(event: H3Event, access: AccessContext): Promise<ResolvedFilaAtendimentoShellScope> {
+export async function resolveFilaAtendimentoShellScope(
+  event: H3Event,
+  access: AccessContext,
+  profile: ResolvedAdminProfile
+): Promise<ResolvedFilaAtendimentoShellScope> {
   const simulatedClientId = parsePositiveInteger(getHeader(event, 'x-client-id'))
-  const scopeMode = resolveScopeMode(access, simulatedClientId)
+  const scopeMode = resolveScopeMode(access, profile, simulatedClientId)
   const coreTenantId = await resolveCoreTenantId(event, access, simulatedClientId)
   const tenantSlug = await resolveTenantSlug(event, coreTenantId)
+  const storeIds = resolveStoreIds(profile)
 
   return {
     coreTenantId,
     tenantSlug,
-    scopeMode
+    scopeMode,
+    storeIds
   }
 }

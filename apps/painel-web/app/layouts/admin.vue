@@ -47,10 +47,12 @@ const canAccessRootManage = computed(() => evaluateAdminRouteAccess('/admin/mana
 const canAccessUsersManage = computed(() => evaluateAdminRouteAccess('/admin/manage/users', accessContext.value).allowed)
 const canAccessQa = computed(() => evaluateAdminRouteAccess('/admin/manage/qa', accessContext.value).allowed)
 const canAccessAudit = computed(() => evaluateAdminRouteAccess('/admin/manage/auditoria', accessContext.value).allowed)
+const canAccessIndicatorsGovernance = computed(() => evaluateAdminRouteAccess('/admin/manage/indicadores', accessContext.value).allowed)
 const canAccessThemes = computed(() => accessFlags.value.canAccessThemes)
 const canAccessMonitoring = computed(() => evaluateAdminRouteAccess('/admin/containers', accessContext.value).allowed)
 const canAccessOmnichannel = computed(() => evaluateAdminRouteAccess('/admin/omnichannel/inbox', accessContext.value).allowed)
 const canAccessFilaAtendimento = computed(() => evaluateAdminRouteAccess('/admin/fila-atendimento', accessContext.value).allowed)
+const canAccessIndicators = computed(() => evaluateAdminRouteAccess('/admin/indicadores', accessContext.value).allowed)
 const canAccessFinance = computed(() => evaluateAdminRouteAccess('/admin/finance', accessContext.value).allowed)
 const canAccessTasks = computed(() => evaluateAdminRouteAccess('/admin/tasks', accessContext.value).allowed)
 const canAccessTracking = computed(() => evaluateAdminRouteAccess('/admin/tracking', accessContext.value).allowed)
@@ -197,6 +199,18 @@ const menuItems = computed(() => {
     baseItems.push({ label: 'Fila', to: '/admin/fila-atendimento' })
   }
 
+  if (canAccessIndicators.value) {
+    baseItems.push({
+      label: 'Indicadores',
+      icon: 'i-lucide-chart-column',
+      to: '/admin/indicadores',
+      children: [[
+        { label: 'Operacao', icon: 'i-lucide-layout-dashboard', to: '/admin/indicadores' },
+        { label: 'Configuracoes', icon: 'i-lucide-sliders-horizontal', to: '/admin/indicadores/configuracoes' }
+      ]]
+    })
+  }
+
   if (canAccessFinance.value) {
     baseItems.push({ label: 'Finance', to: '/admin/finance' })
   }
@@ -218,6 +232,9 @@ const menuItems = computed(() => {
     }
     if (canAccessAudit.value) {
       rootManageChildren.push({ label: 'Auditoria', icon: 'i-lucide-activity', to: '/admin/manage/auditoria' })
+    }
+    if (canAccessIndicatorsGovernance.value) {
+      rootManageChildren.push({ label: 'Indicadores', icon: 'i-lucide-chart-column', to: '/admin/manage/indicadores' })
     }
 
     return [

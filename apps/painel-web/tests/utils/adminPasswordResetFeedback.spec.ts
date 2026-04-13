@@ -29,6 +29,19 @@ describe("resolveAdminPasswordResetErrorMessage", () => {
     );
   });
 
+  it("traduz a falha generica do proxy core para indisponibilidade amigavel", () => {
+    const error = new CoreApiClientError("Falha no backend core", {
+      statusCode: 503,
+      data: {
+        message: "Falha no backend core"
+      }
+    });
+
+    expect(resolveAdminPasswordResetErrorMessage(error)).toBe(
+      "A recuperacao de senha nao esta disponivel agora. Tente novamente em instantes."
+    );
+  });
+
   it("usa fallback amigavel quando o erro nao traz detalhes", () => {
     expect(resolveAdminPasswordResetErrorMessage(null)).toBe(
       "Nao foi possivel concluir a recuperacao de senha. Tente novamente."

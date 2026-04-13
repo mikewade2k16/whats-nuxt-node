@@ -16,7 +16,6 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/settings"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
-	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
@@ -59,8 +58,6 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reportsService := reports.NewService(reportsRepository, stores.NewCatalogProvider(storeService))
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, stores.NewCatalogProvider(storeService))
-	usersRepository := users.NewPostgresRepository(pool)
-	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 
 	mux := http.NewServeMux()
 	if strings.TrimSpace(cfg.UploadsDir) != "" {
@@ -81,7 +78,6 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"realtime",
 				"reports",
 				"analytics",
-				"users",
 			},
 			"tenantMode": "owner-is-client",
 		})
@@ -112,7 +108,6 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		RequireAuth:    analytics.AuthRouteGuard(authMiddleware),
 		AccessResolver: analytics.NewAuthAccessContextResolver(),
 	})
-	users.RegisterRoutes(mux, usersService, authMiddleware, shellBridgeExchange != nil && shellBridgeExchange.Enabled())
 
 	return httpapi.Chain(
 		mux,

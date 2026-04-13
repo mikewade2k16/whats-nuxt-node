@@ -14,7 +14,7 @@ const feedback = ref('')
 
 async function handleCreate(payload: FilaAtendimentoConsultantProfilePayload) {
   const result = await operationsStore.createConsultantProfile(payload)
-  feedback.value = result.ok ? `Consultor criado.${result.access?.email ? ` Acesso: ${result.access.email}` : ''}` : (result.message || 'Nao foi possivel criar consultor.')
+  feedback.value = result.ok ? 'Consultor criado.' : (result.message || 'Nao foi possivel criar consultor.')
 }
 
 async function handleUpdate(consultantId: string, payload: FilaAtendimentoConsultantProfilePayload) {

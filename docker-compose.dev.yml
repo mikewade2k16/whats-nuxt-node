@@ -379,9 +379,7 @@ services:
       context: ./apps/painel-web
       dockerfile: Dockerfile
     command: >
-      sh -c "mkdir -p .nuxt .output .nitro;
-      rm -rf .nuxt/* .nuxt/.[!.]* .nuxt/..?* .output/* .output/.[!.]* .output/..?* .nitro/* .nitro/.[!.]* .nitro/..?* 2>/dev/null || true;
-      npm run dev -- --host 0.0.0.0 --port 3000"
+      sh ./scripts/container-entrypoint.sh
     environment:
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE}

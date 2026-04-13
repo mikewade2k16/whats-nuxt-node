@@ -200,7 +200,7 @@ function handleArchive() {
         <article class="settings-card">
           <header class="settings-card__header">
             <h3 class="settings-card__title">Novo consultor</h3>
-            <p class="settings-card__text">Cria o consultor e provisiona o acesso vinculado quando a identidade estiver disponivel.</p>
+            <p class="settings-card__text">Cria o consultor no roster operacional da loja ativa.</p>
           </header>
           <div class="settings-grid settings-grid--compact">
             <label class="settings-field"><span>Nome</span><input v-model="createForm.name" class="module-shell__input" type="text"></label>

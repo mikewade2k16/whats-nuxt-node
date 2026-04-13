@@ -13,13 +13,13 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 const ROLE_WORKSPACES: Record<string, string[]> = {
-  platform_admin: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'usuarios', 'configuracoes'],
-  owner: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'usuarios', 'configuracoes'],
+  platform_admin: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'configuracoes'],
+  owner: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'configuracoes'],
   marketing: ['dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja'],
   manager: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios'],
   store_terminal: ['operacao'],
   consultant: ['operacao', 'consultor', 'dados'],
-  admin: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'usuarios', 'configuracoes']
+  admin: ['operacao', 'consultor', 'ranking', 'dados', 'inteligencia', 'relatorios', 'campanhas', 'multiloja', 'configuracoes']
 }
 
 export function normalizeAppRole(role: unknown) {
@@ -76,7 +76,3 @@ export function canAccessMultiStore(role: unknown) {
   return normalized === 'platform_admin' || normalized === 'owner' || normalized === 'marketing'
 }
 
-export function canManageUsers(role: unknown) {
-  const normalized = normalizeAppRole(role)
-  return normalized === 'platform_admin' || normalized === 'owner'
-}

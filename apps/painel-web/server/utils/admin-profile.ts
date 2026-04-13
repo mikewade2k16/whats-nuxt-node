@@ -14,6 +14,9 @@ interface CoreMePayload {
     clientName?: string
     level?: string
     userType?: string
+    businessRole?: string
+    storeId?: string | null
+    registrationNumber?: string
     phone?: string | null
     status?: string
     preferences?: unknown
@@ -34,6 +37,9 @@ export interface ResolvedAdminProfile {
   status: string
   profileImage: string
   userType: string
+  businessRole: string
+  storeId: string | null
+  registrationNumber: string
   preferences: string
   moduleCodes: string[]
   atendimentoAccess: boolean
@@ -143,6 +149,9 @@ export async function resolveAdminProfile(event: H3Event): Promise<ResolvedAdmin
       status: normalizeText(meUser?.status) || 'active',
       profileImage: normalizeText(meUser?.profileImage),
       userType: normalizeText(meUser?.userType) || (isPlatformAdmin ? 'admin' : 'client'),
+      businessRole: normalizeText(meUser?.businessRole),
+      storeId: normalizeText(meUser?.storeId) || null,
+      registrationNumber: normalizeText(meUser?.registrationNumber),
       preferences: normalizePreferencesString(meUser?.preferences),
       moduleCodes,
       atendimentoAccess: Boolean(meUser?.atendimentoAccess) || moduleCodes.includes('atendimento'),

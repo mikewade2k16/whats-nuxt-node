@@ -16,7 +16,6 @@ Modulo e uma unidade de negocio do backend, por exemplo:
 - `operations`
 - `campaigns`
 - `reports`
-- `users`
 
 Cada modulo deve poder crescer sem transformar `internal/platform` em lugar de regra de produto.
 

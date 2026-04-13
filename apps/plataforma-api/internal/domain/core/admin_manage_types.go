@@ -13,26 +13,28 @@ type AdminClientModule struct {
 }
 
 type AdminClient struct {
-	ID                   int                 `json:"id"`
-	CoreTenantID         string              `json:"coreTenantId"`
-	Name                 string              `json:"name"`
-	Status               string              `json:"status"`
-	UserCount            int                 `json:"userCount"`
-	UserNicks            string              `json:"userNicks"`
-	ProjectCount         int                 `json:"projectCount"`
-	ProjectSegments      string              `json:"projectSegments"`
-	BillingMode          string              `json:"billingMode"`
-	MonthlyPaymentAmount float64             `json:"monthlyPaymentAmount"`
-	PaymentDueDay        string              `json:"paymentDueDay"`
-	Stores               []AdminClientStore  `json:"stores"`
-	StoresCount          int                 `json:"storesCount"`
-	Modules              []AdminClientModule `json:"modules"`
-	Logo                 string              `json:"logo"`
-	WebhookEnabled       bool                `json:"webhookEnabled"`
-	WebhookKey           string              `json:"webhookKey"`
-	ContactPhone         string              `json:"contactPhone"`
-	ContactSite          string              `json:"contactSite"`
-	ContactAddress       string              `json:"contactAddress"`
+	ID                      int                 `json:"id"`
+	CoreTenantID            string              `json:"coreTenantId"`
+	Name                    string              `json:"name"`
+	Status                  string              `json:"status"`
+	UserCount               int                 `json:"userCount"`
+	UserNicks               string              `json:"userNicks"`
+	ProjectCount            int                 `json:"projectCount"`
+	ProjectSegments         string              `json:"projectSegments"`
+	BillingMode             string              `json:"billingMode"`
+	MonthlyPaymentAmount    float64             `json:"monthlyPaymentAmount"`
+	PaymentDueDay           string              `json:"paymentDueDay"`
+	Stores                  []AdminClientStore  `json:"stores"`
+	StoresCount             int                 `json:"storesCount"`
+	Modules                 []AdminClientModule `json:"modules"`
+	Logo                    string              `json:"logo"`
+	WebhookEnabled          bool                `json:"webhookEnabled"`
+	WebhookKey              string              `json:"webhookKey"`
+	ContactPhone            string              `json:"contactPhone"`
+	ContactSite             string              `json:"contactSite"`
+	ContactAddress          string              `json:"contactAddress"`
+	RequireUserStoreLink    bool                `json:"requireUserStoreLink"`
+	RequireUserRegistration bool                `json:"requireUserRegistration"`
 }
 
 type AdminClientStoreInput struct {
@@ -99,25 +101,29 @@ type DeleteAdminClientInput struct {
 }
 
 type AdminUser struct {
-	ID                int      `json:"id"`
-	CoreUserID        string   `json:"coreUserId"`
-	IsPlatformAdmin   bool     `json:"isPlatformAdmin"`
-	Level             string   `json:"level"`
-	ClientID          *int     `json:"clientId"`
-	ClientName        string   `json:"clientName"`
-	Name              string   `json:"name"`
-	Nick              string   `json:"nick"`
-	Email             string   `json:"email"`
-	Password          string   `json:"password"`
-	Phone             string   `json:"phone"`
-	Status            string   `json:"status"`
-	ProfileImg        string   `json:"profileImage"`
-	LastLogin         string   `json:"lastLogin"`
-	CreatedAt         string   `json:"createdAt"`
-	UserType          string   `json:"userType"`
-	Preference        string   `json:"preferences"`
-	ModuleCodes       []string `json:"moduleCodes"`
-	AtendimentoAccess bool     `json:"atendimentoAccess"`
+	ID                 int      `json:"id"`
+	CoreUserID         string   `json:"coreUserId"`
+	IsPlatformAdmin    bool     `json:"isPlatformAdmin"`
+	Level              string   `json:"level"`
+	ClientID           *int     `json:"clientId"`
+	ClientName         string   `json:"clientName"`
+	Name               string   `json:"name"`
+	Nick               string   `json:"nick"`
+	Email              string   `json:"email"`
+	Password           string   `json:"password"`
+	Phone              string   `json:"phone"`
+	Status             string   `json:"status"`
+	ProfileImg         string   `json:"profileImage"`
+	LastLogin          string   `json:"lastLogin"`
+	CreatedAt          string   `json:"createdAt"`
+	UserType           string   `json:"userType"`
+	BusinessRole       string   `json:"businessRole"`
+	StoreID            *string  `json:"storeId"`
+	StoreName          string   `json:"storeName"`
+	RegistrationNumber string   `json:"registrationNumber"`
+	Preference         string   `json:"preferences"`
+	ModuleCodes        []string `json:"moduleCodes"`
+	AtendimentoAccess  bool     `json:"atendimentoAccess"`
 }
 
 type ListAdminUsersInput struct {
@@ -143,6 +149,9 @@ type CreateAdminUserInput struct {
 	ClientID              *int
 	Level                 string
 	UserType              string
+	BusinessRole          string
+	StoreID               string
+	RegistrationNumber    string
 }
 
 type UpdateAdminUserFieldInput struct {

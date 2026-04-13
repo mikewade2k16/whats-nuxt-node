@@ -65,6 +65,9 @@ const createForm = reactive({
   clientId: '' as string | number,
   level: 'marketing',
   userType: 'client',
+  businessRole: 'marketing',
+  storeId: 'all',
+  registrationNumber: '',
   isPlatformAdmin: false
 })
 
@@ -101,6 +104,7 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
     placeholder: 'Level',
     options: [
       { label: 'admin', value: 'admin' },
+      { label: 'consultant', value: 'consultant' },
       { label: 'manager', value: 'manager' },
       { label: 'marketing', value: 'marketing' },
       { label: 'finance', value: 'finance' },
@@ -147,6 +151,141 @@ const clientAssignOptions = computed(() => [
   ...clientOptions.value
 ])
 
+const BUSINESS_ROLE_OPTIONS = [
+  { label: 'Consultor', value: 'consultant' },
+  { label: 'Gerente de loja', value: 'store_manager' },
+  { label: 'Marketing', value: 'marketing' },
+  { label: 'Financeiro', value: 'finance' },
+  { label: 'Gerente geral', value: 'general_manager' },
+  { label: 'Owner', value: 'owner' },
+  { label: 'Visualizador', value: 'viewer' },
+  { label: 'Admin do sistema', value: 'system_admin' }
+]
+const businessRoleSelectOptions = computed(() => {
+  if (canChooseClient.value) {
+    return BUSINESS_ROLE_OPTIONS
+  }
+
+  return BUSINESS_ROLE_OPTIONS.filter(option => option.value !== 'system_admin')
+})
+
+function normalizeClientOptionId(value: unknown) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0
+  }
+  return parsed
+}
+
+function normalizeStoreValue(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized || normalized === '0' || normalized.toLowerCase() === 'all' || normalized.toLowerCase() === 'todas') {
+    return null
+  }
+  return normalized
+}
+
+function normalizeBusinessRoleValue(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return BUSINESS_ROLE_OPTIONS.some(option => option.value === normalized) ? normalized : 'marketing'
+}
+
+function isStoreScopedRole(value: unknown) {
+  const normalized = normalizeBusinessRoleValue(value)
+  return normalized === 'consultant' || normalized === 'store_manager'
+}
+
+function requiresRegistrationRole(value: unknown) {
+  const normalized = normalizeBusinessRoleValue(value)
+  return normalized === 'consultant' || normalized === 'store_manager' || normalized === 'general_manager'
+}
+
+function businessRoleLabel(value: unknown) {
+  const normalized = normalizeBusinessRoleValue(value)
+  return BUSINESS_ROLE_OPTIONS.find(option => option.value === normalized)?.label || 'Marketing'
+}
+
+function findClientOption(clientId: unknown) {
+  const normalizedClientId = normalizeClientOptionId(clientId)
+  return clientOptions.value.find(option => normalizeClientOptionId(option.value) === normalizedClientId)
+}
+
+function clientRequiresStoreAssignment(clientId: unknown, businessRole: unknown) {
+  const clientOption = findClientOption(clientId)
+  const storeCount = Math.max(
+    Number(clientOption?.storesCount || 0),
+    Array.isArray(clientOption?.stores) ? clientOption.stores.length : 0
+  )
+
+  return isStoreScopedRole(businessRole)
+    && Boolean(clientOption?.requireUserStoreLink ?? true)
+    && storeCount > 1
+}
+
+function clientRequiresRegistration(clientId: unknown, businessRole: unknown) {
+  const clientOption = findClientOption(clientId)
+  return requiresRegistrationRole(businessRole) && Boolean(clientOption?.requireUserRegistration ?? true)
+}
+
+const allStoreAssignOptions = computed(() => {
+  const dedupe = new Set<string>()
+  const options = [{ label: 'Todas as lojas', value: 'all' }]
+
+  for (const clientOption of clientOptions.value) {
+    const clientLabel = String(clientOption.label ?? '').trim()
+    for (const store of clientOption.stores || []) {
+      const storeId = String(store.id ?? '').trim()
+      if (!storeId || dedupe.has(storeId)) {
+        continue
+      }
+
+      dedupe.add(storeId)
+      options.push({
+        label: clientLabel ? `${clientLabel} / ${store.name}` : String(store.name ?? '').trim(),
+        value: storeId
+      })
+    }
+  }
+
+  return options
+})
+
+const selectedCreateClientOption = computed(() => findClientOption(createForm.clientId))
+const createStoreOptions = computed(() => [
+  { label: 'Todas as lojas', value: 'all' },
+  ...((selectedCreateClientOption.value?.stores || []).map(store => ({
+    label: store.name,
+    value: store.id
+  })))
+])
+const createStoreRequired = computed(() => {
+  if (createForm.isPlatformAdmin) {
+    return false
+  }
+  return clientRequiresStoreAssignment(createForm.clientId, createForm.businessRole)
+})
+const createRegistrationRequired = computed(() => {
+  if (createForm.isPlatformAdmin) {
+    return false
+  }
+  return clientRequiresRegistration(createForm.clientId, createForm.businessRole)
+})
+const createSubmitDisabled = computed(() => {
+  if (creating.value) {
+    return true
+  }
+
+  if (createStoreRequired.value && !normalizeStoreValue(createForm.storeId)) {
+    return true
+  }
+
+  if (createRegistrationRequired.value && !String(createForm.registrationNumber ?? '').trim()) {
+    return true
+  }
+
+  return false
+})
+
 function clientLabelForRow(row: Record<string, unknown>) {
   const user = row as UserItem
   const fallbackName = String(user.clientName ?? '').trim()
@@ -161,6 +300,21 @@ function clientLabelForRow(row: Record<string, unknown>) {
 
   const matched = clientOptions.value.find(option => Number(option.value) === currentClientId)
   return matched?.label || String(currentClientId)
+}
+
+function storeLabelForRow(row: Record<string, unknown>) {
+  const user = row as UserItem
+  const normalizedStoreId = normalizeStoreValue(user.storeId)
+  if (!normalizedStoreId) {
+    return 'Todas as lojas'
+  }
+
+  if (String(user.storeName ?? '').trim()) {
+    return String(user.storeName ?? '').trim()
+  }
+
+  const matched = (findClientOption(user.clientId)?.stores || []).find(store => store.id === normalizedStoreId)
+  return matched?.name || normalizedStoreId
 }
 
 function isPlatformAdminRow(row: Record<string, unknown>) {
@@ -202,7 +356,19 @@ function canApproveUser(row: Record<string, unknown>) {
     return false
   }
 
-  return hasClientAssignment(row)
+  if (!hasClientAssignment(row)) {
+    return false
+  }
+
+  if (clientRequiresStoreAssignment(user.clientId, user.businessRole) && !normalizeStoreValue(user.storeId)) {
+    return false
+  }
+
+  if (clientRequiresRegistration(user.clientId, user.businessRole) && !String(user.registrationNumber ?? '').trim()) {
+    return false
+  }
+
+  return true
 }
 
 function clientHasAtendimentoModule(row: Record<string, unknown>) {
@@ -226,6 +392,22 @@ function canEditAtendimentoAccess(row: Record<string, unknown>) {
   }
 
   return canEditTenantScopedFields(row) && clientHasAtendimentoModule(row)
+}
+
+function canEditStoreAssignment(row: Record<string, unknown>) {
+  if (isPlatformAdminRow(row)) {
+    return false
+  }
+
+  return canEditTenantScopedFields(row)
+}
+
+function canEditRegistrationNumber(row: Record<string, unknown>) {
+  if (isPlatformAdminRow(row)) {
+    return false
+  }
+
+  return canEditTenantScopedFields(row)
 }
 
 function accessSummary(row: Record<string, unknown>) {
@@ -302,11 +484,23 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     minWidth: 130,
     options: [
       { label: 'admin', value: 'admin' },
+      { label: 'consultant', value: 'consultant' },
       { label: 'manager', value: 'manager' },
       { label: 'marketing', value: 'marketing' },
       { label: 'finance', value: 'finance' },
       { label: 'viewer', value: 'viewer' }
     ]
+  },
+  {
+    key: 'businessRole',
+    label: 'Papel',
+    type: 'select',
+    editable: true,
+    editableWhen: row => canEditTenantScopedFields(row),
+    immediate: true,
+    minWidth: 180,
+    options: businessRoleSelectOptions.value,
+    formatter: (value) => businessRoleLabel(value)
   },
   {
     key: 'clientId',
@@ -319,6 +513,25 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     minWidth: 170,
     options: clientAssignOptions.value,
     formatter: (_value, row) => clientLabelForRow(row)
+  },
+  {
+    key: 'storeId',
+    label: 'Loja',
+    type: 'select',
+    editable: true,
+    editableWhen: row => canEditStoreAssignment(row),
+    immediate: true,
+    minWidth: 220,
+    options: allStoreAssignOptions.value,
+    formatter: (_value, row) => storeLabelForRow(row)
+  },
+  {
+    key: 'registrationNumber',
+    label: 'Matricula',
+    type: 'text',
+    editable: true,
+    editableWhen: row => canEditRegistrationNumber(row),
+    minWidth: 150
   },
   {
     key: 'atendimentoAccess',
@@ -403,6 +616,9 @@ const updatableFields = new Set<UserFieldKey>([
   'clientId',
   'atendimentoAccess',
   'level',
+  'businessRole',
+  'storeId',
+  'registrationNumber',
   'name',
   'nick',
   'email',
@@ -492,6 +708,44 @@ async function copyGeneratedPassword() {
   }
 }
 
+function applyCreateRoleDefaults(role: string) {
+  const normalizedRole = normalizeBusinessRoleValue(role)
+
+  switch (normalizedRole) {
+    case 'consultant':
+      createForm.level = 'consultant'
+      createForm.userType = 'client'
+      break
+    case 'store_manager':
+    case 'general_manager':
+      createForm.level = 'manager'
+      createForm.userType = 'client'
+      break
+    case 'finance':
+      createForm.level = 'finance'
+      createForm.userType = 'client'
+      break
+    case 'owner':
+      createForm.level = 'admin'
+      createForm.userType = 'admin'
+      break
+    case 'viewer':
+      createForm.level = 'viewer'
+      createForm.userType = 'client'
+      break
+    case 'system_admin':
+      createForm.level = 'admin'
+      createForm.userType = 'admin'
+      createForm.isPlatformAdmin = true
+      createForm.clientId = ''
+      createForm.storeId = 'all'
+      break
+    default:
+      createForm.level = 'marketing'
+      createForm.userType = 'client'
+  }
+}
+
 function resetCreateForm() {
   createForm.name = ''
   createForm.nick = ''
@@ -501,6 +755,9 @@ function resetCreateForm() {
   createForm.clientId = canChooseClient.value ? '' : sessionSimulation.clientId
   createForm.level = 'marketing'
   createForm.userType = canChooseClient.value ? 'client' : 'client'
+  createForm.businessRole = canChooseClient.value ? 'marketing' : 'marketing'
+  createForm.storeId = 'all'
+  createForm.registrationNumber = ''
   createForm.isPlatformAdmin = false
 }
 
@@ -573,6 +830,9 @@ async function submitCreateUser() {
     clientId: createForm.clientId === '' ? null : Number(createForm.clientId),
     level: createForm.level,
     userType: createForm.userType,
+    businessRole: createForm.businessRole,
+    storeId: normalizeStoreValue(createForm.storeId),
+    registrationNumber: createForm.registrationNumber,
     isPlatformAdmin: createForm.isPlatformAdmin
   })
 
@@ -617,13 +877,45 @@ function onResetFilters() {
 watch(
   () => createForm.isPlatformAdmin,
   (isPlatformAdmin) => {
-    if (!isPlatformAdmin) {
+    if (isPlatformAdmin) {
+      createForm.businessRole = 'system_admin'
+      createForm.level = 'admin'
+      createForm.userType = 'admin'
+      createForm.clientId = ''
+      createForm.storeId = 'all'
       return
     }
 
-    createForm.level = 'admin'
-    createForm.userType = 'admin'
-    createForm.clientId = ''
+    if (createForm.businessRole === 'system_admin') {
+      createForm.businessRole = canChooseClient.value ? 'owner' : 'marketing'
+    }
+  }
+)
+
+watch(
+  () => createForm.businessRole,
+  (nextRole) => {
+    applyCreateRoleDefaults(nextRole)
+
+    if (!isStoreScopedRole(nextRole)) {
+      createForm.storeId = 'all'
+    }
+  }
+)
+
+watch(
+  () => createForm.clientId,
+  () => {
+    const normalizedStoreId = normalizeStoreValue(createForm.storeId)
+    const availableStores = selectedCreateClientOption.value?.stores || []
+    if (!normalizedStoreId) {
+      return
+    }
+
+    const stillExists = availableStores.some(store => store.id === normalizedStoreId)
+    if (!stillExists) {
+      createForm.storeId = 'all'
+    }
   }
 )
 
@@ -731,11 +1023,14 @@ onMounted(() => {
             <template #content>
               <div class="w-[290px] space-y-1 p-3 text-xs">
                 <p><strong>ID:</strong> {{ toUser(row).id }}</p>
-                <p><strong>Name:</strong> {{ toUser(row).name }}</p>
+                <p><strong>Nome:</strong> {{ toUser(row).name }}</p>
                 <p><strong>Nick:</strong> {{ toUser(row).nick }}</p>
                 <p><strong>Email:</strong> {{ toUser(row).email }}</p>
                 <p><strong>Status:</strong> {{ toUser(row).status }}</p>
                 <p><strong>Level:</strong> {{ toUser(row).level }}</p>
+                <p><strong>Papel:</strong> {{ businessRoleLabel(toUser(row).businessRole) }}</p>
+                <p><strong>Loja:</strong> {{ storeLabelForRow(row) }}</p>
+                <p><strong>Matricula:</strong> {{ toUser(row).registrationNumber || '-' }}</p>
                 <p><strong>Platform admin:</strong> {{ toUser(row).isPlatformAdmin ? 'sim' : 'nao' }}</p>
                 <p><strong>Cliente:</strong> {{ clientLabelForRow(row) }}</p>
                 <p><strong>Atendimento:</strong> {{ toUser(row).atendimentoAccess ? 'liberado' : 'sem acesso' }}</p>
@@ -823,11 +1118,21 @@ onMounted(() => {
               :disabled="createForm.isPlatformAdmin"
               :items="[
                 { label: 'admin', value: 'admin' },
+                { label: 'consultant', value: 'consultant' },
                 { label: 'manager', value: 'manager' },
                 { label: 'marketing', value: 'marketing' },
                 { label: 'finance', value: 'finance' },
                 { label: 'viewer', value: 'viewer' }
               ]"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <p class="text-xs text-[rgb(var(--muted))]">Papel operacional</p>
+            <USelect
+              v-model="createForm.businessRole"
+              :disabled="createForm.isPlatformAdmin"
+              :items="businessRoleSelectOptions"
             />
           </div>
 
@@ -845,7 +1150,7 @@ onMounted(() => {
             <p class="text-xs text-[rgb(var(--muted))]">User type</p>
             <USelect
               v-model="createForm.userType"
-              :disabled="createForm.isPlatformAdmin"
+              :disabled="createForm.isPlatformAdmin || createForm.businessRole === 'owner'"
               :items="[
                 { label: 'client', value: 'client' },
                 { label: 'admin', value: 'admin' }
@@ -867,13 +1172,48 @@ onMounted(() => {
             <p class="text-xs text-[rgb(var(--muted))]">Cliente vinculado</p>
             <UInput :model-value="sessionSimulation.activeClientLabel" disabled />
           </div>
+
+          <div class="space-y-1 sm:col-span-2">
+            <p class="text-xs text-[rgb(var(--muted))]">Loja vinculada</p>
+            <USelect
+              v-model="createForm.storeId"
+              :disabled="createForm.isPlatformAdmin || !isStoreScopedRole(createForm.businessRole) || createStoreOptions.length <= 1"
+              :items="createStoreOptions"
+              placeholder="Todas as lojas"
+            />
+            <p v-if="createStoreRequired" class="text-xs text-amber-700">
+              Este cliente exige loja para consultor e gerente de loja.
+            </p>
+          </div>
+
+          <div class="space-y-1 sm:col-span-2">
+            <p class="text-xs text-[rgb(var(--muted))]">Matricula</p>
+            <UInput
+              v-model="createForm.registrationNumber"
+              :disabled="createForm.isPlatformAdmin"
+              placeholder="Codigo interno da pessoa"
+            />
+            <p v-if="createRegistrationRequired" class="text-xs text-amber-700">
+              Este cliente exige matricula para consultor, gerente de loja e gerente geral.
+            </p>
+          </div>
+
+          <UAlert
+            v-if="canChooseClient && !createForm.isPlatformAdmin && !normalizeClientOptionId(createForm.clientId)"
+            class="sm:col-span-2"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-info"
+            title="Defina o cliente"
+            description="Sem cliente vinculado o cadastro nasce pendente; papel, loja e matricula passam a valer quando o cliente for definido."
+          />
         </div>
       </template>
 
       <template #footer>
         <div class="flex w-full items-center justify-end gap-2">
           <UButton label="Cancelar" color="neutral" variant="ghost" @click="createModalOpen = false" />
-          <UButton label="Criar usuario" color="primary" :loading="creating" :disabled="creating" @click="submitCreateUser" />
+          <UButton label="Criar usuario" color="primary" :loading="creating" :disabled="createSubmitDisabled" @click="submitCreateUser" />
         </div>
       </template>
     </UModal>

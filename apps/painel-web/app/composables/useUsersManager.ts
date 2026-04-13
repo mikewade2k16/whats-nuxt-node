@@ -13,6 +13,9 @@ interface UserCreatePayload {
   clientId: number | null
   level: string
   userType: string
+  businessRole: string
+  storeId: string | null
+  registrationNumber: string
   isPlatformAdmin: boolean
 }
 
@@ -52,7 +55,7 @@ function normalizeOptionClientId(value: unknown) {
 
 function normalizeLevel(value: unknown) {
   const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'admin' || normalized === 'manager' || normalized === 'marketing' || normalized === 'finance' || normalized === 'viewer') {
+  if (normalized === 'admin' || normalized === 'consultant' || normalized === 'manager' || normalized === 'marketing' || normalized === 'finance' || normalized === 'viewer') {
     return normalized
   }
 
@@ -67,6 +70,41 @@ function normalizeUserType(value: unknown) {
 function normalizeStatus(value: unknown) {
   const normalized = String(value ?? '').trim().toLowerCase()
   return normalized === 'active' ? 'active' : 'inactive'
+}
+
+function normalizeBusinessRole(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  switch (normalized) {
+    case 'consultant':
+    case 'store_manager':
+    case 'marketing':
+    case 'finance':
+    case 'general_manager':
+    case 'owner':
+    case 'viewer':
+    case 'system_admin':
+      return normalized
+    default:
+      return 'marketing'
+  }
+}
+
+function isStoreScopedBusinessRole(value: unknown) {
+  const normalized = normalizeBusinessRole(value)
+  return normalized === 'consultant' || normalized === 'store_manager'
+}
+
+function normalizeStoreId(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized || normalized === '0' || normalized.toLowerCase() === 'all' || normalized.toLowerCase() === 'todas') {
+    return null
+  }
+
+  return normalized.slice(0, 80)
+}
+
+function normalizeRegistrationNumber(value: unknown) {
+  return normalizeText(value, 60)
 }
 
 function normalizeModuleCodes(value: unknown) {
@@ -84,17 +122,69 @@ function normalizeModuleCodes(value: unknown) {
   return output
 }
 
+function normalizeClientStores(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((store) => {
+      const id = normalizeStoreId((store as { id?: unknown })?.id)
+      if (!id) {
+        return null
+      }
+
+      return {
+        id,
+        name: normalizeText((store as { name?: unknown })?.name, 120)
+      }
+    })
+    .filter((store): store is NonNullable<typeof store> => Boolean(store))
+}
+
+function normalizeBooleanLike(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) {
+    return fallback
+  }
+
+  return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
+}
+
+function normalizeClientOption(option: SimpleSelectOption): SimpleSelectOption {
+  return {
+    ...option,
+    label: normalizeText(option.label, 120),
+    value: typeof option.value === 'number' ? option.value : String(option.value ?? '').trim(),
+    moduleCodes: normalizeModuleCodes(option.moduleCodes),
+    stores: normalizeClientStores(option.stores),
+    requireUserStoreLink: normalizeBooleanLike(option.requireUserStoreLink, true),
+    requireUserRegistration: normalizeBooleanLike(option.requireUserRegistration, true),
+    storesCount: Math.max(0, Number(option.storesCount ?? (Array.isArray(option.stores) ? option.stores.length : 0)) || 0)
+  }
+}
+
 function normalizeUserRecord(item: UserItem): UserItem {
   const normalizedClientId = normalizeClientId(item.clientId)
   const normalizedLevel = normalizeLevel(item.level) as UserItem['level']
   const normalizedType = normalizeUserType(item.userType) as UserItem['userType']
+  const normalizedBusinessRole = (item.isPlatformAdmin ? 'system_admin' : normalizeBusinessRole(item.businessRole)) as UserItem['businessRole']
   const moduleCodes = normalizeModuleCodes(item.moduleCodes)
+  const normalizedStoreId = normalizeStoreId(item.storeId)
 
   return {
     ...item,
     level: normalizedLevel,
     userType: normalizedType,
+    businessRole: normalizedBusinessRole,
     clientId: normalizedClientId,
+    storeId: normalizedStoreId,
+    storeName: normalizeText(item.storeName ?? '', 120),
+    registrationNumber: normalizeRegistrationNumber(item.registrationNumber),
     clientName: String(item.clientName ?? '').trim() || (item.isPlatformAdmin ? 'Root' : ''),
     moduleCodes,
     atendimentoAccess: Boolean(item.atendimentoAccess) || moduleCodes.includes('atendimento')
@@ -254,13 +344,48 @@ export function useUsersManager() {
       const currentClientId = normalizeOptionClientId(sessionSimulation.effectiveClientId)
       const currentClientLabel = String(sessionSimulation.activeClientLabel ?? '').trim()
 
-      clientOptions.value = currentClientId > 0
-        ? [{
-            label: currentClientLabel || `Cliente #${currentClientId}`,
-            value: currentClientId,
-            moduleCodes: [...sessionSimulation.activeClientModuleCodes]
-          }]
-        : []
+      if (currentClientId <= 0) {
+        clientOptions.value = []
+        return
+      }
+
+      try {
+        const clientDetail = await bffFetch<{
+          id: number
+          name: string
+          moduleCodes?: string[]
+          modules?: Array<{ code?: string }>
+          stores?: Array<{ id?: string, name?: string }>
+          storesCount?: number
+          requireUserStoreLink?: boolean
+          requireUserRegistration?: boolean
+        }>(`/api/core-bff/core/admin/clients/${currentClientId}`)
+
+        clientOptions.value = [normalizeClientOption({
+          label: String(clientDetail?.name ?? '').trim() || currentClientLabel || `Cliente #${currentClientId}`,
+          value: currentClientId,
+          moduleCodes: normalizeModuleCodes(
+            Array.isArray(clientDetail?.moduleCodes) && clientDetail.moduleCodes.length > 0
+              ? clientDetail.moduleCodes
+              : (clientDetail?.modules || []).map(module => module.code)
+          ),
+          stores: normalizeClientStores(clientDetail?.stores),
+          storesCount: Number(clientDetail?.storesCount || 0),
+          requireUserStoreLink: Boolean(clientDetail?.requireUserStoreLink ?? true),
+          requireUserRegistration: Boolean(clientDetail?.requireUserRegistration ?? true)
+        })]
+      } catch {
+        clientOptions.value = [normalizeClientOption({
+          label: currentClientLabel || `Cliente #${currentClientId}`,
+          value: currentClientId,
+          moduleCodes: [...sessionSimulation.activeClientModuleCodes],
+          stores: [],
+          storesCount: 0,
+          requireUserStoreLink: true,
+          requireUserRegistration: true
+        })]
+      }
+
       return
     }
 
@@ -271,7 +396,11 @@ export function useUsersManager() {
           id: number,
           name: string,
           moduleCodes?: string[],
-          modules?: Array<{ code?: string }>
+          modules?: Array<{ code?: string }>,
+          stores?: Array<{ id?: string, name?: string }>,
+          storesCount?: number,
+          requireUserStoreLink?: boolean,
+          requireUserRegistration?: boolean
         }>
       }>('/api/admin/clients', {
         query: {
@@ -282,14 +411,18 @@ export function useUsersManager() {
       })
 
       const options = (response.data || [])
-        .map(item => ({
+        .map(item => normalizeClientOption({
           label: item.name,
           value: item.id,
           moduleCodes: normalizeModuleCodes(
             Array.isArray(item.moduleCodes) && item.moduleCodes.length > 0
               ? item.moduleCodes
               : (item.modules || []).map(module => module.code)
-          )
+          ),
+          stores: normalizeClientStores(item.stores),
+          storesCount: Number(item.storesCount || 0),
+          requireUserStoreLink: Boolean(item.requireUserStoreLink ?? true),
+          requireUserRegistration: Boolean(item.requireUserRegistration ?? true)
         }))
 
       clientOptions.value = options
@@ -354,13 +487,19 @@ export function useUsersManager() {
 
     if (field === 'clientId') {
       const nextClientId = normalizeClientId(value)
-      const nextClientName = clientOptions.value.find(
+      const target = users.value.find(user => user.id === id)
+      const nextClientOption = clientOptions.value.find(
         option => normalizeOptionClientId(option.value) === (nextClientId ?? 0)
-      )?.label ?? ''
+      )
+      const nextClientName = nextClientOption?.label ?? ''
+      const currentStoreId = normalizeStoreId(target?.storeId)
+      const matchedStore = (nextClientOption?.stores || []).find(store => store.id === currentStoreId)
 
       patchUserLocally(id, {
         clientId: nextClientId,
-        clientName: nextClientId ? nextClientName : ''
+        clientName: nextClientId ? nextClientName : '',
+        storeId: matchedStore?.id ?? null,
+        storeName: matchedStore?.name ?? ''
       })
     }
 
@@ -402,6 +541,32 @@ export function useUsersManager() {
 
     if (field === 'userType') {
       patchUserLocally(id, { userType: normalizeUserType(value) as UserItem['userType'] })
+    }
+
+    if (field === 'businessRole') {
+      const nextBusinessRole = normalizeBusinessRole(value) as UserItem['businessRole']
+      patchUserLocally(id, {
+        businessRole: nextBusinessRole,
+        storeId: isStoreScopedBusinessRole(nextBusinessRole) ? users.value.find(user => user.id === id)?.storeId ?? null : null,
+        storeName: isStoreScopedBusinessRole(nextBusinessRole) ? users.value.find(user => user.id === id)?.storeName ?? '' : ''
+      })
+    }
+
+    if (field === 'storeId') {
+      const target = users.value.find(user => user.id === id)
+      const targetClientId = normalizeClientId(target?.clientId)
+      const clientOption = clientOptions.value.find(option => normalizeOptionClientId(option.value) === (targetClientId ?? 0))
+      const nextStoreId = normalizeStoreId(value)
+      const matchedStore = (clientOption?.stores || []).find(store => store.id === nextStoreId)
+
+      patchUserLocally(id, {
+        storeId: matchedStore?.id ?? null,
+        storeName: matchedStore?.name ?? ''
+      })
+    }
+
+    if (field === 'registrationNumber') {
+      patchUserLocally(id, { registrationNumber: normalizeRegistrationNumber(value) })
     }
 
     if (field === 'preferences') {
@@ -451,6 +616,9 @@ export function useUsersManager() {
           clientId: normalizeClientId(payload?.clientId),
           level: normalizeLevel(payload?.level),
           userType: normalizeUserType(payload?.userType),
+          businessRole: normalizeBusinessRole(payload?.businessRole),
+          storeId: normalizeStoreId(payload?.storeId),
+          registrationNumber: normalizeRegistrationNumber(payload?.registrationNumber),
           isPlatformAdmin: Boolean(payload?.isPlatformAdmin)
         }
       })

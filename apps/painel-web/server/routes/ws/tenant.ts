@@ -14,12 +14,49 @@ interface TenantRealtimePeer {
   close?: (code?: number, reason?: string) => void
 }
 
+interface TenantRealtimeClientPublishMessage {
+  type: 'tenant.event.publish'
+  event?: {
+    entity?: unknown
+    action?: unknown
+    clientId?: unknown
+    payload?: unknown
+    timestamp?: unknown
+  }
+}
+
+interface TenantRealtimeBroadcastEvent {
+  entity: string
+  action: 'created' | 'updated' | 'deleted'
+  clientId: number
+  payload?: unknown
+  timestamp: string
+}
+
 function normalizeText(value: unknown) {
   return String(value ?? '').trim()
 }
 
 function normalizeBaseUrl(value: unknown) {
   return normalizeText(value).replace(/\/+$/, '')
+}
+
+function normalizeAction(value: unknown) {
+  const action = normalizeText(value).toLowerCase()
+  if (action === 'created' || action === 'updated' || action === 'deleted') {
+    return action
+  }
+
+  return ''
+}
+
+function normalizeClientId(value: unknown) {
+  const parsed = Number.parseInt(normalizeText(value), 10)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0
+  }
+
+  return parsed
 }
 
 function readQueryFromRequestUrl(requestUrl: string | undefined) {
@@ -131,6 +168,80 @@ function buildJoinMessage(tenantId: string) {
   })
 }
 
+function parseTenantRealtimePublishMessage(rawText: string) {
+  if (!rawText) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawText) as TenantRealtimeClientPublishMessage
+    if (parsed?.type !== 'tenant.event.publish' || !parsed.event) {
+      return null
+    }
+
+    const entity = normalizeText(parsed.event.entity).toLowerCase()
+    const action = normalizeAction(parsed.event.action)
+    if (!entity || !action) {
+      return null
+    }
+
+    return {
+      entity,
+      action,
+      clientId: normalizeClientId(parsed.event.clientId),
+      payload: parsed.event.payload,
+      timestamp: normalizeText(parsed.event.timestamp) || new Date().toISOString()
+    } satisfies TenantRealtimeBroadcastEvent
+  } catch {
+    return null
+  }
+}
+
+const localTenantPeers = new Map<string, Set<TenantRealtimePeer>>()
+const peerTenantIds = new WeakMap<object, string>()
+
+function registerLocalPeer(tenantId: string, peer: TenantRealtimePeer) {
+  const bucket = localTenantPeers.get(tenantId) ?? new Set<TenantRealtimePeer>()
+  bucket.add(peer)
+  localTenantPeers.set(tenantId, bucket)
+  peerTenantIds.set(peer as object, tenantId)
+}
+
+function unregisterLocalPeer(peer: TenantRealtimePeer) {
+  const tenantId = peerTenantIds.get(peer as object)
+  if (!tenantId) {
+    return
+  }
+
+  peerTenantIds.delete(peer as object)
+
+  const bucket = localTenantPeers.get(tenantId)
+  if (!bucket) {
+    return
+  }
+
+  bucket.delete(peer)
+  if (bucket.size === 0) {
+    localTenantPeers.delete(tenantId)
+  }
+}
+
+function broadcastLocalEvent(tenantId: string, event: TenantRealtimeBroadcastEvent, excludePeer?: TenantRealtimePeer) {
+  const bucket = localTenantPeers.get(tenantId)
+  if (!bucket || bucket.size === 0) {
+    return
+  }
+
+  const payload = JSON.stringify(event)
+  for (const peer of bucket) {
+    if (excludePeer && peer === excludePeer) {
+      continue
+    }
+
+    safeSend(peer, payload)
+  }
+}
+
 const upstreamSockets = new WeakMap<object, WebSocket>()
 
 export default defineWebSocketHandler({
@@ -143,7 +254,7 @@ export default defineWebSocketHandler({
     const cookieHeader = readHeader(realtimePeer.request, 'cookie')
     const accessToken = readCookieValue(cookieHeader, CORE_SESSION_COOKIE)
 
-    if (!apiBase || !accessToken || !tenantId) {
+    if (!accessToken || !tenantId) {
       safeSend(realtimePeer, {
         type: 'bridge.error',
         channel: 'tenant',
@@ -153,16 +264,30 @@ export default defineWebSocketHandler({
       return
     }
 
+    registerLocalPeer(tenantId, realtimePeer)
+
+    if (!apiBase) {
+      safeSend(realtimePeer, {
+        type: 'connected',
+        channel: 'tenant',
+        tenantId,
+        mode: 'local-only',
+        ts: new Date().toISOString()
+      })
+      return
+    }
+
     let upstreamSocket: WebSocket
     try {
       upstreamSocket = new WebSocket(buildUpstreamUrl(apiBase, accessToken))
     } catch {
       safeSend(realtimePeer, {
-        type: 'bridge.error',
+        type: 'connected',
         channel: 'tenant',
-        message: 'Nao foi possivel abrir a conexao realtime do tenant.'
+        tenantId,
+        mode: 'local-only',
+        ts: new Date().toISOString()
       })
-      safeClose(realtimePeer, 1011, 'tenant-realtime-upstream-failed')
       return
     }
 
@@ -173,6 +298,7 @@ export default defineWebSocketHandler({
         type: 'connected',
         channel: 'tenant',
         tenantId,
+        mode: 'bridge',
         ts: new Date().toISOString()
       })
       upstreamSocket.send(buildJoinMessage(tenantId))
@@ -202,7 +328,17 @@ export default defineWebSocketHandler({
   },
   message(peer, message) {
     const realtimePeer = peer as unknown as TenantRealtimePeer
-    const text = normalizeText(message.text()).toLowerCase()
+    const rawText = normalizeText(message.text())
+    const publishedEvent = parseTenantRealtimePublishMessage(rawText)
+    if (publishedEvent) {
+      const tenantId = peerTenantIds.get(realtimePeer as object)
+      if (tenantId) {
+        broadcastLocalEvent(tenantId, publishedEvent, realtimePeer)
+      }
+      return
+    }
+
+    const text = rawText.toLowerCase()
     if (text === 'ping') {
       safeSend(realtimePeer, {
         type: 'pong',
@@ -213,6 +349,8 @@ export default defineWebSocketHandler({
   },
   close(peer) {
     const realtimePeer = peer as unknown as TenantRealtimePeer
+    unregisterLocalPeer(realtimePeer)
+
     const upstreamSocket = upstreamSockets.get(realtimePeer as object)
     if (!upstreamSocket) {
       return

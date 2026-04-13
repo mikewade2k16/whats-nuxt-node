@@ -78,12 +78,6 @@ func (service *Service) Create(ctx context.Context, access AccessContext, input 
 		return CreateResult{}, err
 	}
 
-	provisionedAccess, err := service.ensureConsultantIdentity(ctx, access, consultant, store)
-	if err != nil {
-		_ = service.repository.Delete(ctx, consultant.ID)
-		return CreateResult{}, err
-	}
-
 	refreshed, err := service.repository.FindByID(ctx, consultant.ID)
 	if err != nil {
 		return CreateResult{}, err
@@ -91,7 +85,6 @@ func (service *Service) Create(ctx context.Context, access AccessContext, input 
 
 	return CreateResult{
 		Consultant: refreshed.View(),
-		Access:     provisionedAccess,
 	}, nil
 }
 
@@ -110,7 +103,7 @@ func (service *Service) Update(ctx context.Context, access AccessContext, input 
 		return ConsultantView{}, err
 	}
 
-	store, err := service.resolveAccessibleStore(ctx, access, existing.StoreID)
+	_, err = service.resolveAccessibleStore(ctx, access, existing.StoreID)
 	if err != nil {
 		return ConsultantView{}, err
 	}
@@ -157,10 +150,6 @@ func (service *Service) Update(ctx context.Context, access AccessContext, input 
 		return ConsultantView{}, err
 	}
 
-	if _, err := service.ensureConsultantIdentity(ctx, access, updated, store); err != nil {
-		return ConsultantView{}, err
-	}
-
 	refreshed, err := service.repository.FindByID(ctx, updated.ID)
 	if err != nil {
 		return ConsultantView{}, err
@@ -186,16 +175,6 @@ func (service *Service) Archive(ctx context.Context, access AccessContext, consu
 
 	if _, err := service.resolveAccessibleStore(ctx, access, existing.StoreID); err != nil {
 		return err
-	}
-
-	if strings.TrimSpace(existing.UserID) != "" {
-		if service.identityProvisioner == nil {
-			return ErrAccessProvisioning
-		}
-
-		if err := service.identityProvisioner.DeactivateConsultantIdentity(ctx, access, existing.ID); err != nil {
-			return err
-		}
 	}
 
 	return service.repository.Archive(ctx, trimmedID)

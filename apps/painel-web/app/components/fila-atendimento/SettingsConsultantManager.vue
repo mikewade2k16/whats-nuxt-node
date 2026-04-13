@@ -90,13 +90,13 @@ function submitAdd() {
   <article class="settings-card">
     <header class="settings-card__header">
       <h3 class="settings-card__title">Gestao de consultores</h3>
-      <p class="settings-card__text">CRUD administrativo de perfil, meta, comissao e acesso vinculado.</p>
-      <p class="settings-card__text">Cada consultor passa a nascer com login automatico e email padrao por loja.</p>
+      <p class="settings-card__text">CRUD administrativo de perfil, meta e comissao no roster operacional.</p>
+      <p class="settings-card__text">A identidade e o acesso ficam centralizados na pagina global de usuarios.</p>
     </header>
 
     <div class="consultant-head">
       <span>Nome</span>
-      <span>Login</span>
+      <span>Acesso</span>
       <span>Cargo</span>
       <span>Cor</span>
       <span>Meta R$</span>
@@ -112,7 +112,7 @@ function submitAdd() {
       <span v-if="!consultants.length" class="insight-empty">Nenhum consultor cadastrado.</span>
       <form v-for="consultant in consultants" :key="consultant.id" class="consultant-row" @submit.prevent="emit('update', consultant.id, buildPayload(drafts[consultant.id]))">
         <input v-if="drafts[consultant.id]" v-model="drafts[consultant.id].name" class="product-row__input" type="text" :disabled="disabled">
-        <span class="settings-card__text">{{ consultant.access?.email || 'Acesso pendente' }}</span>
+        <span class="settings-card__text">Gerido em Usuarios</span>
         <input v-if="drafts[consultant.id]" v-model="drafts[consultant.id].role" class="product-row__input" type="text" :disabled="disabled">
         <input v-if="drafts[consultant.id]" v-model="drafts[consultant.id].color" class="product-row__input" type="color" :disabled="disabled">
         <input v-if="drafts[consultant.id]" v-model="drafts[consultant.id].monthlyGoal" class="product-row__input" type="number" min="0" step="100" :disabled="disabled">
@@ -127,7 +127,7 @@ function submitAdd() {
 
     <form class="consultant-add" @submit.prevent="submitAdd">
       <input v-model="newConsultant.name" class="product-add__input" type="text" placeholder="Nome do consultor" :disabled="disabled">
-      <span class="settings-card__text">Email gerado automaticamente</span>
+      <span class="settings-card__text">Acesso centralizado em Usuarios</span>
       <input v-model="newConsultant.role" class="product-add__input" type="text" placeholder="Cargo (ex: Atendimento)" :disabled="disabled">
       <input v-model="newConsultant.color" class="product-add__input" type="color" :disabled="disabled">
       <input v-model="newConsultant.monthlyGoal" class="product-add__input" type="number" min="0" step="100" placeholder="Meta R$" :disabled="disabled">

@@ -22,6 +22,9 @@ export default defineEventHandler(async (event) => {
         clientId: normalizedBody.clientId as number | string | null,
         level: normalizedBody.level as string,
         userType: normalizedBody.userType as string,
+        businessRole: normalizedBody.businessRole as string,
+        storeId: normalizedBody.storeId as string | null,
+        registrationNumber: normalizedBody.registrationNumber as string,
         isPlatformAdmin: Boolean(normalizedBody.isPlatformAdmin)
       }
     }

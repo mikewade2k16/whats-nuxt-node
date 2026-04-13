@@ -1,0 +1,88 @@
+{
+  "id": "indicators",
+  "displayName": "Indicadores",
+  "status": "draft",
+  "version": "0.1.0-draft",
+  "description": "Modulo plugavel de indicadores configuraveis, com templates globais, perfil por cliente, override opcional por loja, dashboard agregado e providers de metricas de outros modulos.",
+  "currentSource": {
+    "legacy": "indicators"
+  },
+  "targetHosts": {
+    "frontend": "apps/painel-web",
+    "shell": "apps/plataforma-api"
+  },
+  "contractsConsumed": {
+    "required": [
+      "ActorContext",
+      "TenantContext",
+      "AccessPolicy",
+      "UnitsDirectory",
+      "StoreScopeProvider",
+      "PersistenceProvider",
+      "AssetStorage",
+      "ModuleRegistry",
+      "Clock"
+    ],
+    "optional": [
+      "FilaAtendimentoMetricsProvider",
+      "AtendimentoOnlineMetricsProvider",
+      "SalesMetricsProvider",
+      "ExternalMetricsProvider",
+      "UsersDirectory",
+      "AuditSink",
+      "DomainEventBus",
+      "RealtimePublisher"
+    ]
+  },
+  "backendSlices": [
+    "dashboard",
+    "evaluations",
+    "templates",
+    "profiles",
+    "configuration",
+    "targets",
+    "assets",
+    "external-metrics",
+    "providers",
+    "governance"
+  ],
+  "frontendSlices": [
+    "dashboard",
+    "avaliacoes",
+    "cadastro",
+    "detalhes",
+    "targets",
+    "configuracoes",
+    "governanca",
+    "ranking-lojas"
+  ],
+  "sourcePaths": {
+    "legacyPages": [
+      "indicators/index.php",
+      "indicators/content.php",
+      "indicators/dashboard.php",
+      "indicators/indicator-1.php",
+      "indicators/indicator-2.php",
+      "indicators/indicator-3.php",
+      "indicators/indicator-4.php",
+      "indicators/indicator-5.php",
+      "indicators/modal-avaliations.php"
+    ]
+  },
+  "capabilities": [
+    "indicators.dashboard",
+    "indicators.evaluations",
+    "indicators.templates",
+    "indicators.profiles",
+    "indicators.targets",
+    "indicators.assets",
+    "indicators.providers",
+    "indicators.governance"
+  ],
+  "notes": [
+    "O shell atual hospeda a primeira entrada do modulo em /admin/indicadores.",
+    "A referencia funcional congelada do legado esta em indicators/AGENTS.md.",
+    "O modulo nasce com escopo global por cliente como default e pode habilitar breakdown por loja quando o perfil exigir.",
+    "Indicadores nativos e indicadores derivados de outros modulos convergem para o mesmo contrato de score antes da agregacao por loja e cliente."
+  ]
+}

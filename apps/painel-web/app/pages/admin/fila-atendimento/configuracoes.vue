@@ -72,20 +72,7 @@ async function handleAddConsultant(payload: Partial<FilaAtendimentoConsultantPro
     return
   }
 
-  const accessEmail = String(result.access?.email || '').trim()
-  const initialPassword = String(result.access?.initialPassword || '').trim()
-
-  if (accessEmail && initialPassword) {
-    await ui.prompt({
-      title: 'Acesso do consultor criado',
-      message: `Login padrao: ${accessEmail}\nSenha inicial: ${initialPassword}\nOriente o consultor a trocar a senha em Perfil no primeiro acesso.`,
-      inputLabel: 'Acesso',
-      initialValue: `${accessEmail} | ${initialPassword}`,
-      confirmLabel: 'Fechar'
-    })
-  }
-
-  ui.success('Consultor criado com acesso vinculado.')
+  ui.success('Consultor criado.')
 }
 
 async function handleUpdateConsultant(consultantId: string, payload: Partial<FilaAtendimentoConsultantProfilePayload>) {

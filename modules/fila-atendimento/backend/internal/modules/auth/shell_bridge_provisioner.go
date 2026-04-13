@@ -117,6 +117,14 @@ func (provisioner *ShellBridgeProvisioner) resolveProjection(ctx context.Context
 		storeIDs = append(storeIDs, store.ID)
 	}
 
+	claimedStoreIDs := resolveShellBridgeStoreIDs(claims.StoreIDs, stores)
+	if len(claims.StoreIDs) > 0 && len(claimedStoreIDs) < 1 {
+		return shellBridgeProjection{}, ErrShellBridgeScopeUnresolved
+	}
+	if len(claimedStoreIDs) > 0 {
+		storeIDs = claimedStoreIDs
+	}
+
 	if scopeMode == "first_store" {
 		storeIDs = storeIDs[:1]
 	}
@@ -133,9 +141,24 @@ func resolveShellBridgeRole(claims ShellBridgeClaims) (Role, error) {
 		return RolePlatformAdmin, nil
 	}
 
+	switch strings.ToLower(strings.TrimSpace(claims.BusinessRole)) {
+	case "owner":
+		return RoleOwner, nil
+	case "system_admin":
+		return RolePlatformAdmin, nil
+	case "general_manager", "store_manager":
+		return RoleManager, nil
+	case "consultant":
+		return RoleConsultant, nil
+	case "marketing":
+		return RoleMarketing, nil
+	}
+
 	switch strings.ToLower(strings.TrimSpace(claims.UserLevel)) {
 	case "admin":
 		return RoleOwner, nil
+	case "consultant":
+		return RoleConsultant, nil
 	case "manager":
 		return RoleManager, nil
 	case "marketing":
@@ -151,6 +174,13 @@ func resolveShellBridgeScopeMode(claims ShellBridgeClaims, role Role) string {
 		return scopeMode
 	}
 
+	switch strings.ToLower(strings.TrimSpace(claims.BusinessRole)) {
+	case "consultant", "store_manager":
+		return "first_store"
+	case "general_manager":
+		return "all_stores"
+	}
+
 	if role == RoleManager {
 		return "first_store"
 	}
@@ -160,6 +190,36 @@ func resolveShellBridgeScopeMode(claims ShellBridgeClaims, role Role) string {
 	}
 
 	return "all_stores"
+}
+
+func resolveShellBridgeStoreIDs(claimed []string, activeStores []shellBridgeStore) []string {
+	if len(claimed) < 1 || len(activeStores) < 1 {
+		return nil
+	}
+
+	allowed := make(map[string]struct{}, len(activeStores))
+	for _, store := range activeStores {
+		allowed[strings.TrimSpace(store.ID)] = struct{}{}
+	}
+
+	result := make([]string, 0, len(claimed))
+	seen := make(map[string]struct{}, len(claimed))
+	for _, storeID := range claimed {
+		trimmed := strings.TrimSpace(storeID)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := allowed[trimmed]; !ok {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+
+	return result
 }
 
 func (provisioner *ShellBridgeProvisioner) resolveTenant(ctx context.Context, claims ShellBridgeClaims) (shellBridgeTenant, error) {

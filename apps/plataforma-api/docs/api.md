@@ -282,10 +282,16 @@ Request:
 
 ```json
 {
-  "field": "monthlyPaymentAmount",
-  "value": 350
+  "field": "requireUserStoreLink",
+  "value": true
 }
 ```
+
+Campos relevantes para a regra multiloja:
+
+- `requireUserStoreLink`
+- `requireUserRegistration`
+- `billingMode`
 
 ### PUT /core/admin/clients/{clientId}/stores
 
@@ -326,10 +332,19 @@ Request:
   "password": "Senha@123",
   "phone": "55999999999",
   "clientId": 106,
-  "level": "marketing",
-  "userType": "client"
+  "level": "consultant",
+  "userType": "client",
+  "businessRole": "consultant",
+  "storeId": "uuid-da-loja",
+  "registrationNumber": "259"
 }
 ```
+
+Regras novas:
+
+- `businessRole` controla o comportamento multiloja do cadastro.
+- `consultant` e `store_manager` podem exigir `storeId` e `registrationNumber` conforme configuracao do cliente.
+- `marketing`, `general_manager`, `owner` e `system_admin` operam com acesso a todas as lojas.
 
 ### PATCH /core/admin/users/{userId}
 
@@ -337,8 +352,8 @@ Request:
 
 ```json
 {
-  "field": "status",
-  "value": "active"
+  "field": "registrationNumber",
+  "value": "321"
 }
 ```
 

@@ -16,6 +16,8 @@ export type ClientFieldKey =
   | 'contactPhone'
   | 'contactSite'
   | 'contactAddress'
+  | 'requireUserStoreLink'
+  | 'requireUserRegistration'
   | 'modules'
 
 export interface ClientStoreCharge {
@@ -52,6 +54,8 @@ export interface ClientItem {
   contactPhone: string
   contactSite: string
   contactAddress: string
+  requireUserStoreLink: boolean
+  requireUserRegistration: boolean
 }
 
 export interface ClientsListMeta {

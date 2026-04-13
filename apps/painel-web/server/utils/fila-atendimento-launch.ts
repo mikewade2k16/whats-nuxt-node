@@ -13,7 +13,7 @@ interface ResolveFilaAtendimentoLaunchUrlOptions {
 }
 
 export async function resolveFilaAtendimentoLaunchUrl(options: ResolveFilaAtendimentoLaunchUrlOptions) {
-  const shellScope = await resolveFilaAtendimentoShellScope(options.event, options.access)
+  const shellScope = await resolveFilaAtendimentoShellScope(options.event, options.access, options.profile)
 
   if (shellScope.scopeMode !== 'platform' && !shellScope.tenantSlug) {
     throw createError({

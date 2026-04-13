@@ -20,6 +20,7 @@ const roleItems = [
 
 const levelItems = [
   { label: 'Admin', value: 'admin' },
+  { label: 'Consultor', value: 'consultant' },
   { label: 'Manager', value: 'manager' },
   { label: 'Marketing', value: 'marketing' },
   { label: 'Finance', value: 'finance' },

@@ -1,4 +1,4 @@
-export type ServerUserLevel = 'admin' | 'manager' | 'marketing' | 'finance'
+export type ServerUserLevel = 'admin' | 'consultant' | 'manager' | 'marketing' | 'finance' | 'viewer'
 export type ServerUserStatus = 'active' | 'inactive'
 export type ServerUserType = 'client' | 'admin'
 
@@ -72,7 +72,7 @@ function normalizeEmail(value: unknown) {
 
 function normalizeLevel(value: unknown): ServerUserLevel {
   const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'admin' || normalized === 'manager' || normalized === 'marketing' || normalized === 'finance') {
+  if (normalized === 'admin' || normalized === 'consultant' || normalized === 'manager' || normalized === 'marketing' || normalized === 'finance' || normalized === 'viewer') {
     return normalized
   }
 

@@ -31,6 +31,18 @@ var managedAdminRoleCodes = []string{
 	"module_agent",
 }
 
+type tenantUserDirectoryRules struct {
+	RequireStoreLink    bool
+	RequireRegistration bool
+	StoreCount          int
+}
+
+type adminUserDirectoryState struct {
+	BusinessRole       string
+	StoreID            string
+	RegistrationNumber string
+}
+
 func isUniqueConstraintError(err error, constraintName string) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
@@ -75,6 +87,124 @@ func normalizeOwnProfileUpdateError(field string, err error) error {
 	}
 
 	return fmt.Errorf("update own profile field: %w", err)
+}
+
+func normalizeBusinessRole(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "consultant":
+		return "consultant"
+	case "store_manager":
+		return "store_manager"
+	case "marketing":
+		return "marketing"
+	case "finance":
+		return "finance"
+	case "general_manager":
+		return "general_manager"
+	case "owner":
+		return "owner"
+	case "viewer":
+		return "viewer"
+	case "system_admin":
+		return "system_admin"
+	default:
+		return ""
+	}
+}
+
+func resolveDefaultBusinessRole(level, userType string, isPlatformAdmin, isOwner bool) string {
+	if isPlatformAdmin {
+		return "system_admin"
+	}
+
+	if isOwner || (normalizeAccessLevel(level) == "admin" && normalizeUserType(userType) == "admin") {
+		return "owner"
+	}
+
+	switch normalizeAccessLevel(level) {
+	case "consultant":
+		return "consultant"
+	case "manager":
+		return "general_manager"
+	case "finance":
+		return "finance"
+	case "viewer":
+		return "viewer"
+	default:
+		return "marketing"
+	}
+}
+
+func resolveAdminUserBusinessRole(raw, level, userType string, isPlatformAdmin, isOwner bool) string {
+	if isPlatformAdmin {
+		return "system_admin"
+	}
+
+	role := normalizeBusinessRole(raw)
+	if role == "" || role == "system_admin" {
+		return resolveDefaultBusinessRole(level, userType, false, isOwner)
+	}
+
+	return role
+}
+
+func isStoreScopedBusinessRole(role string) bool {
+	switch normalizeBusinessRole(role) {
+	case "consultant", "store_manager":
+		return true
+	default:
+		return false
+	}
+}
+
+func requiresRegistrationBusinessRole(role string) bool {
+	switch normalizeBusinessRole(role) {
+	case "consultant", "store_manager", "general_manager":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeOptionalStoreID(value any) string {
+	raw := strings.TrimSpace(stringValue(value))
+	switch strings.ToLower(raw) {
+	case "", "0", "all", "todas":
+		return ""
+	default:
+		return raw
+	}
+}
+
+func normalizeRegistrationNumber(value any) string {
+	return trimText(value, 60)
+}
+
+func stringPtr(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func stringFromPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func validateAdminUserDirectoryRequirements(state adminUserDirectoryState, rules tenantUserDirectoryRules) error {
+	if isStoreScopedBusinessRole(state.BusinessRole) && rules.RequireStoreLink && rules.StoreCount > 1 && strings.TrimSpace(state.StoreID) == "" {
+		return ErrInvalidInput
+	}
+
+	if requiresRegistrationBusinessRole(state.BusinessRole) && rules.RequireRegistration && strings.TrimSpace(state.RegistrationNumber) == "" {
+		return ErrInvalidInput
+	}
+
+	return nil
 }
 
 func resolveAdminUserRoleCodes(level string, isPlatformAdmin bool) []string {
@@ -293,6 +423,125 @@ func (s *Service) grantPlatformAdminModules(
 	return nil
 }
 
+func (s *Service) resolveTenantUserDirectoryRules(ctx context.Context, tenantID string) (tenantUserDirectoryRules, error) {
+	rules := tenantUserDirectoryRules{}
+	if strings.TrimSpace(tenantID) == "" {
+		return rules, ErrInvalidInput
+	}
+
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT
+			COALESCE(t.require_user_store_link, true),
+			COALESCE(t.require_user_registration, true),
+			COALESCE((
+				SELECT COUNT(*)
+				FROM tenant_store_charges sc
+				WHERE sc.tenant_id = t.id
+			), 0)
+		 FROM tenants t
+		 WHERE t.id = $1
+		   AND t.deleted_at IS NULL
+		 LIMIT 1`,
+		tenantID,
+	).Scan(&rules.RequireStoreLink, &rules.RequireRegistration, &rules.StoreCount)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return tenantUserDirectoryRules{}, ErrNotFound
+		}
+		return tenantUserDirectoryRules{}, fmt.Errorf("resolve tenant user directory rules: %w", err)
+	}
+
+	return rules, nil
+}
+
+func (s *Service) sanitizeAdminUserDirectoryState(
+	ctx context.Context,
+	tenantID string,
+	state adminUserDirectoryState,
+) (adminUserDirectoryState, error) {
+	state.BusinessRole = normalizeBusinessRole(state.BusinessRole)
+	if state.BusinessRole == "" {
+		state.BusinessRole = "marketing"
+	}
+	state.StoreID = normalizeOptionalStoreID(state.StoreID)
+	state.RegistrationNumber = normalizeRegistrationNumber(state.RegistrationNumber)
+
+	if strings.TrimSpace(tenantID) == "" || !isStoreScopedBusinessRole(state.BusinessRole) {
+		state.StoreID = ""
+		return state, nil
+	}
+
+	if state.StoreID == "" {
+		return state, nil
+	}
+
+	var normalizedStoreID string
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT id::text
+		 FROM tenant_store_charges
+		 WHERE tenant_id = $1
+		   AND id = $2
+		 LIMIT 1`,
+		tenantID,
+		state.StoreID,
+	).Scan(&normalizedStoreID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return adminUserDirectoryState{}, ErrInvalidInput
+		}
+		return adminUserDirectoryState{}, fmt.Errorf("validate tenant user store link: %w", err)
+	}
+
+	state.StoreID = normalizedStoreID
+	return state, nil
+}
+
+func (s *Service) enforceAdminUserDirectoryRequirements(
+	ctx context.Context,
+	tenantID string,
+	state adminUserDirectoryState,
+) error {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil
+	}
+
+	rules, err := s.resolveTenantUserDirectoryRules(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	return validateAdminUserDirectoryRequirements(state, rules)
+}
+
+func (s *Service) canActivateManagedAdminUserRecord(ctx context.Context, current AdminUser, scopeTenantID string) (bool, error) {
+	if !canActivateManagedAdminUser(current, scopeTenantID) {
+		return false, nil
+	}
+
+	state, err := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
+		BusinessRole:       resolveAdminUserBusinessRole(current.BusinessRole, current.Level, current.UserType, current.IsPlatformAdmin, false),
+		StoreID:            stringFromPtr(current.StoreID),
+		RegistrationNumber: current.RegistrationNumber,
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if err := s.enforceAdminUserDirectoryRequirements(ctx, scopeTenantID, state); err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (s *Service) ListAdminClients(ctx context.Context, input ListAdminClientsInput) ([]AdminClient, int, error) {
 	page, limit := normalizePageAndLimit(input.Page, input.Limit, adminDefaultPageLimit, adminMaxPageLimit)
 	offset := (page - 1) * limit
@@ -361,6 +610,8 @@ SELECT
 	COALESCE(t.contact_phone, ''),
 	COALESCE(t.contact_site, ''),
 	COALESCE(t.contact_address, ''),
+	COALESCE(t.require_user_store_link, true),
+	COALESCE(t.require_user_registration, true),
 	COALESCE((
 		SELECT json_agg(
 			json_build_object(
@@ -465,6 +716,8 @@ LIMIT %s OFFSET %s
 			&item.ContactPhone,
 			&item.ContactSite,
 			&item.ContactAddress,
+			&item.RequireUserStoreLink,
+			&item.RequireUserRegistration,
 			&storesJSON,
 			&modulesJSON,
 			&rowCount,
@@ -714,6 +967,7 @@ func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClient
 			joined_at,
 			access_level,
 			user_type,
+			business_role,
 			metadata
 		)
 		VALUES (
@@ -724,6 +978,7 @@ func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClient
 			now(),
 			'admin',
 			'admin',
+			'owner',
 			'{}'::jsonb
 		)
 		ON CONFLICT (tenant_id, user_id)
@@ -733,6 +988,7 @@ func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClient
 			joined_at = COALESCE(tenant_users.joined_at, now()),
 			access_level = 'admin',
 			user_type = 'admin',
+			business_role = 'owner',
 			updated_at = now()
 		RETURNING id`,
 		tenantID,
@@ -903,6 +1159,10 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 		_, err = s.pool.Exec(ctx, `UPDATE tenants SET contact_site = $2, updated_at = now() WHERE id = $1`, tenantID, normalizeSiteValue(input.Value))
 	case "contactAddress":
 		_, err = s.pool.Exec(ctx, `UPDATE tenants SET contact_address = $2, updated_at = now() WHERE id = $1`, tenantID, trimText(input.Value, 255))
+	case "requireUserStoreLink":
+		_, err = s.pool.Exec(ctx, `UPDATE tenants SET require_user_store_link = $2, updated_at = now() WHERE id = $1`, tenantID, boolValue(input.Value))
+	case "requireUserRegistration":
+		_, err = s.pool.Exec(ctx, `UPDATE tenants SET require_user_registration = $2, updated_at = now() WHERE id = $1`, tenantID, boolValue(input.Value))
 	case "modules":
 		moduleCodes := normalizeModuleCodesInput(input.Value)
 		err = s.replaceTenantModuleSet(ctx, tenantID, moduleCodes)
@@ -1098,6 +1358,9 @@ LEFT JOIN LATERAL (
 		tu.tenant_id,
 		tu.access_level,
 		tu.user_type,
+		tu.business_role,
+		tu.store_id,
+		tu.registration_number,
 		tu.status,
 		tu.is_owner,
 		tu.created_at
@@ -1115,6 +1378,7 @@ LEFT JOIN LATERAL (
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
+LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 %s
 `, adminUserModuleScopeJoinClause())
 
@@ -1125,6 +1389,7 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
+LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 %s
 `, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
@@ -1140,9 +1405,12 @@ JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
 			OR LOWER(COALESCE(u.phone, '')) LIKE %s
 			OR LOWER(COALESCE(scope.access_level, '')) LIKE %s
 			OR LOWER(COALESCE(scope.user_type, '')) LIKE %s
+			OR LOWER(COALESCE(scope.business_role, '')) LIKE %s
+			OR LOWER(COALESCE(store.store_name, '')) LIKE %s
+			OR LOWER(COALESCE(scope.registration_number, '')) LIKE %s
 			OR LOWER(COALESCE(t.name, '')) LIKE %s
 			OR u.legacy_id::text LIKE %s
-		)`, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder))
+		)`, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder))
 	}
 
 	if input.ClientID != nil {
@@ -1181,6 +1449,10 @@ SELECT
 		WHEN u.is_platform_admin THEN 'admin'
 		ELSE 'client'
 	END,
+	COALESCE(scope.business_role, ''),
+	scope.store_id::text,
+	COALESCE(store.store_name, ''),
+	COALESCE(scope.registration_number, ''),
 	COALESCE(u.preferences::text, '{}'),
 	COALESCE(module_scope.module_codes, '[]'::json),
 	COALESCE(module_scope.atendimento_access, false),
@@ -1205,6 +1477,7 @@ LIMIT %s OFFSET %s
 		var (
 			item            AdminUser
 			coreClientID    *int
+			storeID         *string
 			lastLoginAt     *time.Time
 			createdAt       time.Time
 			moduleCodesJSON []byte
@@ -1227,6 +1500,10 @@ LIMIT %s OFFSET %s
 			&createdAt,
 			&item.Level,
 			&item.UserType,
+			&item.BusinessRole,
+			&storeID,
+			&item.StoreName,
+			&item.RegistrationNumber,
 			&item.Preference,
 			&moduleCodesJSON,
 			&item.AtendimentoAccess,
@@ -1236,15 +1513,21 @@ LIMIT %s OFFSET %s
 		}
 
 		item.ClientID = coreClientID
+		item.StoreID = storeID
 		item.Status = normalizeUserRecordStatus(item.Status)
 		item.Level = normalizeAccessLevel(item.Level)
 		item.UserType = normalizeUserType(item.UserType)
+		item.BusinessRole = resolveAdminUserBusinessRole(item.BusinessRole, item.Level, item.UserType, item.IsPlatformAdmin, false)
+		item.RegistrationNumber = normalizeRegistrationNumber(item.RegistrationNumber)
 		if err := json.Unmarshal(moduleCodesJSON, &item.ModuleCodes); err != nil {
 			item.ModuleCodes = []string{}
 		}
 		if item.IsPlatformAdmin {
 			item.Level = "admin"
 			item.UserType = "admin"
+			item.BusinessRole = "system_admin"
+			item.StoreID = nil
+			item.StoreName = ""
 		}
 		item.Password = "********"
 		item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
@@ -1296,6 +1579,29 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		userType = "client"
 	}
 	desiredUserStatus := resolveCreatedAdminUserStatus(shouldCreateTenantMembership)
+	directoryState := adminUserDirectoryState{
+		BusinessRole: resolveAdminUserBusinessRole(
+			input.BusinessRole,
+			level,
+			userType,
+			targetIsPlatformAdmin,
+			!targetIsPlatformAdmin && level == "admin" && userType == "admin",
+		),
+		StoreID:            normalizeOptionalStoreID(input.StoreID),
+		RegistrationNumber: normalizeRegistrationNumber(input.RegistrationNumber),
+	}
+	if shouldCreateTenantMembership {
+		directoryState, err = s.sanitizeAdminUserDirectoryState(ctx, targetTenantID, directoryState)
+		if err != nil {
+			return AdminUser{}, "", err
+		}
+		if err := s.enforceAdminUserDirectoryRequirements(ctx, targetTenantID, directoryState); err != nil {
+			return AdminUser{}, "", err
+		}
+	} else {
+		directoryState.StoreID = ""
+		directoryState.RegistrationNumber = ""
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1337,6 +1643,9 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 				joined_at,
 				access_level,
 				user_type,
+				business_role,
+				store_id,
+				registration_number,
 				metadata
 			)
 			VALUES (
@@ -1347,6 +1656,9 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 				now(),
 				$4,
 				$5,
+				$6,
+				NULLIF($7, '')::uuid,
+				NULLIF($8, ''),
 				'{}'::jsonb
 			)
 			ON CONFLICT (tenant_id, user_id)
@@ -1356,6 +1668,9 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 				joined_at = COALESCE(tenant_users.joined_at, now()),
 				access_level = EXCLUDED.access_level,
 				user_type = EXCLUDED.user_type,
+				business_role = EXCLUDED.business_role,
+				store_id = EXCLUDED.store_id,
+				registration_number = EXCLUDED.registration_number,
 				updated_at = now()
 			RETURNING id`,
 			targetTenantID,
@@ -1363,6 +1678,9 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			targetIsPlatformAdmin,
 			level,
 			userType,
+			directoryState.BusinessRole,
+			directoryState.StoreID,
+			directoryState.RegistrationNumber,
 		).Scan(&tenantUserID); err != nil {
 			return AdminUser{}, "", fmt.Errorf("create tenant user membership: %w", err)
 		}
@@ -1563,6 +1881,9 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		if !input.IsPlatformAdmin {
 			return AdminUser{}, "", ErrForbidden
 		}
+		if current.IsPlatformAdmin {
+			return AdminUser{}, "", ErrForbidden
+		}
 
 		nextClientID := intValue(input.Value)
 		if nextClientID <= 0 {
@@ -1576,6 +1897,31 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		nextTenantID, resolveErr := s.resolveTargetTenantForUserMutation(ctx, input.TenantID, true, &nextClientID)
 		if resolveErr != nil {
 			return AdminUser{}, "", resolveErr
+		}
+
+		nextDirectoryState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, nextTenantID, adminUserDirectoryState{
+			BusinessRole: resolveAdminUserBusinessRole(
+				current.BusinessRole,
+				current.Level,
+				current.UserType,
+				current.IsPlatformAdmin,
+				normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin",
+			),
+			StoreID:            "",
+			RegistrationNumber: current.RegistrationNumber,
+		})
+		if stateErr != nil {
+			return AdminUser{}, "", stateErr
+		}
+
+		nextUserStatus := "active"
+		nextTenantUserStatus := "active"
+		if requirementErr := s.enforceAdminUserDirectoryRequirements(ctx, nextTenantID, nextDirectoryState); requirementErr != nil {
+			if !errors.Is(requirementErr, ErrInvalidInput) {
+				return AdminUser{}, "", requirementErr
+			}
+			nextUserStatus = "inactive"
+			nextTenantUserStatus = "suspended"
 		}
 
 		tx, beginErr := s.pool.Begin(ctx)
@@ -1623,30 +1969,43 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 				joined_at,
 				access_level,
 				user_type,
+				business_role,
+				store_id,
+				registration_number,
 				metadata
 			)
 			VALUES (
 				$1,
 				$2,
-				'active',
+				$3::tenant_user_status,
 				false,
 				now(),
-				$3,
 				$4,
+				$5,
+				$6,
+				NULLIF($7, '')::uuid,
+				NULLIF($8, ''),
 				'{}'::jsonb
 			)
 			ON CONFLICT (tenant_id, user_id)
 			DO UPDATE SET
-				status = 'active',
+				status = EXCLUDED.status,
 				access_level = EXCLUDED.access_level,
 				user_type = EXCLUDED.user_type,
+				business_role = EXCLUDED.business_role,
+				store_id = EXCLUDED.store_id,
+				registration_number = EXCLUDED.registration_number,
 				is_owner = false,
 				updated_at = now()
 			RETURNING id`,
 			nextTenantID,
 			current.CoreUserID,
+			nextTenantUserStatus,
 			normalizeAccessLevel(current.Level),
 			normalizeUserType(current.UserType),
+			nextDirectoryState.BusinessRole,
+			nextDirectoryState.StoreID,
+			nextDirectoryState.RegistrationNumber,
 		).Scan(&nextTenantUserID); scanErr != nil {
 			return AdminUser{}, "", fmt.Errorf("upsert reassigned tenant user membership: %w", scanErr)
 		}
@@ -1654,10 +2013,11 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		if _, execErr := tx.Exec(
 			ctx,
 			`UPDATE users
-			 SET status = 'active',
+			 SET status = $2::user_status,
 			     updated_at = now()
 			 WHERE id = $1`,
 			current.CoreUserID,
+			mapUserStatusToDB(nextUserStatus),
 		); execErr != nil {
 			return AdminUser{}, "", fmt.Errorf("reactivate user after client assignment: %w", execErr)
 		}
@@ -1750,6 +2110,107 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			current.CoreUserID,
 			normalizeUserType(stringValue(input.Value)),
 		)
+	case "businessRole":
+		if current.IsPlatformAdmin {
+			return AdminUser{}, "", ErrForbidden
+		}
+		if scopeTenantID == "" {
+			return AdminUser{}, "", ErrInvalidInput
+		}
+		nextState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
+			BusinessRole: resolveAdminUserBusinessRole(
+				stringValue(input.Value),
+				current.Level,
+				current.UserType,
+				false,
+				normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin",
+			),
+			StoreID:            stringFromPtr(current.StoreID),
+			RegistrationNumber: current.RegistrationNumber,
+		})
+		if stateErr != nil {
+			return AdminUser{}, "", stateErr
+		}
+		if current.Status == "active" {
+			if requirementErr := s.enforceAdminUserDirectoryRequirements(ctx, scopeTenantID, nextState); requirementErr != nil {
+				return AdminUser{}, "", requirementErr
+			}
+		}
+		_, err = s.pool.Exec(
+			ctx,
+			`UPDATE tenant_users
+			 SET business_role = $3,
+			     store_id = NULLIF($4, '')::uuid,
+			     updated_at = now()
+			 WHERE tenant_id = $1
+			   AND user_id = $2`,
+			scopeTenantID,
+			current.CoreUserID,
+			nextState.BusinessRole,
+			nextState.StoreID,
+		)
+	case "storeId":
+		if current.IsPlatformAdmin {
+			return AdminUser{}, "", ErrForbidden
+		}
+		if scopeTenantID == "" {
+			return AdminUser{}, "", ErrInvalidInput
+		}
+		nextState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
+			BusinessRole:       resolveAdminUserBusinessRole(current.BusinessRole, current.Level, current.UserType, false, normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin"),
+			StoreID:            normalizeOptionalStoreID(input.Value),
+			RegistrationNumber: current.RegistrationNumber,
+		})
+		if stateErr != nil {
+			return AdminUser{}, "", stateErr
+		}
+		if current.Status == "active" {
+			if requirementErr := s.enforceAdminUserDirectoryRequirements(ctx, scopeTenantID, nextState); requirementErr != nil {
+				return AdminUser{}, "", requirementErr
+			}
+		}
+		_, err = s.pool.Exec(
+			ctx,
+			`UPDATE tenant_users
+			 SET store_id = NULLIF($3, '')::uuid,
+			     updated_at = now()
+			 WHERE tenant_id = $1
+			   AND user_id = $2`,
+			scopeTenantID,
+			current.CoreUserID,
+			nextState.StoreID,
+		)
+	case "registrationNumber":
+		if current.IsPlatformAdmin {
+			return AdminUser{}, "", ErrForbidden
+		}
+		if scopeTenantID == "" {
+			return AdminUser{}, "", ErrInvalidInput
+		}
+		nextState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
+			BusinessRole:       resolveAdminUserBusinessRole(current.BusinessRole, current.Level, current.UserType, false, normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin"),
+			StoreID:            stringFromPtr(current.StoreID),
+			RegistrationNumber: normalizeRegistrationNumber(input.Value),
+		})
+		if stateErr != nil {
+			return AdminUser{}, "", stateErr
+		}
+		if current.Status == "active" {
+			if requirementErr := s.enforceAdminUserDirectoryRequirements(ctx, scopeTenantID, nextState); requirementErr != nil {
+				return AdminUser{}, "", requirementErr
+			}
+		}
+		_, err = s.pool.Exec(
+			ctx,
+			`UPDATE tenant_users
+			 SET registration_number = NULLIF($3, ''),
+			     updated_at = now()
+			 WHERE tenant_id = $1
+			   AND user_id = $2`,
+			scopeTenantID,
+			current.CoreUserID,
+			nextState.RegistrationNumber,
+		)
 	case "name":
 		value := strings.TrimSpace(stringValue(input.Value))
 		if value == "" {
@@ -1787,8 +2248,14 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		_, err = s.pool.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, current.CoreUserID, string(passwordHash))
 	case "status":
 		normalized := normalizeUserRecordStatus(stringValue(input.Value))
-		if normalized == "active" && !canActivateManagedAdminUser(current, scopeTenantID) {
-			return AdminUser{}, "", ErrInvalidInput
+		if normalized == "active" {
+			canActivate, activationErr := s.canActivateManagedAdminUserRecord(ctx, current, scopeTenantID)
+			if activationErr != nil {
+				return AdminUser{}, "", activationErr
+			}
+			if !canActivate {
+				return AdminUser{}, "", ErrInvalidInput
+			}
 		}
 		tenantUserStatus := "suspended"
 		if normalized == "active" {
@@ -1958,7 +2425,11 @@ func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserIn
 	if err != nil {
 		return AdminUser{}, "", err
 	}
-	if !canActivateManagedAdminUser(current, scopeTenantID) {
+	canActivate, activationErr := s.canActivateManagedAdminUserRecord(ctx, current, scopeTenantID)
+	if activationErr != nil {
+		return AdminUser{}, "", activationErr
+	}
+	if !canActivate {
 		return AdminUser{}, "", ErrInvalidInput
 	}
 
@@ -2083,6 +2554,8 @@ SELECT
 	COALESCE(t.contact_phone, ''),
 	COALESCE(t.contact_site, ''),
 	COALESCE(t.contact_address, ''),
+	COALESCE(t.require_user_store_link, true),
+	COALESCE(t.require_user_registration, true),
 	COALESCE((
 		SELECT json_agg(
 			json_build_object(
@@ -2185,6 +2658,8 @@ LIMIT 1
 		&item.ContactPhone,
 		&item.ContactSite,
 		&item.ContactAddress,
+		&item.RequireUserStoreLink,
+		&item.RequireUserRegistration,
 		&storesJSON,
 		&modulesJSON,
 	); err != nil {
@@ -2220,6 +2695,9 @@ LEFT JOIN LATERAL (
 		tu.tenant_id,
 		tu.access_level,
 		tu.user_type,
+		tu.business_role,
+		tu.store_id,
+		tu.registration_number,
 		tu.status,
 		tu.is_owner,
 		tu.created_at
@@ -2237,6 +2715,7 @@ LEFT JOIN LATERAL (
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
+LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 %s
 `, adminUserModuleScopeJoinClause())
 	conditions := []string{
@@ -2251,6 +2730,7 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
+LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 %s
 `, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
@@ -2281,6 +2761,10 @@ SELECT
 		WHEN u.is_platform_admin THEN 'admin'
 		ELSE 'client'
 	END,
+	COALESCE(scope.business_role, ''),
+	scope.store_id::text,
+	COALESCE(store.store_name, ''),
+	COALESCE(scope.registration_number, ''),
 	COALESCE(u.preferences::text, '{}'),
 	COALESCE(module_scope.module_codes, '[]'::json),
 	COALESCE(module_scope.atendimento_access, false)
@@ -2294,6 +2778,7 @@ LIMIT 1
 		item            AdminUser
 		scopeTenantID   *string
 		scopeClientID   *int
+		storeID         *string
 		lastLoginAt     *time.Time
 		createdAt       time.Time
 		moduleCodesJSON []byte
@@ -2316,6 +2801,10 @@ LIMIT 1
 		&createdAt,
 		&item.Level,
 		&item.UserType,
+		&item.BusinessRole,
+		&storeID,
+		&item.StoreName,
+		&item.RegistrationNumber,
 		&item.Preference,
 		&moduleCodesJSON,
 		&item.AtendimentoAccess,
@@ -2328,15 +2817,21 @@ LIMIT 1
 	}
 
 	item.ClientID = scopeClientID
+	item.StoreID = storeID
 	item.Status = normalizeUserRecordStatus(item.Status)
 	item.Level = normalizeAccessLevel(item.Level)
 	item.UserType = normalizeUserType(item.UserType)
+	item.BusinessRole = resolveAdminUserBusinessRole(item.BusinessRole, item.Level, item.UserType, item.IsPlatformAdmin, false)
+	item.RegistrationNumber = normalizeRegistrationNumber(item.RegistrationNumber)
 	if err := json.Unmarshal(moduleCodesJSON, &item.ModuleCodes); err != nil {
 		item.ModuleCodes = []string{}
 	}
 	if item.IsPlatformAdmin {
 		item.Level = "admin"
 		item.UserType = "admin"
+		item.BusinessRole = "system_admin"
+		item.StoreID = nil
+		item.StoreName = ""
 	}
 	item.Password = "********"
 	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
@@ -2525,6 +3020,8 @@ func normalizeAccessLevel(raw string) string {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
 	case "admin":
 		return "admin"
+	case "consultant":
+		return "consultant"
 	case "manager":
 		return "manager"
 	case "finance":

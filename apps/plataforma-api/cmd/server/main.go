@@ -18,6 +18,7 @@ import (
 	"plataforma-api/internal/domain/core"
 	"plataforma-api/internal/domain/filaatendimento"
 	"plataforma-api/internal/domain/finance"
+	"plataforma-api/internal/domain/indicators"
 	"plataforma-api/internal/httpapi"
 	"plataforma-api/internal/realtime"
 )
@@ -67,12 +68,14 @@ func main() {
 	})
 	coreService := core.NewService(pool, cfg.DefaultUsersLimit)
 	financeService := finance.NewService(pool)
+	indicatorsService := indicators.NewService(pool)
 	hub := realtime.NewHub(cfg.AllowedOrigins, cfg.WSPingInterval, cfg.WSWriteTimeout, cfg.WSReadTimeout)
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		AuthService:            authService,
 		CoreService:            coreService,
 		FinanceService:         financeService,
+		IndicatorsService:      indicatorsService,
 		FilaAtendimentoHandler: filaAtendimentoHandler,
 		Hub:                    hub,
 		StartedAt:              startedAt,

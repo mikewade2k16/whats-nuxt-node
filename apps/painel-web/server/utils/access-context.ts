@@ -3,7 +3,7 @@ import { evaluateAdminRouteAccess, resolveAdminAccessFlags } from '~~/app/utils/
 import { resolveAdminProfile } from '~~/server/utils/admin-profile'
 
 export type AccessUserType = 'admin' | 'client'
-export type AccessUserLevel = 'admin' | 'manager' | 'marketing' | 'finance' | 'viewer'
+export type AccessUserLevel = 'admin' | 'consultant' | 'manager' | 'marketing' | 'finance' | 'viewer'
 
 export interface AccessContext {
   isAuthenticated: boolean
@@ -50,7 +50,7 @@ function parseClientId(raw: unknown) {
 
 function parseUserLevel(raw: unknown): AccessUserLevel {
   const normalized = String(raw ?? '').trim().toLowerCase()
-  if (normalized === 'admin' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
+  if (normalized === 'admin' || normalized === 'consultant' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
     return normalized
   }
   return 'marketing'

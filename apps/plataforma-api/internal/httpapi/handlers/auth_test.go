@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	domainauth "plataforma-api/internal/domain/auth"
@@ -68,6 +69,14 @@ func TestResolvePasswordResetErrorResponse(t *testing.T) {
 		{
 			name:        "maps reset unavailable",
 			err:         domainauth.ErrPasswordResetUnavailable,
+			wantStatus:  503,
+			wantCode:    "password_reset_unavailable",
+			wantMessage: "A recuperacao de senha nao esta disponivel agora. Tente novamente em instantes.",
+			wantOK:      true,
+		},
+		{
+			name:        "maps wrapped reset unavailable",
+			err:         fmt.Errorf("%w: smtp tls dial: connection refused", domainauth.ErrPasswordResetUnavailable),
 			wantStatus:  503,
 			wantCode:    "password_reset_unavailable",
 			wantMessage: "A recuperacao de senha nao esta disponivel agora. Tente novamente em instantes.",

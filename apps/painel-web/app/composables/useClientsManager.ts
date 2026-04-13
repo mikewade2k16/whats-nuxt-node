@@ -38,6 +38,7 @@ const KNOWN_MODULE_LABELS: Record<string, string> = {
   core_panel: 'Core Panel',
   atendimento: 'Atendimento',
   'fila-atendimento': 'Fila de Atendimento',
+  indicators: 'Indicadores',
   finance: 'Finance',
   kanban: 'Kanban'
 }
@@ -115,6 +116,8 @@ function normalizeClientItem(item: ClientItem): ClientItem {
       : parseAmount(item.monthlyPaymentAmount),
     stores,
     storesCount: stores.length,
+    requireUserStoreLink: normalizeBooleanLike(item.requireUserStoreLink, true),
+    requireUserRegistration: normalizeBooleanLike(item.requireUserRegistration, true),
     modules: activeModules,
     moduleCodes: normalizeModuleCodes(activeModules.map(module => module.code))
   }
@@ -194,6 +197,19 @@ function normalizeStatus(value: unknown): ClientStatus {
 
 function normalizeWebhookEnabled(value: unknown) {
   const normalized = String(value ?? '').trim().toLowerCase()
+  return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
+}
+
+function normalizeBooleanLike(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) {
+    return fallback
+  }
+
   return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
 }
 
@@ -476,6 +492,14 @@ export function useClientsManager() {
 
     if (field === 'contactAddress') {
       patchClientLocally(id, { contactAddress: String(value ?? '').trim().slice(0, 255) })
+    }
+
+    if (field === 'requireUserStoreLink') {
+      patchClientLocally(id, { requireUserStoreLink: normalizeBooleanLike(value, true) })
+    }
+
+    if (field === 'requireUserRegistration') {
+      patchClientLocally(id, { requireUserRegistration: normalizeBooleanLike(value, true) })
     }
 
     if (field === 'modules') {

@@ -4,6 +4,14 @@ function normalizeText(value: unknown) {
   return String(value ?? '').trim()
 }
 
+const SAFE_UPSTREAM_5XX_ERROR_CODES = new Set([
+  'password_reset_unavailable'
+])
+
+function normalizeErrorCode(value: unknown) {
+  return normalizeText(value).toLowerCase()
+}
+
 export function isProductionRuntime(event?: H3Event) {
   if (event) {
     const config = useRuntimeConfig(event)
@@ -56,12 +64,6 @@ export function sanitizeUpstreamPayload(
 
   const fallback = normalizeText(fallbackMessage) || 'Erro interno do servidor.'
 
-  if (statusCode >= 500) {
-    return {
-      message: fallback
-    }
-  }
-
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return {
       message: fallback
@@ -69,8 +71,23 @@ export function sanitizeUpstreamPayload(
   }
 
   const raw = payload as Record<string, unknown>
+  const errorCode = normalizeErrorCode(raw.error ?? raw.code)
   const safePayload: Record<string, unknown> = {
     message: normalizeText(raw.message ?? raw.statusMessage) || fallback
+  }
+
+  if (errorCode) {
+    safePayload.error = errorCode
+  }
+
+  if (statusCode >= 500) {
+    if (errorCode && SAFE_UPSTREAM_5XX_ERROR_CODES.has(errorCode)) {
+      return safePayload
+    }
+
+    return {
+      message: fallback
+    }
   }
 
   if (statusCode === 400 && raw.errors && typeof raw.errors === 'object') {

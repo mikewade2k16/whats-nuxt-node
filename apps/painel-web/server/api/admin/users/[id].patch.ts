@@ -16,7 +16,10 @@ const allowedFields = new Set([
   'profileImage',
   'lastLogin',
   'createdAt',
-  'preferences'
+  'preferences',
+  'businessRole',
+  'storeId',
+  'registrationNumber'
 ])
 
 export default defineEventHandler(async (event) => {

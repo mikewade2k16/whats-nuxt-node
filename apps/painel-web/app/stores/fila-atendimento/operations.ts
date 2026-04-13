@@ -1179,7 +1179,7 @@ export const useFilaAtendimentoOperationsStore = defineStore('fila-atendimento-o
     path: string,
     method: 'POST' | 'PATCH',
     body?: Record<string, unknown>,
-    onSuccess?: (response: { consultant?: FilaAtendimentoConsultantView; access?: FilaAtendimentoConsultantMutationResult['access']; ok?: boolean }) => void
+    onSuccess?: (response: { consultant?: FilaAtendimentoConsultantView; ok?: boolean }) => void
   ): Promise<T> {
     if (!state.value.activeStoreId) {
       return { ok: false, message: 'Selecione uma loja para continuar.' } as T
@@ -1192,7 +1192,7 @@ export const useFilaAtendimentoOperationsStore = defineStore('fila-atendimento-o
     commandPending.value = true
 
     try {
-      const response = await bffFetch<{ consultant?: FilaAtendimentoConsultantView; access?: FilaAtendimentoConsultantMutationResult['access']; ok?: boolean }>(path, {
+      const response = await bffFetch<{ consultant?: FilaAtendimentoConsultantView; ok?: boolean }>(path, {
         method,
         body
       })
@@ -1201,8 +1201,7 @@ export const useFilaAtendimentoOperationsStore = defineStore('fila-atendimento-o
 
       return {
         ok: true,
-        consultant: response?.consultant || null,
-        access: response?.access || null
+        consultant: response?.consultant || null
       } as T
     } catch (error) {
       return {

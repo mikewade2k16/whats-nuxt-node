@@ -41,21 +41,24 @@ type PasswordResetConfirmInput struct {
 }
 
 type UserSummary struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Email             string   `json:"email"`
-	Nick              string   `json:"nick,omitempty"`
-	ProfileImage      string   `json:"profileImage,omitempty"`
-	IsPlatformAdmin   bool     `json:"isPlatformAdmin"`
-	TenantID          *string  `json:"tenantId,omitempty"`
-	TenantSlug        *string  `json:"tenantSlug,omitempty"`
-	ClientID          *int     `json:"clientId,omitempty"`
-	ClientName        string   `json:"clientName,omitempty"`
-	Level             string   `json:"level,omitempty"`
-	UserType          string   `json:"userType,omitempty"`
-	Preferences       string   `json:"preferences,omitempty"`
-	ModuleCodes       []string `json:"moduleCodes,omitempty"`
-	AtendimentoAccess bool     `json:"atendimentoAccess"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Email              string   `json:"email"`
+	Nick               string   `json:"nick,omitempty"`
+	ProfileImage       string   `json:"profileImage,omitempty"`
+	IsPlatformAdmin    bool     `json:"isPlatformAdmin"`
+	TenantID           *string  `json:"tenantId,omitempty"`
+	TenantSlug         *string  `json:"tenantSlug,omitempty"`
+	ClientID           *int     `json:"clientId,omitempty"`
+	ClientName         string   `json:"clientName,omitempty"`
+	Level              string   `json:"level,omitempty"`
+	UserType           string   `json:"userType,omitempty"`
+	BusinessRole       string   `json:"businessRole,omitempty"`
+	StoreID            *string  `json:"storeId,omitempty"`
+	RegistrationNumber string   `json:"registrationNumber,omitempty"`
+	Preferences        string   `json:"preferences,omitempty"`
+	ModuleCodes        []string `json:"moduleCodes,omitempty"`
+	AtendimentoAccess  bool     `json:"atendimentoAccess"`
 }
 
 type LoginOutput struct {

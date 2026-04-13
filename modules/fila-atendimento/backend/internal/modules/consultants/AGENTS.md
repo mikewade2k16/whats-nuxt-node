@@ -8,15 +8,15 @@
 ## Responsabilidades
 
 - listar consultores ativos da loja
-- criar consultor com vínculo de identidade provisionado
-- atualizar consultor e manter sincronismo mínimo com a identidade vinculada
-- arquivar consultor e encerrar o acesso vinculado
+- criar consultor apenas no roster operacional da loja
+- atualizar consultor sem mutar a identidade global do shell
+- arquivar consultor sem gerenciar o acesso global
 
 ## Contratos consumidos
 
 - `AccessContext`
 - `StoreCatalogProvider`
-- `IdentityProvisioner`
+- `IdentityProvisioner` opcional apenas enquanto houver legado local a ser mantido
 
 Compatibilidade atual do runtime hospedado:
 
@@ -33,16 +33,16 @@ Compatibilidade atual do runtime hospedado:
 ## Regras de arquitetura
 
 - a regra de acesso do roster não deve depender estruturalmente de `auth.Principal`
-- o roster continua dono do ciclo de vida do consultor; a conta vinculada entra via `IdentityProvisioner`
-- o frontend continua recebendo `access.email` e `access.initialPassword` no create enquanto o rollout depender desse fluxo administrativo
+- o roster continua dono apenas do ciclo de vida operacional do consultor
+- identidade global, senha e vínculo de acesso ficam sob controle do shell administrativo
 
 ## Estado atual da fase
 
 - feito em `2026-04-06`:
   - o service passou a consumir `AccessContext`, `StoreCatalogProvider` e `IdentityProvisioner`
   - a borda HTTP ganhou `RegisterRoutesWithOptions(...)` e compatibilidade local com `auth.Middleware`
-  - o runtime hospedado preserva o fluxo atual com `AuthIdentityProvisioner`
-  - testes de service cobrem provisionamento e rollback quando a identidade falha
+  - o runtime hospedado preserva compatibilidade de leitura com identidades legadas já vinculadas
+  - testes de service cobrem o roster desacoplado do provisionamento de identidade
 
 ## Checks mínimos de mudança
 

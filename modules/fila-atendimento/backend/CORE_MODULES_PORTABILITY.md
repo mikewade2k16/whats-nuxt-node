@@ -262,10 +262,9 @@ O projeto host precisa expor endpoints equivalentes para:
 - `/v1/reports/*`
 - `/v1/analytics/*`
 
-E, se quiser a area administrativa completa:
+E, se quiser a area administrativa hospedada do modulo:
 
 - `/v1/stores`
-- `/v1/users`
 - `/v1/consultants`
 - `/v1/settings`
 

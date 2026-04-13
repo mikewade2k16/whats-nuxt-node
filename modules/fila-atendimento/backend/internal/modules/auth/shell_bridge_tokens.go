@@ -17,11 +17,13 @@ type ShellBridgeClaims struct {
 	Email           string   `json:"email"`
 	UserType        string   `json:"userType"`
 	UserLevel       string   `json:"userLevel"`
+	BusinessRole    string   `json:"businessRole,omitempty"`
 	TenantID        string   `json:"tenantId,omitempty"`
 	TenantSlug      string   `json:"tenantSlug,omitempty"`
 	ClientID        int      `json:"clientId,omitempty"`
 	IsPlatformAdmin bool     `json:"isPlatformAdmin"`
 	ModuleCodes     []string `json:"moduleCodes,omitempty"`
+	StoreIDs        []string `json:"storeIds,omitempty"`
 	ScopeMode       string   `json:"scopeMode,omitempty"`
 	IssuedAt        int64    `json:"iat"`
 	ExpiresAt       int64    `json:"exp"`
@@ -73,9 +75,11 @@ func (manager *ShellBridgeTokenManager) Parse(token string) (ShellBridgeClaims, 
 	claims.Email = strings.ToLower(strings.TrimSpace(claims.Email))
 	claims.UserType = strings.ToLower(strings.TrimSpace(claims.UserType))
 	claims.UserLevel = strings.ToLower(strings.TrimSpace(claims.UserLevel))
+	claims.BusinessRole = strings.ToLower(strings.TrimSpace(claims.BusinessRole))
 	claims.TenantID = strings.TrimSpace(claims.TenantID)
 	claims.TenantSlug = strings.ToLower(strings.TrimSpace(claims.TenantSlug))
 	claims.ScopeMode = strings.ToLower(strings.TrimSpace(claims.ScopeMode))
+	claims.StoreIDs = normalizeShellBridgeStringList(claims.StoreIDs)
 
 	if claims.Subject == "" || claims.Email == "" {
 		return ShellBridgeClaims{}, ErrShellBridgeUnauthorized
@@ -87,6 +91,24 @@ func (manager *ShellBridgeTokenManager) Parse(token string) (ShellBridgeClaims, 
 	}
 
 	return claims, nil
+}
+
+func normalizeShellBridgeStringList(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+
+	return result
 }
 
 func (manager *ShellBridgeTokenManager) sign(encodedPayload string) string {

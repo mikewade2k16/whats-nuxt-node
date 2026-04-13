@@ -52,6 +52,7 @@ const moduleSelectOptions = computed(() => {
     ['core_panel', 'Core Panel'],
     ['atendimento', 'Atendimento'],
     ['fila-atendimento', 'Fila de Atendimento'],
+    ['indicators', 'Indicadores'],
     ['finance', 'Finance'],
     ['kanban', 'Kanban']
   ])
@@ -175,6 +176,22 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     minWidth: 130
   },
   {
+    key: 'requireUserStoreLink',
+    label: 'Obriga loja',
+    type: 'switch',
+    editable: true,
+    immediate: true,
+    minWidth: 140
+  },
+  {
+    key: 'requireUserRegistration',
+    label: 'Obriga matricula',
+    type: 'switch',
+    editable: true,
+    immediate: true,
+    minWidth: 160
+  },
+  {
     key: 'moduleCodes',
     label: 'Modulos',
     type: 'multiselect',
@@ -238,6 +255,8 @@ const updatableFields = new Set<ClientFieldKey>([
   'contactPhone',
   'contactSite',
   'contactAddress',
+  'requireUserStoreLink',
+  'requireUserRegistration',
   'modules'
 ])
 
@@ -430,6 +449,8 @@ onMounted(() => {
               <p><strong>Telefone:</strong> {{ toClient(row).contactPhone || '-' }}</p>
               <p><strong>Site:</strong> {{ toClient(row).contactSite || '-' }}</p>
               <p><strong>Endereco:</strong> {{ toClient(row).contactAddress || '-' }}</p>
+              <p><strong>Obriga loja:</strong> {{ toClient(row).requireUserStoreLink ? 'sim' : 'nao' }}</p>
+              <p><strong>Obriga matricula:</strong> {{ toClient(row).requireUserRegistration ? 'sim' : 'nao' }}</p>
               <p><strong>Modulos:</strong> {{ modulesSummary(toClient(row)) }}</p>
             </div>
           </OmniMinimalPopover>

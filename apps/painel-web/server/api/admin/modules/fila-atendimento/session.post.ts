@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   const bridgeTokenFromBody = String(requestBody?.bridgeToken ?? '').trim()
   const shellBridgeSecret = String(runtimeConfig.filaAtendimentoShellBridgeSecret ?? '').trim()
-  const shellScope = await resolveFilaAtendimentoShellScope(event, access)
+  const shellScope = await resolveFilaAtendimentoShellScope(event, access, profile)
 
   const bridgeToken = bridgeTokenFromBody || createFilaAtendimentoShellBridgeToken({
     secret: shellBridgeSecret,

@@ -13,6 +13,7 @@ interface CreateFilaAtendimentoShellBridgeTokenOptions {
     coreTenantId?: string
     tenantSlug?: string
     scopeMode?: FilaAtendimentoShellScopeMode
+    storeIds?: string[]
   }
   ttlSeconds?: number
 }
@@ -47,11 +48,15 @@ export function createFilaAtendimentoShellBridgeToken(options: CreateFilaAtendim
     email: String(options.access.email || options.profile.email || '').trim().toLowerCase(),
     userType: String(options.access.userType || options.profile.userType || '').trim().toLowerCase(),
     userLevel: String(options.access.userLevel || options.profile.level || '').trim().toLowerCase(),
+    businessRole: String(options.profile.businessRole || '').trim().toLowerCase(),
     tenantId: String(options.scope?.coreTenantId || options.access.tenantId || options.profile.tenantId || '').trim(),
     tenantSlug: String(options.scope?.tenantSlug || '').trim().toLowerCase(),
     clientId: options.access.clientId > 0 ? options.access.clientId : null,
     isPlatformAdmin: resolveEffectivePlatformAdmin(options.access),
     moduleCodes: Array.isArray(options.access.profileModuleCodes) ? options.access.profileModuleCodes : [],
+    storeIds: Array.isArray(options.scope?.storeIds)
+      ? options.scope.storeIds.map(item => String(item || '').trim()).filter(Boolean)
+      : [],
     scopeMode: String(options.scope?.scopeMode || '').trim().toLowerCase(),
     iat: now,
     exp: now + ttlSeconds

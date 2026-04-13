@@ -39,15 +39,18 @@ type createAdminClientRequest struct {
 }
 
 type createAdminUserRequest struct {
-	Name            string `json:"name"`
-	Nick            string `json:"nick,omitempty"`
-	Email           string `json:"email"`
-	Password        string `json:"password,omitempty"`
-	Phone           string `json:"phone,omitempty"`
-	ClientID        *int   `json:"clientId,omitempty"`
-	Level           string `json:"level,omitempty"`
-	UserType        string `json:"userType,omitempty"`
-	IsPlatformAdmin bool   `json:"isPlatformAdmin,omitempty"`
+	Name               string `json:"name"`
+	Nick               string `json:"nick,omitempty"`
+	Email              string `json:"email"`
+	Password           string `json:"password,omitempty"`
+	Phone              string `json:"phone,omitempty"`
+	ClientID           *int   `json:"clientId,omitempty"`
+	Level              string `json:"level,omitempty"`
+	UserType           string `json:"userType,omitempty"`
+	BusinessRole       string `json:"businessRole,omitempty"`
+	StoreID            string `json:"storeId,omitempty"`
+	RegistrationNumber string `json:"registrationNumber,omitempty"`
+	IsPlatformAdmin    bool   `json:"isPlatformAdmin,omitempty"`
 }
 
 func writeOwnProfileUpdateError(w http.ResponseWriter, field string, err error) bool {
@@ -365,6 +368,9 @@ func (h *CoreHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		ClientID:              request.ClientID,
 		Level:                 strings.TrimSpace(request.Level),
 		UserType:              strings.TrimSpace(request.UserType),
+		BusinessRole:          strings.TrimSpace(request.BusinessRole),
+		StoreID:               strings.TrimSpace(request.StoreID),
+		RegistrationNumber:    strings.TrimSpace(request.RegistrationNumber),
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to create admin user")

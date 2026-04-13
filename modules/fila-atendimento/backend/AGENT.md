@@ -123,8 +123,6 @@ Hoje existe um `tenant-demo` para destravar a implementacao inicial, mas `tenant
   - leituras analiticas e gerenciais server-side sobre o historico operacional
 - `analytics`
   - agregados server-side para `ranking`, `dados` e `inteligencia`, evitando recalculo pesado no browser
-- `users`
-  - administracao de contas, papeis, escopo e convite/onboarding por tenant/loja
 
 ## Plugabilidade do core
 
@@ -229,21 +227,15 @@ Sempre que um novo modulo nascer, ele deve ganhar seu proprio `AGENT.md`.
   - frontend nao recalcula historico bruto quando existir endpoint analitico dedicado
   - o backend deve devolver payload pronto para renderizacao e tomada de decisao
   - historico bruto fica restrito a casos operacionais, auditoria ou leitura detalhada
-- No onboarding de usuarios:
-  - criar usuario sem senha deve gerar convite, nao senha fake
-  - criar usuario com senha definida pelo admin nao deve gerar convite
-  - senha definida pelo admin para conta individual deve marcar `must_change_password`
-  - `password_hash` pode ser nulo enquanto o convite estiver pendente
-  - token de convite nunca deve ser salvo em texto aberto no banco
-  - aceite do convite deve definir a primeira senha e liberar login real
-  - troca de senha em autoatendimento deve limpar `must_change_password`
-  - rotas de convite devem devolver apenas o necessario para UX e operacao do admin
-  - reset dedicado de senha deve existir como mutacao propria, sem ficar escondido em edicao generica
+- Cadastro, configuracao e grants administrativos de usuarios pertencem ao shell:
+  - o modulo nao deve expor CRUD proprio de usuarios administrativos
+  - o acesso ao runtime hospedado deve vir da pagina global de usuarios do shell
+  - o roster de `consultants` continua dono apenas da conta operacional 1:1 do consultor
 - No caso de areas administrativas como multiloja e usuarios, preferir:
   - leitura consolidada por tabela/lista
   - mutacoes pequenas por entidade
   - refresh do contexto apenas quando necessario para reidratar o front
-- o frontend agora deve manter `usuarios` em workspace propria e `perfil` como pagina separada de autoatendimento
+- o frontend deve manter `perfil` como pagina separada de autoatendimento; administracao de usuarios fica no shell
 - separar claramente leitura operacional e leitura administrativa expandida
   - exemplo atual: o contexto autenticado usa apenas lojas ativas
   - a tela `multiloja` usa `GET /v1/stores?includeInactive=true` para o ciclo administrativo
@@ -276,7 +268,7 @@ Sempre que um novo modulo nascer, ele deve ganhar seu proprio `AGENT.md`.
 3. consultores e configuracoes base
 4. fila e atendimento via HTTP
 5. websocket e reconciliacao realtime
-6. relatorios, analytics, multiloja e usuarios/acessos
+6. relatorios, analytics e multiloja
 7. campanhas server-side
 
 ## Validacao minima

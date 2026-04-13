@@ -3,10 +3,13 @@ package auth
 import (
 	"context"
 	crand "crypto/rand"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +21,7 @@ const (
 	defaultPasswordResetTTL      = 15 * time.Minute
 	passwordResetCodeDigits      = 6
 	maxPasswordResetCodeAttempts = 5
+	smtpDialTimeout              = 10 * time.Second
 )
 
 type SMTPConfig struct {
@@ -44,7 +48,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, input PasswordResetR
 		return ErrUnauthorized
 	}
 	if !s.isPasswordResetAvailable() {
-		return ErrPasswordResetUnavailable
+		return fmt.Errorf("%w: smtp not configured", ErrPasswordResetUnavailable)
 	}
 
 	user, err := s.findUserByEmail(ctx, email)
@@ -68,7 +72,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, input PasswordResetR
 	message := buildPasswordResetEmailMessage(s.smtpConfig, user, email, code, s.passwordResetTTL)
 	if err := s.sendMail(s.smtpConfig, []string{email}, message); err != nil {
 		s.revokePasswordResetCode(ctx, resetID)
-		return ErrPasswordResetUnavailable
+		return fmt.Errorf("%w: %v", ErrPasswordResetUnavailable, err)
 	}
 
 	return nil
@@ -350,16 +354,103 @@ func defaultSendMail(cfg SMTPConfig, recipients []string, message []byte) error 
 		return ErrPasswordResetUnavailable
 	}
 
+	client, conn, err := openSMTPClient(cfg)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
 	var auth smtp.Auth
 	if strings.TrimSpace(cfg.Username) != "" {
 		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
+		if err := client.Auth(auth); err != nil {
+			_ = client.Close()
+			return fmt.Errorf("smtp auth: %w", err)
+		}
 	}
 
-	if err := smtp.SendMail(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port), auth, cfg.FromEmail, recipients, message); err != nil {
-		return fmt.Errorf("smtp send mail: %w", err)
+	if err := client.Mail(cfg.FromEmail); err != nil {
+		_ = client.Close()
+		return fmt.Errorf("smtp mail from: %w", err)
+	}
+
+	for _, recipient := range recipients {
+		if err := client.Rcpt(recipient); err != nil {
+			_ = client.Close()
+			return fmt.Errorf("smtp rcpt to %s: %w", recipient, err)
+		}
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		_ = client.Close()
+		return fmt.Errorf("smtp data: %w", err)
+	}
+
+	if _, err := writer.Write(message); err != nil {
+		_ = writer.Close()
+		_ = client.Close()
+		return fmt.Errorf("smtp write message: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		_ = client.Close()
+		return fmt.Errorf("smtp close message: %w", err)
+	}
+
+	if err := client.Quit(); err != nil {
+		_ = client.Close()
+		return fmt.Errorf("smtp quit: %w", err)
 	}
 
 	return nil
+}
+
+func openSMTPClient(cfg SMTPConfig) (*smtp.Client, net.Conn, error) {
+	address := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: cfg.Host,
+	}
+
+	var (
+		conn net.Conn
+		err  error
+	)
+
+	if usesImplicitSMTPTLS(cfg.Port) {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: smtpDialTimeout}, "tcp", address, tlsConfig)
+		if err != nil {
+			return nil, nil, fmt.Errorf("smtp tls dial: %w", err)
+		}
+	} else {
+		conn, err = net.DialTimeout("tcp", address, smtpDialTimeout)
+		if err != nil {
+			return nil, nil, fmt.Errorf("smtp dial: %w", err)
+		}
+	}
+
+	client, err := smtp.NewClient(conn, cfg.Host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("smtp new client: %w", err)
+	}
+
+	if !usesImplicitSMTPTLS(cfg.Port) {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(tlsConfig); err != nil {
+				_ = client.Close()
+				_ = conn.Close()
+				return nil, nil, fmt.Errorf("smtp starttls: %w", err)
+			}
+		}
+	}
+
+	return client, conn, nil
+}
+
+func usesImplicitSMTPTLS(port int) bool {
+	return port == 465
 }
 
 func sanitizeMailHeader(value string) string {

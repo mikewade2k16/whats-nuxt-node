@@ -15,7 +15,6 @@ export const FILA_ATENDIMENTO_WORKSPACES: FilaAtendimentoWorkspace[] = [
   { id: 'relatorios', label: 'Relatorios', icon: 'description', path: '/admin/fila-atendimento/relatorios', supported: true },
   { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/admin/fila-atendimento/campanhas', supported: true },
   { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/admin/fila-atendimento/multiloja', supported: true },
-  { id: 'usuarios', label: 'Usuarios', icon: 'group', path: '/admin/fila-atendimento/usuarios', supported: true },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/admin/fila-atendimento/configuracoes', supported: true }
 ]
 

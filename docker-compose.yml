@@ -228,15 +228,7 @@ services:
     image: node:22-alpine
     working_dir: /app
     command: >
-      sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
-      if [ \"${WEB_PRODUCTION_MODE:-0}\" = \"1\" ]; then
-        npm run build &&
-        NITRO_HOST=0.0.0.0 NITRO_PORT=3000 NODE_ENV=production node .output/server/index.mjs;
-      else
-          mkdir -p .nuxt .output .nitro;
-          rm -rf .nuxt/* .nuxt/.[!.]* .nuxt/..?* .output/* .output/.[!.]* .output/..?* .nitro/* .nitro/.[!.]* .nitro/..?* 2>/dev/null || true;
-          npm run dev -- --host 0.0.0.0 --port 3000;
-      fi"
+      sh ./scripts/container-entrypoint.sh
     environment:
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE}

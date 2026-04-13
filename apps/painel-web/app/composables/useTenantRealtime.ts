@@ -8,6 +8,14 @@ export interface TenantRealtimeEvent {
   timestamp: string
 }
 
+export interface TenantRealtimePublishInput {
+  entity: string
+  action: TenantRealtimeAction
+  clientId?: number
+  payload?: unknown
+  timestamp?: string
+}
+
 type TenantRealtimeHandler = (event: TenantRealtimeEvent) => void
 
 const REALTIME_RECONNECT_BASE_DELAY_MS = 1500
@@ -227,6 +235,39 @@ export function useTenantRealtime() {
     clearSocket()
   }
 
+  function publish(input: TenantRealtimePublishInput) {
+    if (!import.meta.client) return false
+    if (!enabled.value) return false
+
+    const socket = tenantRealtimeSocket
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false
+    }
+
+    const entity = normalizeEntity(input.entity)
+    const action = normalizeAction(input.action)
+    if (!entity || !action) {
+      return false
+    }
+
+    try {
+      socket.send(JSON.stringify({
+        type: 'tenant.event.publish',
+        event: {
+          entity,
+          action,
+          clientId: normalizeClientId(input.clientId ?? activeClientId.value),
+          payload: input.payload,
+          timestamp: String(input.timestamp ?? new Date().toISOString())
+        }
+      }))
+
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function start() {
     if (!import.meta.client) return
     if (tenantRealtimeStarted) return
@@ -296,6 +337,7 @@ export function useTenantRealtime() {
     start,
     connect,
     disconnect,
+    publish,
     subscribeEntity
   }
 }

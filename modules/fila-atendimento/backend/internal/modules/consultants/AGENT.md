@@ -41,7 +41,7 @@ Ele nao deve cuidar de:
 - ao arquivar o consultor, a conta vinculada tambem deve ser inativada
 - a criacao administrativa de consultor deve acontecer por este modulo, nao por `users`, para nao nascer conta `consultant` sem roster
 - depois de vinculada, a conta de consultor deve ser considerada propriedade deste modulo
-- `users` pode listar e resetar senha do consultor, mas nao deve editar escopo, convite, papel nem ciclo de vida dessa conta
+- a gestao administrativa dessa identidade fica centralizada no shell; este modulo continua dono apenas do vinculo operacional 1:1 do consultor
 - ao editar o proprio perfil em `auth`, o nome do consultor deve sincronizar de volta no roster
 
 ## Regras de escopo

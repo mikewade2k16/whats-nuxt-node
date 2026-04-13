@@ -3,9 +3,10 @@ export type AdminAccessReason =
   | 'feature-denied'
   | 'module-atendimento'
   | 'module-fila-atendimento'
+  | 'module-indicators'
   | 'module-finance'
 
-export type AdminAccessLevel = 'admin' | 'manager' | 'marketing' | 'finance' | 'viewer'
+export type AdminAccessLevel = 'admin' | 'consultant' | 'manager' | 'marketing' | 'finance' | 'viewer'
 export type AdminAccessUserType = 'admin' | 'client'
 export type AdminFeatureCode =
   | 'dashboard'
@@ -17,9 +18,11 @@ export type AdminFeatureCode =
   | 'manage.clients'
   | 'manage.qa'
   | 'manage.componentes'
+  | 'manage.indicators'
   | 'monitoring'
   | 'omnichannel'
   | 'fila-atendimento'
+  | 'indicators'
   | 'finance'
   | 'tasks'
   | 'tracking'
@@ -102,6 +105,14 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     defaultLevels: []
   },
   {
+    code: 'manage.indicators',
+    label: 'Governanca de indicadores',
+    description: 'Catalogo global, templates e rollout root do modulo de indicadores.',
+    pathPrefixes: ['/admin/manage/indicadores'],
+    defaultLevels: [],
+    moduleCode: 'indicators'
+  },
+  {
     code: 'monitoring',
     label: 'Monitoramento',
     description: 'Monitoramento de containers e infraestrutura.',
@@ -134,14 +145,14 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     label: 'Temas',
     description: 'Personalizacao visual do painel.',
     pathPrefixes: ['/admin/themes'],
-    defaultLevels: ['admin', 'manager', 'marketing', 'finance', 'viewer']
+    defaultLevels: ['admin', 'consultant', 'manager', 'marketing', 'finance', 'viewer']
   },
   {
     code: 'omnichannel',
     label: 'Atendimento',
     description: 'Inbox e operacao do modulo de atendimento.',
     pathPrefixes: ['/admin/omnichannel'],
-    defaultLevels: ['admin', 'manager'],
+    defaultLevels: ['admin', 'consultant', 'manager'],
     moduleCode: 'atendimento'
   },
   {
@@ -151,6 +162,14 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     pathPrefixes: ['/admin/fila-atendimento'],
     defaultLevels: ['admin', 'manager'],
     moduleCode: 'fila-atendimento'
+  },
+  {
+    code: 'indicators',
+    label: 'Indicadores',
+    description: 'Modulo de indicadores operacionais e comerciais por unidade.',
+    pathPrefixes: ['/admin/indicadores'],
+    defaultLevels: ['admin'],
+    moduleCode: 'indicators'
   },
   {
     code: 'finance',
@@ -200,21 +219,21 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     label: 'Perfil',
     description: 'Perfil do usuario.',
     pathPrefixes: ['/admin/profile'],
-    defaultLevels: ['admin', 'manager', 'marketing', 'finance', 'viewer']
+    defaultLevels: ['admin', 'consultant', 'manager', 'marketing', 'finance', 'viewer']
   },
   {
     code: 'settings',
     label: 'Configuracoes',
     description: 'Configuracoes do painel.',
     pathPrefixes: ['/admin/settings'],
-    defaultLevels: ['admin', 'manager', 'marketing', 'finance', 'viewer']
+    defaultLevels: ['admin', 'consultant', 'manager', 'marketing', 'finance', 'viewer']
   },
   {
     code: 'dashboard',
     label: 'Painel',
     description: 'Tela inicial do painel.',
     pathPrefixes: ['/admin'],
-    defaultLevels: ['admin', 'manager', 'marketing', 'finance', 'viewer']
+    defaultLevels: ['admin', 'consultant', 'manager', 'marketing', 'finance', 'viewer']
   }
 ]
 
@@ -242,7 +261,7 @@ function normalizeUserType(value: unknown): AdminAccessUserType {
 
 function normalizeUserLevel(value: unknown): AdminAccessLevel {
   const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'admin' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
+  if (normalized === 'admin' || normalized === 'consultant' || normalized === 'manager' || normalized === 'finance' || normalized === 'viewer') {
     return normalized
   }
   return 'marketing'
@@ -389,14 +408,22 @@ function resolveDefaultFeatureAccess(feature: AdminFeatureDefinition, flags: Adm
   return feature.defaultLevels.includes(flags.activeUserLevel)
 }
 
+function canBypassModuleRequirement(feature: AdminFeatureDefinition, flags: AdminAccessFlags) {
+  return feature.code === 'manage.indicators'
+    && flags.isSuperRoot
+    && flags.activeUserType === 'admin'
+    && flags.activeUserLevel === 'admin'
+}
+
 function resolveFeatureAccess(feature: AdminFeatureDefinition, context: AdminAccessContext) {
   const flags = resolveAdminAccessFlags(context)
   const preferences = parseAdminPreferences(context.preferences)
 
-  if (feature.moduleCode && !context.hasModule(feature.moduleCode)) {
+  if (feature.moduleCode && !context.hasModule(feature.moduleCode) && !canBypassModuleRequirement(feature, flags)) {
     const moduleReasonByCode: Record<string, AdminAccessReason> = {
       atendimento: 'module-atendimento',
       'fila-atendimento': 'module-fila-atendimento',
+      indicators: 'module-indicators',
       finance: 'module-finance'
     }
 
@@ -505,6 +532,13 @@ export function describeAdminAccessReason(reason: unknown, featureCode?: unknown
     return {
       title: 'Modulo indisponivel',
       description: 'Este contexto nao possui o modulo de fila de atendimento ativo.'
+    }
+  }
+
+  if (normalized === 'module-indicators') {
+    return {
+      title: 'Modulo indisponivel',
+      description: 'Este contexto nao possui o modulo de indicadores ativo.'
     }
   }
 

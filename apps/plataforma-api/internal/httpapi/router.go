@@ -10,6 +10,7 @@ import (
 	"plataforma-api/internal/domain/auth"
 	"plataforma-api/internal/domain/core"
 	"plataforma-api/internal/domain/finance"
+	"plataforma-api/internal/domain/indicators"
 	"plataforma-api/internal/httpapi/handlers"
 	authmw "plataforma-api/internal/httpapi/middleware"
 	"plataforma-api/internal/realtime"
@@ -19,6 +20,7 @@ type RouterDeps struct {
 	AuthService            *auth.Service
 	CoreService            *core.Service
 	FinanceService         *finance.Service
+	IndicatorsService      *indicators.Service
 	FilaAtendimentoHandler http.Handler
 	Hub                    *realtime.Hub
 	StartedAt              time.Time
@@ -39,6 +41,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	authHandler := handlers.NewAuthHandler(deps.AuthService)
 	coreHandler := handlers.NewCoreHandler(deps.CoreService, deps.Hub)
 	financeHandler := handlers.NewFinanceHandler(deps.FinanceService, deps.Hub)
+	indicatorsHandler := handlers.NewIndicatorsHandler(deps.IndicatorsService, deps.Hub)
 	wsHandler := handlers.NewWSHandler(deps.AuthService, deps.Hub)
 
 	r.Get("/health", healthHandler.Get)
@@ -110,6 +113,27 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Delete("/admin/finance-sheets/{sheetId}", financeHandler.DeleteAdminFinance)
 			r.Get("/admin/finance-config", financeHandler.GetAdminFinanceConfig)
 			r.Put("/admin/finance-config", financeHandler.ReplaceAdminFinanceConfig)
+
+			r.Get("/modules/indicators/v1/dashboard", indicatorsHandler.GetDashboard)
+			r.Get("/modules/indicators/v1/dashboard/stores", indicatorsHandler.GetDashboardStores)
+			r.Get("/modules/indicators/v1/governance", indicatorsHandler.GetGovernanceOverview)
+			r.Patch("/modules/indicators/v1/governance/policies/{policyId}", indicatorsHandler.UpdateGovernancePolicy)
+			r.Get("/modules/indicators/v1/templates", indicatorsHandler.ListTemplates)
+			r.Post("/modules/indicators/v1/templates", indicatorsHandler.CreateTemplate)
+			r.Get("/modules/indicators/v1/templates/{templateId}", indicatorsHandler.GetTemplate)
+			r.Patch("/modules/indicators/v1/templates/{templateId}", indicatorsHandler.UpdateTemplate)
+			r.Get("/modules/indicators/v1/profiles/active", indicatorsHandler.GetActiveProfile)
+			r.Put("/modules/indicators/v1/profiles/active", indicatorsHandler.ReplaceActiveProfile)
+			r.Get("/modules/indicators/v1/profiles/active/stores/{storeId}", indicatorsHandler.GetActiveProfileStore)
+			r.Put("/modules/indicators/v1/profiles/active/stores/{storeId}", indicatorsHandler.ReplaceActiveProfileStore)
+			r.Get("/modules/indicators/v1/evaluations", indicatorsHandler.ListEvaluations)
+			r.Post("/modules/indicators/v1/evaluations", indicatorsHandler.CreateEvaluation)
+			r.Get("/modules/indicators/v1/evaluations/{evaluationId}", indicatorsHandler.GetEvaluation)
+			r.Delete("/modules/indicators/v1/evaluations/{evaluationId}", indicatorsHandler.DeleteEvaluation)
+			r.Get("/modules/indicators/v1/targets", indicatorsHandler.GetTargets)
+			r.Put("/modules/indicators/v1/targets", indicatorsHandler.ReplaceTargets)
+			r.Post("/modules/indicators/v1/providers/snapshot", indicatorsHandler.IngestProviderSnapshots)
+			r.Post("/modules/indicators/v1/assets/presign", indicatorsHandler.CreateAssetUploadIntent)
 
 			r.Get("/tenants", coreHandler.ListTenants)
 			r.Post("/tenants", coreHandler.CreateTenant)

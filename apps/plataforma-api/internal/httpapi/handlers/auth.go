@@ -122,6 +122,10 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 		UserAgent: r.UserAgent(),
 	})
 	if err != nil {
+		if errors.Is(err, domainauth.ErrPasswordResetUnavailable) {
+			log.Printf("password reset unavailable: %v", err)
+		}
+
 		if status, code, message, ok := resolvePasswordResetErrorResponse(err); ok {
 			writeError(w, status, code, message)
 			return

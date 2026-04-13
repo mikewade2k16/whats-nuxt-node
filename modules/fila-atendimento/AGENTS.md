@@ -57,10 +57,10 @@
 - o backend do módulo troca o bridge em `POST /v1/auth/shell/exchange`
 - o módulo mantém sua própria sessão depois da troca
 - o vínculo externo do shell é estabilizado por `provider + user_id`, permitindo rotação de `external_subject` sem quebrar a sessão integrada
-- grants explícitos do módulo para usuários do shell agora devem ser escritos por `coreUserId`, preservados no vínculo externo e nunca mais depender de senha local do módulo
-- o bridge do shell não deve sobrescrever grants explícitos não-platform; o fallback por claims vale apenas quando o usuário ainda não recebeu grant manual do módulo
+- cadastro, nivel, loja vinculada e liberacao de acesso ficam centralizados na pagina global de usuarios do shell
+- o bridge do shell passa a ser o caminho principal de entrada; papel e escopo devem respeitar `level`, `businessRole` e loja vinculada do core
 - quando o bridge do shell estiver habilitado, `POST /v1/auth/login` deve ficar aposentado no runtime hospedado e orientar o uso do shell
-- no mesmo modo hospedado, `POST /v1/users` nao deve criar novas identidades administrativas locais; o shell cria a identidade e o módulo recebe apenas grants por `coreUserId`
+- o runtime hospedado nao deve expor CRUD administrativo proprio de usuarios; o modulo apenas consome a sessao autorizada do shell
 
 Campos obrigatórios do bridge quando houver escopo de tenant:
 
