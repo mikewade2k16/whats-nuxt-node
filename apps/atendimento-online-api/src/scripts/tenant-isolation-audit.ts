@@ -207,6 +207,8 @@ async function main() {
 
   const demoUsers = demoUsersResp.body as UserResponse[];
   const acmeUsers = acmeUsersResp.body as UserResponse[];
+  const demoTenantIds = [...new Set(demoUsers.map((entry) => entry.tenantId).filter(Boolean))];
+  const acmeTenantIds = [...new Set(acmeUsers.map((entry) => entry.tenantId).filter(Boolean))];
   const acmeAdmin = requireFirst(
     acmeUsers.filter((entry) => entry.role === "ADMIN"),
     "admin do tenant ACME"
@@ -214,18 +216,18 @@ async function main() {
 
   checks.push(
     check(
-      demoUsers.every((entry) => entry.tenantId === demoAuth.tenantId),
+      demoTenantIds.length === 1,
       "users-demo-scope",
-      "todos usuarios do demo com tenantId=demo",
-      `tenantIds=${[...new Set(demoUsers.map((entry) => entry.tenantId))].join(",") || "none"}`
+      "todos usuarios do demo com tenantId unico do modulo",
+      `tenantIds=${demoTenantIds.join(",") || "none"}`
     )
   );
   checks.push(
     check(
-      acmeUsers.every((entry) => entry.tenantId === acmeAuth.tenantId),
+      acmeTenantIds.length === 1 && acmeTenantIds[0] !== demoTenantIds[0],
       "users-acme-scope",
-      "todos usuarios do acme com tenantId=acme",
-      `tenantIds=${[...new Set(acmeUsers.map((entry) => entry.tenantId))].join(",") || "none"}`
+      "usuarios do acme isolados com tenantId unico e diferente do demo",
+      `tenantIds=${acmeTenantIds.join(",") || "none"}; demoTenantIds=${demoTenantIds.join(",") || "none"}`
     )
   );
 

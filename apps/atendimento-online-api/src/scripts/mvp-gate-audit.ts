@@ -7,6 +7,12 @@ type ConversationResponse = {
   externalId: string;
 };
 
+type TenantResponse = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
 type MessageResponse = {
   id: string;
   conversationId: string;
@@ -147,7 +153,10 @@ async function webhookRequest(path: string, body: unknown) {
     "Content-Type": "application/json"
   };
 
-  const explicitToken = process.env.GATE_WEBHOOK_TOKEN?.trim();
+  const explicitToken =
+    process.env.GATE_WEBHOOK_TOKEN?.trim() ||
+    process.env.EVOLUTION_WEBHOOK_TOKEN?.trim() ||
+    "";
   if (explicitToken) {
     headers["x-webhook-token"] = explicitToken;
   }
@@ -206,6 +215,10 @@ async function listMessages(token: string, conversationId: string, limit = 200) 
 
 async function listConversations(token: string) {
   return apiRequest<ConversationResponse[]>("GET", "/conversations", token);
+}
+
+async function getTenant(token: string) {
+  return apiRequest<TenantResponse>("GET", "/tenant", token);
 }
 
 async function hasTerminalAuditEvent(token: string, messageId: string) {
@@ -329,6 +342,8 @@ async function main() {
   const tinyTxt = Buffer.from("gate mvp document", "utf-8");
 
   const token = await login();
+  const tenant = await getTenant(token);
+  const webhookTenantSlug = tenant.slug || TENANT_SLUG;
   const outboundConversation = await ensureConversation(token);
 
   // 1) Outbound text stability
@@ -434,7 +449,7 @@ async function main() {
   const inboundTextContent = `gate inbound text ${Date.now()}`;
 
   const inboundTextWebhook = await webhookRequest(
-    `/webhooks/evolution/${TENANT_SLUG}`,
+    `/webhooks/evolution/${webhookTenantSlug}`,
     createInboundTextPayload(inboundExternalId, inboundTextExternalMessageId, inboundTextContent)
   );
   pushCheck(
@@ -490,7 +505,7 @@ async function main() {
 
     const inboundImageExternalMessageId = `gate-in-image-${Date.now()}`;
     const inboundImageWebhook = await webhookRequest(
-      `/webhooks/evolution/${TENANT_SLUG}`,
+      `/webhooks/evolution/${webhookTenantSlug}`,
       createInboundImagePayload(
         inboundExternalId,
         inboundImageExternalMessageId,
@@ -548,7 +563,7 @@ async function main() {
 
   const dedupeWebhookExternalId = `gate-echo-${Date.now()}`;
   const dedupeWebhook = await webhookRequest(
-    `/webhooks/evolution/${TENANT_SLUG}`,
+    `/webhooks/evolution/${webhookTenantSlug}`,
     createOutboundEchoPayload(outboundConversation.externalId, dedupeWebhookExternalId, dedupeContent)
   );
 
@@ -592,6 +607,7 @@ async function main() {
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     apiBase: API_BASE,
     tenantSlug: TENANT_SLUG,
+    webhookTenantSlug,
     conversationId: outboundConversation.id,
     summary: {
       total: checks.length,

@@ -269,6 +269,8 @@ jobs:
       EVOLUTION_SEND_AUDIO_PATH: /message/sendWhatsAppAudio/:instance
       EVOLUTION_DEFAULT_INSTANCE: demo-instance
       EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
+      GATE_WEBHOOK_TOKEN: change-this-webhook-token
+      JOURNEY_WEBHOOK_TOKEN: change-this-webhook-token
       WEBHOOK_RECEIVER_BASE_URL: http://atendimento-online-api:4000
       SANDBOX_ENABLED: "false"
       API_DB_SEED_ON_BOOT: "true"

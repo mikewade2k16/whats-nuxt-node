@@ -7,6 +7,12 @@ type ConversationResponse = {
   externalId: string;
 };
 
+type TenantResponse = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
 type MessageResponse = {
   id: string;
   conversationId: string;
@@ -138,7 +144,10 @@ async function webhookRequest(path: string, body: unknown, correlationId?: strin
     headers["x-correlation-id"] = correlationId;
   }
 
-  const explicitWebhookToken = process.env.JOURNEY_WEBHOOK_TOKEN?.trim();
+  const explicitWebhookToken =
+    process.env.JOURNEY_WEBHOOK_TOKEN?.trim() ||
+    process.env.EVOLUTION_WEBHOOK_TOKEN?.trim() ||
+    "";
   if (explicitWebhookToken) {
     headers["x-webhook-token"] = explicitWebhookToken;
   }
@@ -190,6 +199,14 @@ async function ensureConversation(token: string, externalId: string) {
   });
 }
 
+async function getTenant(token: string) {
+  return apiRequest<TenantResponse>({
+    method: "GET",
+    path: "/tenant",
+    token
+  });
+}
+
 async function waitForTerminalMessageStatus(token: string, conversationId: string, messageId: string) {
   const startedAt = Date.now();
 
@@ -233,6 +250,8 @@ async function main() {
 
   const auth = await login();
   const token = auth.token;
+  const tenant = await getTenant(token);
+  const webhookTenantSlug = tenant.slug || TENANT_SLUG;
   const now = Date.now();
   const conversationExternalId = `journey-${now}@invalid`;
   const outboundCorrelationId = `journey-outbound-${now}`;
@@ -325,7 +344,7 @@ async function main() {
   );
 
   const inboundWebhook = await webhookRequest(
-    `/webhooks/evolution/${TENANT_SLUG}`,
+    `/webhooks/evolution/${webhookTenantSlug}`,
     createInboundTextWebhookPayload(conversationExternalId, inboundExternalMessageId, inboundContent),
     inboundCorrelationId
   );
@@ -374,6 +393,8 @@ async function main() {
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     apiBase: API_BASE,
+    tenantSlug: TENANT_SLUG,
+    webhookTenantSlug,
     summary: {
       total: checks.length,
       passed,
