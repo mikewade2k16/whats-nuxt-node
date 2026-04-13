@@ -4,7 +4,32 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '.github/workflows/**'
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Ref, tag ou commit para deploy manual
+        required: false
+        default: origin/main
+        type: string
+      services:
+        description: Servicos separados por espaco ou virgula
+        required: false
+        default: plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy
+        type: string
+      build_images:
+        description: Executar docker compose build antes do up
+        required: false
+        default: true
+        type: boolean
+      force_recreate:
+        description: Forcar recriacao dos containers selecionados
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -60,6 +85,10 @@ jobs:
       - name: Deploy main on VPS
         env:
           VPS_REMOTE_PATH: ${{ secrets.VPS_REMOTE_PATH }}
+          DEPLOY_GIT_REF: ${{ github.event.inputs.git_ref }}
+          DEPLOY_SERVICES: ${{ github.event.inputs.services }}
+          DEPLOY_BUILD_IMAGES: ${{ github.event.inputs.build_images }}
+          DEPLOY_FORCE_RECREATE: ${{ github.event.inputs.force_recreate }}
         run: |
           set -euo pipefail
 
@@ -67,22 +96,124 @@ jobs:
             VPS_REMOTE_PATH=/opt/omnichannel
           fi
 
-          ssh omnichannel-vps "set -eu && \
-            cd '${VPS_REMOTE_PATH}' && \
-            git fetch --prune origin && \
-            git checkout main && \
-            git reset --hard origin/main && \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod build \
-              plataforma-api \
-              atendimento-online-api \
-              atendimento-online-worker \
-              atendimento-online-retencao-worker \
-              painel-web && \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d --force-recreate \
-              plataforma-api \
-              atendimento-online-api \
-              atendimento-online-worker \
-              atendimento-online-retencao-worker \
-              painel-web \
-              caddy && \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod ps"
+          if [ -z "${DEPLOY_GIT_REF:-}" ]; then
+            DEPLOY_GIT_REF=origin/main
+          fi
+
+          if [ -z "${DEPLOY_SERVICES:-}" ]; then
+            DEPLOY_SERVICES="plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy"
+          fi
+
+          if [ -z "${DEPLOY_BUILD_IMAGES:-}" ]; then
+            DEPLOY_BUILD_IMAGES=true
+          fi
+
+          if [ -z "${DEPLOY_FORCE_RECREATE:-}" ]; then
+            DEPLOY_FORCE_RECREATE=false
+          fi
+
+          ssh omnichannel-vps bash -s -- \
+            "${VPS_REMOTE_PATH}" \
+            "${DEPLOY_GIT_REF}" \
+            "${DEPLOY_BUILD_IMAGES}" \
+            "${DEPLOY_FORCE_RECREATE}" \
+            "${DEPLOY_SERVICES}" <<'REMOTE'
+          set -euo pipefail
+
+          remote_path="$1"
+          deploy_ref="$2"
+          build_images_raw="$3"
+          force_recreate_raw="$4"
+          services_raw="$5"
+
+          normalize_bool() {
+            case "$1" in
+              1|true|TRUE|True|yes|YES|on|ON)
+                echo true
+                ;;
+              *)
+                echo false
+                ;;
+            esac
+          }
+
+          if [ ! -d "$remote_path" ]; then
+            echo "Remote path not found: $remote_path" >&2
+            exit 1
+          fi
+
+          cd "$remote_path"
+
+          if [ ! -d .git ]; then
+            echo "Remote path is not a git repository: $remote_path" >&2
+            exit 1
+          fi
+
+          if [ ! -f .env.prod ]; then
+            echo ".env.prod not found in $remote_path" >&2
+            exit 1
+          fi
+
+          services_normalized="$(printf '%s' "$services_raw" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+          if [ -z "$services_normalized" ]; then
+            echo "No services selected for deploy" >&2
+            exit 1
+          fi
+
+          valid_runtime_services="plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy"
+          valid_build_services="plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web"
+
+          runtime_services=()
+          build_services=()
+
+          for service in $services_normalized; do
+            case " $valid_runtime_services " in
+              *" $service "*) ;;
+              *)
+                echo "Invalid service requested: $service" >&2
+                exit 1
+                ;;
+            esac
+
+            if [[ " ${runtime_services[*]} " != *" $service "* ]]; then
+              runtime_services+=("$service")
+            fi
+
+            case " $valid_build_services " in
+              *" $service "*)
+                if [[ " ${build_services[*]} " != *" $service "* ]]; then
+                  build_services+=("$service")
+                fi
+                ;;
+            esac
+          done
+
+          build_images="$(normalize_bool "$build_images_raw")"
+          force_recreate="$(normalize_bool "$force_recreate_raw")"
+
+          git fetch --prune origin
+          git checkout main
+          git reset --hard "$deploy_ref"
+
+          deployed_commit="$(git rev-parse --short HEAD)"
+
+          compose_cmd=(docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod)
+
+          echo "Deploy ref: $deploy_ref"
+          echo "Resolved commit: $deployed_commit"
+          echo "Runtime services: ${runtime_services[*]}"
+          echo "Build enabled: $build_images"
+          echo "Force recreate: $force_recreate"
+
+          if [ "$build_images" = "true" ] && [ "${#build_services[@]}" -gt 0 ]; then
+            "${compose_cmd[@]}" build "${build_services[@]}"
+          fi
+
+          up_flags=(-d)
+          if [ "$force_recreate" = "true" ]; then
+            up_flags+=(--force-recreate)
+          fi
+
+          "${compose_cmd[@]}" up "${up_flags[@]}" "${runtime_services[@]}"
+          "${compose_cmd[@]}" ps
+          REMOTE
