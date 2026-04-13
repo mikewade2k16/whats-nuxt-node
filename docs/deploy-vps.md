@@ -12,6 +12,7 @@ Resumo operacional novo:
 - o deploy automatico normal roda `docker compose up -d` e recria apenas os containers que realmente precisarem
 - o reinicio forcado fica disponivel no `workflow_dispatch` com `force_recreate=true`
 - rollback previsivel pode ser feito pelo `workflow_dispatch` informando `git_ref` com commit ou tag alvo
+- para deploy manual completo, deixar `services` vazio ou usar a lista completa; a workflow normaliza espacos/virgulas e publica todos os servicos selecionados sem truncar o conjunto remoto
 
 ## Premissa importante
 

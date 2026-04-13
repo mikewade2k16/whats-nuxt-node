@@ -27,6 +27,11 @@ const ROOT_ADMIN_HEADERS = {
   clientId: 1
 }
 
+const LOGIN_PATHS = [
+  '/api/core-bff/core/auth/login',
+  '/api/bff/auth/login'
+]
+
 function nowIso() {
   return new Date().toISOString()
 }
@@ -53,14 +58,49 @@ async function requestJSONWithBase(baseUrl, path, options = {}) {
   }
 }
 
+function extractAccessToken(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return ''
+  }
+
+  const accessToken = String(payload.accessToken ?? payload.coreAccessToken ?? '').trim()
+  return accessToken
+}
+
 async function login(credentials) {
-  return requestJSON('/api/bff/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(credentials)
-  })
+  let lastResponse = {
+    ok: false,
+    status: 404,
+    payload: null
+  }
+
+  for (const path of LOGIN_PATHS) {
+    const response = await requestJSON(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(credentials)
+    })
+
+    const accessToken = extractAccessToken(response.payload)
+    if (response.ok && accessToken) {
+      return {
+        ...response,
+        payload: {
+          ...(response.payload && typeof response.payload === 'object' ? response.payload : {}),
+          coreAccessToken: accessToken
+        }
+      }
+    }
+
+    lastResponse = response
+    if (response.status !== 404) {
+      break
+    }
+  }
+
+  return lastResponse
 }
 
 function buildHeaders(coreToken, spoof = {}, extraHeaders = {}) {

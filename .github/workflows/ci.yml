@@ -126,35 +126,29 @@ jobs:
 
   tenant-isolation-audit:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: omnichannel
-          POSTGRES_USER: omnichannel
-          POSTGRES_PASSWORD: omnichannel
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U omnichannel -d omnichannel"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgresql://omnichannel:omnichannel@localhost:5432/omnichannel?schema=public
-      REDIS_URL: redis://localhost:6379
+      POSTGRES_DB: omnichannel
+      POSTGRES_USER: omnichannel
+      POSTGRES_PASSWORD: omnichannel
+      DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel?schema=public
+      REDIS_URL: redis://redis:6379
       PORT: 4000
       CORS_ORIGIN: http://localhost:3000
       JWT_SECRET: change-this-secret
+      CORE_API_BASE_URL: http://plataforma-api:4100
+      CORE_API_EMAIL: root@core.local
+      CORE_API_PASSWORD: 123456
+      CORE_REQUEST_TIMEOUT_MS: 15000
+      CORE_ATENDIMENTO_MODULE_CODE: atendimento
+      CORE_DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel
+      CORE_DB_SCHEMA: platform_core
+      CORE_HTTP_ADDR: :4100
+      CORE_JWT_SECRET: change-this-core-secret
+      CORE_JWT_ISSUER: plataforma-api
+      CORE_JWT_TTL_MINUTES: 60
+      CORE_DEFAULT_USERS_LIMIT: 10
+      CORE_ALLOWED_ORIGINS: http://localhost:3000
+      CORE_AUTO_MIGRATE: "true"
       EVOLUTION_BASE_URL: ""
       EVOLUTION_API_KEY: ""
       EVOLUTION_SEND_PATH: /message/sendText/:instance
@@ -162,88 +156,64 @@ jobs:
       EVOLUTION_SEND_AUDIO_PATH: /message/sendWhatsAppAudio/:instance
       EVOLUTION_DEFAULT_INSTANCE: demo-instance
       EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
-      WEBHOOK_RECEIVER_BASE_URL: http://localhost:4000
-    defaults:
-      run:
-        working-directory: apps/atendimento-online-api
+      WEBHOOK_RECEIVER_BASE_URL: http://atendimento-online-api:4000
+      API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/atendimento-online-api/package-lock.json
+      - name: Start stack
+        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prepare database
+      - name: Wait for stack health
         run: |
-          npm run prisma:generate
-          npm run prisma:push
-          npm run prisma:seed
-
-      - name: Build API
-        run: npm run build
-
-      - name: Start API
-        run: |
-          npm run start > /tmp/api.log 2>&1 &
-          echo $! > /tmp/api.pid
-
-      - name: Wait for API health
-        run: |
-          for i in {1..40}; do
-            if curl -fsS http://localhost:4000/health > /dev/null; then
+          for i in {1..90}; do
+            if curl -fsS http://localhost:4100/health > /dev/null && \
+               curl -fsS http://localhost:4000/health > /dev/null; then
               exit 0
             fi
-            sleep 1
+            sleep 5
           done
-          echo "API did not become healthy in time"
-          cat /tmp/api.log || true
+          docker compose -f docker-compose.dev.yml ps
+          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api postgres redis
           exit 1
 
       - name: Run tenant isolation audit
-        run: npm run test:tenant:isolation
+        run: docker compose -f docker-compose.dev.yml exec -T atendimento-online-api npm run test:tenant:isolation
 
-      - name: Show API logs on failure
+      - name: Show stack logs on failure
         if: failure()
-        run: cat /tmp/api.log || true
+        run: docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api postgres redis
+
+      - name: Shutdown stack
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down --remove-orphans -v
 
   media-integration-audit:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: omnichannel
-          POSTGRES_USER: omnichannel
-          POSTGRES_PASSWORD: omnichannel
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U omnichannel -d omnichannel"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgresql://omnichannel:omnichannel@localhost:5432/omnichannel?schema=public
-      REDIS_URL: redis://localhost:6379
+      POSTGRES_DB: omnichannel
+      POSTGRES_USER: omnichannel
+      POSTGRES_PASSWORD: omnichannel
+      DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel?schema=public
+      REDIS_URL: redis://redis:6379
       PORT: 4000
       CORS_ORIGIN: http://localhost:3000
       JWT_SECRET: change-this-secret
+      CORE_API_BASE_URL: http://plataforma-api:4100
+      CORE_API_EMAIL: root@core.local
+      CORE_API_PASSWORD: 123456
+      CORE_REQUEST_TIMEOUT_MS: 15000
+      CORE_ATENDIMENTO_MODULE_CODE: atendimento
+      CORE_DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel
+      CORE_DB_SCHEMA: platform_core
+      CORE_HTTP_ADDR: :4100
+      CORE_JWT_SECRET: change-this-core-secret
+      CORE_JWT_ISSUER: plataforma-api
+      CORE_JWT_TTL_MINUTES: 60
+      CORE_DEFAULT_USERS_LIMIT: 10
+      CORE_ALLOWED_ORIGINS: http://localhost:3000
+      CORE_AUTO_MIGRATE: "true"
       EVOLUTION_BASE_URL: ""
       EVOLUTION_API_KEY: ""
       EVOLUTION_SEND_PATH: /message/sendText/:instance
@@ -251,69 +221,42 @@ jobs:
       EVOLUTION_SEND_AUDIO_PATH: /message/sendWhatsAppAudio/:instance
       EVOLUTION_DEFAULT_INSTANCE: demo-instance
       EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
-      WEBHOOK_RECEIVER_BASE_URL: http://localhost:4000
+      WEBHOOK_RECEIVER_BASE_URL: http://atendimento-online-api:4000
       SANDBOX_ENABLED: "false"
-    defaults:
-      run:
-        working-directory: apps/atendimento-online-api
+      API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/atendimento-online-api/package-lock.json
+      - name: Start stack
+        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api atendimento-online-worker
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prepare database
+      - name: Wait for stack health
         run: |
-          npm run prisma:generate
-          npm run prisma:push
-          npm run prisma:seed
-
-      - name: Build API
-        run: npm run build
-
-      - name: Start API
-        run: |
-          npm run start > /tmp/api.log 2>&1 &
-          echo $! > /tmp/api.pid
-
-      - name: Start worker
-        run: |
-          npm run worker:start > /tmp/worker.log 2>&1 &
-          echo $! > /tmp/worker.pid
-
-      - name: Wait for API health
-        run: |
-          for i in {1..40}; do
-            if curl -fsS http://localhost:4000/health > /dev/null; then
+          for i in {1..90}; do
+            if curl -fsS http://localhost:4100/health > /dev/null && \
+               curl -fsS http://localhost:4000/health > /dev/null; then
               exit 0
             fi
-            sleep 1
+            sleep 5
           done
-          echo "API did not become healthy in time"
-          cat /tmp/api.log || true
+          docker compose -f docker-compose.dev.yml ps
+          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api atendimento-online-worker postgres redis
           exit 1
 
       - name: Run media integration audit
-        run: npm run test:media:integration
+        run: docker compose -f docker-compose.dev.yml exec -T atendimento-online-api npm run test:media:integration
 
       - name: Run MVP gate audit
-        run: npm run test:gate:mvp
+        run: docker compose -f docker-compose.dev.yml exec -T atendimento-online-api npm run test:gate:mvp
 
       - name: Run journey E2E audit
-        run: npm run test:journey:e2e
+        run: docker compose -f docker-compose.dev.yml exec -T atendimento-online-api npm run test:journey:e2e
 
-      - name: Show API logs on failure
+      - name: Show stack logs on failure
         if: failure()
-        run: cat /tmp/api.log || true
+        run: docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api atendimento-online-worker postgres redis
 
-      - name: Show worker logs on failure
-        if: failure()
-        run: cat /tmp/worker.log || true
+      - name: Shutdown stack
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down --remove-orphans -v

@@ -113,6 +113,12 @@ jobs:
             DEPLOY_SERVICES="$default_runtime_services"
           fi
 
+          DEPLOY_SERVICES="$(printf '%s' "$DEPLOY_SERVICES" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+
+          if [ -z "$DEPLOY_SERVICES" ]; then
+            DEPLOY_SERVICES="$default_runtime_services"
+          fi
+
           if [ -z "${DEPLOY_BUILD_IMAGES:-}" ]; then
             DEPLOY_BUILD_IMAGES=true
           fi
@@ -121,19 +127,21 @@ jobs:
             DEPLOY_FORCE_RECREATE=false
           fi
 
+          DEPLOY_SERVICES_B64="$(printf '%s' "$DEPLOY_SERVICES" | base64 | tr -d '\n')"
+
           ssh omnichannel-vps bash -s -- \
             "${VPS_REMOTE_PATH}" \
             "${DEPLOY_GIT_REF}" \
             "${DEPLOY_BUILD_IMAGES}" \
             "${DEPLOY_FORCE_RECREATE}" \
-            "${DEPLOY_SERVICES}" <<'REMOTE'
+            "${DEPLOY_SERVICES_B64}" <<'REMOTE'
           set -euo pipefail
 
           remote_path="$1"
           deploy_ref="$2"
           build_images_raw="$3"
           force_recreate_raw="$4"
-          services_raw="$5"
+          services_raw_b64="$5"
 
           normalize_bool() {
             case "$1" in
@@ -163,6 +171,7 @@ jobs:
             exit 1
           fi
 
+          services_raw="$(printf '%s' "$services_raw_b64" | base64 -d)"
           services_normalized="$(printf '%s' "$services_raw" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
           if [ -z "$services_normalized" ]; then
             echo "No services selected for deploy" >&2
