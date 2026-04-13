@@ -22,10 +22,10 @@ jobs:
         working-directory: apps/atendimento-online-api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -47,10 +47,10 @@ jobs:
         working-directory: apps/painel-web
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -95,10 +95,10 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -208,7 +208,7 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Start stack
         run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api
@@ -276,7 +276,7 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Start stack
         run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api atendimento-online-worker
