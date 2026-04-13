@@ -10,6 +10,11 @@ dist
 .nuxt
 .data
 
+# Artefatos locais que nao devem entrar no repo nem em deploy
+/incubadora/
+/.copilot-deploy-files.txt
+/.vscode/settings.json
+
 apps/atendimento-online-api/node_modules
 apps/atendimento-online-api/dist
 apps/atendimento-online-api/prisma/dev.db
