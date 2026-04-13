@@ -92,6 +92,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          default_runtime_services="plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy"
+
+          if [ "${GITHUB_EVENT_NAME:-push}" != "workflow_dispatch" ]; then
+            DEPLOY_GIT_REF=origin/main
+            DEPLOY_SERVICES="$default_runtime_services"
+            DEPLOY_BUILD_IMAGES=true
+            DEPLOY_FORCE_RECREATE=false
+          fi
+
           if [ -z "${VPS_REMOTE_PATH:-}" ]; then
             VPS_REMOTE_PATH=/opt/omnichannel
           fi
@@ -101,7 +110,7 @@ jobs:
           fi
 
           if [ -z "${DEPLOY_SERVICES:-}" ]; then
-            DEPLOY_SERVICES="plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy"
+            DEPLOY_SERVICES="$default_runtime_services"
           fi
 
           if [ -z "${DEPLOY_BUILD_IMAGES:-}" ]; then
