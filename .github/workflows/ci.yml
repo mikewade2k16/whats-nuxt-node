@@ -88,29 +88,68 @@ jobs:
       CORE_ALLOWED_ORIGINS: http://localhost:3000
       CORE_AUTO_MIGRATE: "true"
       NUXT_PUBLIC_API_BASE: http://localhost:4000
-      NUXT_API_INTERNAL_BASE: http://atendimento-online-api:4000
-      NUXT_CORE_API_INTERNAL_BASE: http://plataforma-api:4100
+      NUXT_API_INTERNAL_BASE: http://localhost:4000
+      NUXT_CORE_API_INTERNAL_BASE: http://localhost:4100
       WEBHOOK_RECEIVER_BASE_URL: http://atendimento-online-api:4000
+      EVOLUTION_WEBHOOK_TOKEN: change-this-webhook-token
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start stack
-        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api painel-web
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/painel-web/package-lock.json
 
-      - name: Wait for stack health
+      - name: Install painel-web dependencies
+        working-directory: apps/painel-web
+        run: npm ci
+
+      - name: Build painel-web
+        working-directory: apps/painel-web
+        run: npm run build
+
+      - name: Start backend stack
+        run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api
+
+      - name: Wait for backend health
         run: |
           for i in {1..90}; do
             if curl -fsS http://localhost:4100/health > /dev/null && \
-               curl -fsS http://localhost:4000/health > /dev/null && \
-               curl -fsS http://localhost:3000 > /dev/null; then
+               curl -fsS http://localhost:4000/health > /dev/null; then
               exit 0
             fi
             sleep 5
           done
           docker compose -f docker-compose.dev.yml ps
-          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api painel-web postgres redis
+          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api postgres redis
+          exit 1
+
+      - name: Start painel-web
+        run: |
+          nohup env \
+            NODE_ENV=production \
+            PORT=3000 \
+            NITRO_HOST=0.0.0.0 \
+            NITRO_PORT=3000 \
+            NUXT_PUBLIC_API_BASE=http://localhost:4000 \
+            NUXT_API_INTERNAL_BASE=http://localhost:4000 \
+            NUXT_CORE_API_INTERNAL_BASE=http://localhost:4100 \
+            node apps/painel-web/.output/server/index.mjs > /tmp/painel-web.log 2>&1 &
+          echo $! > /tmp/painel-web.pid
+
+      - name: Wait for painel-web health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:3000/admin/login > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/painel-web.log || true
           exit 1
 
       - name: Run security access audit
@@ -118,7 +157,16 @@ jobs:
 
       - name: Show stack logs on failure
         if: failure()
-        run: docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api painel-web postgres redis
+        run: |
+          cat /tmp/painel-web.log || true
+          docker compose -f docker-compose.dev.yml logs --tail=200 plataforma-api atendimento-online-api postgres redis
+
+      - name: Stop painel-web
+        if: always()
+        run: |
+          if [ -f /tmp/painel-web.pid ]; then
+            kill "$(cat /tmp/painel-web.pid)" || true
+          fi
 
       - name: Shutdown stack
         if: always()

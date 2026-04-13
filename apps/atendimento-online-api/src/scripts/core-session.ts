@@ -28,6 +28,11 @@ interface CoreItemsResponse<T> {
   items?: T[];
 }
 
+interface ResolvedScriptTenant {
+  coreTenant: CoreTenant;
+  selectedTenantSlug: string;
+}
+
 export interface ScriptAuthSession {
   token: string;
   expiresAt: string | null;
@@ -124,7 +129,23 @@ async function resolveTenantBySlug(tenantSlug: string) {
 
   const normalizedSlug = normalizeText(tenantSlug).toLowerCase();
   const items = Array.isArray(response.items) ? response.items : [];
-  return items.find((entry) => normalizeText(entry.slug).toLowerCase() === normalizedSlug) ?? null;
+
+  const candidates = [normalizedSlug];
+  if (normalizedSlug && !normalizedSlug.endsWith("-core")) {
+    candidates.push(`${normalizedSlug}-core`);
+  }
+
+  for (const candidate of candidates) {
+    const matched = items.find((entry) => normalizeText(entry.slug).toLowerCase() === candidate) ?? null;
+    if (matched) {
+      return {
+        coreTenant: matched,
+        selectedTenantSlug: normalizedSlug
+      } satisfies ResolvedScriptTenant;
+    }
+  }
+
+  return null;
 }
 
 export async function loginWithCoreSession(options: {
@@ -140,10 +161,12 @@ export async function loginWithCoreSession(options: {
     throw new Error("tenantSlug, email e password sao obrigatorios para autenticar no plataforma-api.");
   }
 
-  const coreTenant = await resolveTenantBySlug(tenantSlug);
-  if (!coreTenant) {
+  const resolvedTenant = await resolveTenantBySlug(tenantSlug);
+  if (!resolvedTenant) {
     throw new Error(`Tenant \"${tenantSlug}\" nao encontrado no plataforma-api.`);
   }
+
+  const coreTenant = resolvedTenant.coreTenant;
 
   const coreLogin = await requestCore<CoreLoginResponse>("/core/auth/login", {
     method: "POST",
@@ -168,6 +191,6 @@ export async function loginWithCoreSession(options: {
     expiresAt: coreLogin.expiresAt ?? null,
     coreUser: coreLogin.user,
     tenantId: coreTenant.id,
-    tenantSlug: coreTenant.slug
+    tenantSlug: resolvedTenant.selectedTenantSlug
   };
 }

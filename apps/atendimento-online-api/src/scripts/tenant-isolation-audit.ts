@@ -84,7 +84,7 @@ const DEMO_LOGIN_CANDIDATES = buildLoginCandidates({
   envEmail: process.env.AUDIT_DEMO_EMAIL,
   envPassword: process.env.AUDIT_DEMO_PASSWORD,
   fallbackSlugs: ["demo", "demo-core"],
-  fallbackEmail: "admin@demo.local",
+  fallbackEmail: "admin@demo-core.local",
   fallbackPassword: "123456"
 });
 

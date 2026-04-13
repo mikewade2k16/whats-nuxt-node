@@ -45,7 +45,7 @@ type CheckResult = {
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 const TENANT_SLUG = process.env.JOURNEY_TENANT_SLUG ?? "demo";
-const USER_EMAIL = process.env.JOURNEY_EMAIL ?? "admin@demo.local";
+const USER_EMAIL = process.env.JOURNEY_EMAIL ?? "admin@demo-core.local";
 const USER_PASSWORD = process.env.JOURNEY_PASSWORD ?? "123456";
 const POLL_TIMEOUT_MS = Number(process.env.JOURNEY_POLL_TIMEOUT_MS ?? 60_000);
 const POLL_INTERVAL_MS = Number(process.env.JOURNEY_POLL_INTERVAL_MS ?? 1_500);

@@ -15,7 +15,7 @@ const ROOT_LOGIN = {
 }
 
 const TENANT_ADMIN_LOGIN = {
-  email: process.env.SECURITY_AUDIT_ADMIN_EMAIL ?? 'admin@demo.local',
+  email: process.env.SECURITY_AUDIT_ADMIN_EMAIL ?? 'admin@demo-core.local',
   password: process.env.SECURITY_AUDIT_ADMIN_PASSWORD ?? '123456'
 }
 
@@ -191,6 +191,10 @@ function printResult(result) {
   process.stdout.write(
     `[${mark}] ${result.id} ${result.description} -> expected ${result.expectedStatus}, got ${result.actualStatus}\n`
   )
+
+  if (!result.passed && result.actualStatus === -1 && result.response?.error) {
+    process.stdout.write(`  error: ${String(result.response.error)}\n`)
+  }
 }
 
 async function main() {

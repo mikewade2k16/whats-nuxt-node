@@ -53,7 +53,7 @@ type CaseReport = {
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 const TENANT_SLUG = process.env.MEDIA_IT_TENANT_SLUG ?? "demo";
-const USER_EMAIL = process.env.MEDIA_IT_EMAIL ?? "admin@demo.local";
+const USER_EMAIL = process.env.MEDIA_IT_EMAIL ?? "admin@demo-core.local";
 const USER_PASSWORD = process.env.MEDIA_IT_PASSWORD ?? "123456";
 const DESTINATION = process.env.MEDIA_IT_DESTINATION_EXTERNAL_ID ?? `media-it-${Date.now()}@invalid`;
 const POLL_TIMEOUT_MS = Number(process.env.MEDIA_IT_POLL_TIMEOUT_MS ?? 60_000);

@@ -46,7 +46,7 @@ type BatteryResult = {
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 const TENANT_SLUG = process.env.BATTERY_TENANT_SLUG ?? "demo";
-const USER_EMAIL = process.env.BATTERY_EMAIL ?? "admin@demo.local";
+const USER_EMAIL = process.env.BATTERY_EMAIL ?? "admin@demo-core.local";
 const USER_PASSWORD = process.env.BATTERY_PASSWORD ?? "123456";
 const DESTINATION =
   process.env.BATTERY_DESTINATION_EXTERNAL_ID ?? `mvp-media-battery-${Date.now()}@invalid`;

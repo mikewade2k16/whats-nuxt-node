@@ -56,7 +56,7 @@ type OutboundPayload = {
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 const TENANT_SLUG = process.env.GATE_TENANT_SLUG ?? "demo";
-const USER_EMAIL = process.env.GATE_EMAIL ?? "admin@demo.local";
+const USER_EMAIL = process.env.GATE_EMAIL ?? "admin@demo-core.local";
 const USER_PASSWORD = process.env.GATE_PASSWORD ?? "123456";
 const DESTINATION = process.env.GATE_DESTINATION_EXTERNAL_ID ?? `mvp-gate-${Date.now()}@invalid`;
 const POLL_TIMEOUT_MS = Number(process.env.GATE_POLL_TIMEOUT_MS ?? 60_000);
