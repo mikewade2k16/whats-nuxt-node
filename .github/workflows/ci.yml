@@ -15,6 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workflow-runtime-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Block legacy Actions runtimes
+        run: |
+          if rg -n 'actions/checkout@v([1-5])\b|actions/setup-node@v([1-5])\b' .github/workflows; then
+            echo "Use actions/checkout@v6+ e actions/setup-node@v6+ para manter runtime suportado no GitHub Actions."
+            exit 1
+          fi
+
   api-build:
     runs-on: ubuntu-latest
     defaults:
