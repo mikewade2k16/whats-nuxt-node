@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/directorysync"
 )
 
 type PostgresRepository struct {
@@ -19,10 +21,14 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 func (repository *PostgresRepository) ListByStore(ctx context.Context, storeID string) ([]Consultant, error) {
+	if err := directorysync.SyncConsultantsByStore(ctx, repository.pool, storeID); err != nil {
+		return nil, err
+	}
+
 	rows, err := repository.pool.Query(ctx, consultantSelectQuery()+`
 		where c.store_id = $1::uuid
 			and c.is_active = true
-		order by c.name asc;
+		order by coalesce(nullif(trim(u.nick), ''), nullif(trim(u.name), ''), nullif(trim(c.name), ''), split_part(lower(coalesce(u.email::text, '')), '@', 1)) asc;
 	`, storeID)
 	if err != nil {
 		return nil, err
@@ -214,10 +220,11 @@ func consultantSelectQuery() string {
 			c.store_id::text,
 			coalesce(c.user_id::text, '') as user_id,
 			coalesce(lower(u.email), '') as access_email,
-			coalesce(u.is_active, false) as access_active,
-			c.name,
+			coalesce((u.status = 'active'), false) as access_active,
+			coalesce(nullif(trim(u.nick), ''), nullif(trim(u.name), ''), nullif(trim(c.name), ''), split_part(lower(coalesce(u.email::text, '')), '@', 1)) as name,
 			c.role_label,
 			c.initials,
+			coalesce(nullif(trim(u.avatar_url), ''), '') as avatar_url,
 			c.color,
 			c.monthly_goal,
 			c.commission_rate,
@@ -228,7 +235,7 @@ func consultantSelectQuery() string {
 			c.created_at,
 			c.updated_at
 		from consultants c
-		left join users u on u.id = c.user_id
+		left join platform_core.users u on u.id = c.user_id
 	`
 }
 
@@ -244,6 +251,7 @@ func scanConsultant(row pgx.Row) (Consultant, error) {
 		&consultant.Name,
 		&consultant.RoleLabel,
 		&consultant.Initials,
+		&consultant.AvatarURL,
 		&consultant.Color,
 		&consultant.MonthlyGoal,
 		&consultant.CommissionRate,
@@ -262,6 +270,7 @@ func scanConsultant(row pgx.Row) (Consultant, error) {
 	consultant.AccessEmail = strings.ToLower(strings.TrimSpace(consultant.AccessEmail))
 	consultant.Name = strings.TrimSpace(consultant.Name)
 	consultant.RoleLabel = defaultRoleLabel(consultant.RoleLabel)
+	consultant.AvatarURL = strings.TrimSpace(consultant.AvatarURL)
 	consultant.Color = strings.TrimSpace(consultant.Color)
 
 	return consultant, nil

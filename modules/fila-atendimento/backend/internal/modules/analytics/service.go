@@ -130,7 +130,7 @@ func buildRankingRows(history []operations.ServiceHistoryEntry, roster []operati
 				continue
 			}
 
-			finishedAt := time.UnixMilli(entry.FinishedAt).In(analyticsLocation)
+			finishedAt := entry.FinishedAt.In(analyticsLocation)
 			if scope == "today" {
 				if dayStamp(finishedAt) != currentDay {
 					continue
@@ -235,7 +235,7 @@ func buildConsultantAlerts(history []operations.ServiceHistoryEntry, roster []op
 				continue
 			}
 
-			if monthStamp(time.UnixMilli(entry.FinishedAt).In(analyticsLocation)) != currentMonth {
+			if monthStamp(entry.FinishedAt.In(analyticsLocation)) != currentMonth {
 				continue
 			}
 
@@ -377,7 +377,7 @@ func buildHourlySales(history []operations.ServiceHistoryEntry) []HourlySalesRow
 			continue
 		}
 
-		hour := time.UnixMilli(entry.FinishedAt).In(analyticsLocation).Format("15")
+		hour := entry.FinishedAt.In(analyticsLocation).Format("15")
 		key := hour + "h"
 		row, ok := counter[key]
 		if !ok {
@@ -409,7 +409,7 @@ func buildHourlySales(history []operations.ServiceHistoryEntry) []HourlySalesRow
 }
 
 func buildTimeIntelligence(data bundle) TimeIntelligence {
-	now := time.Now().UnixMilli()
+	now := time.Now().UTC()
 	fastThresholdMs := int64(maxInt(data.settings.TimingFastCloseMinutes, 5)) * 60000
 	longThresholdMs := int64(maxInt(data.settings.TimingLongServiceMinutes, 25)) * 60000
 	lowSaleThreshold := maxFloat(data.settings.TimingLowSaleAmount, 1200)
@@ -451,22 +451,22 @@ func buildTimeIntelligence(data bundle) TimeIntelligence {
 
 	for _, consultant := range data.roster {
 		status, startedAt := resolveLiveStatusSnapshot(data.snapshot, consultant.ID, now)
-		addStatusDuration(&totals, status, maxInt64(now-startedAt, 0))
+		addStatusDuration(&totals, status, elapsedMillis(startedAt, now))
 	}
 
 	consultantsInQueueMs := int64(0)
 	for _, item := range data.snapshot.WaitingList {
-		consultantsInQueueMs += maxInt64(now-item.QueueJoinedAt, 0)
+		consultantsInQueueMs += elapsedMillis(item.QueueJoinedAt, now)
 	}
 
 	consultantsPausedMs := int64(0)
 	for _, item := range data.snapshot.PausedEmployees {
-		consultantsPausedMs += maxInt64(now-item.StartedAt, 0)
+		consultantsPausedMs += elapsedMillis(item.StartedAt, now)
 	}
 
 	consultantsInServiceMs := int64(0)
 	for _, item := range data.snapshot.ActiveServices {
-		consultantsInServiceMs += maxInt64(now-item.ServiceStartedAt, 0)
+		consultantsInServiceMs += elapsedMillis(item.ServiceStartedAt, now)
 	}
 
 	notUsingQueueRate := 0.0
@@ -642,27 +642,27 @@ func isCompleteEntry(entry operations.ServiceHistoryEntry) bool {
 	return hasCustomer && hasProduct && hasReason && hasSource
 }
 
-func resolveLiveStatusSnapshot(snapshot operations.SnapshotState, consultantID string, now int64) (string, int64) {
+func resolveLiveStatusSnapshot(snapshot operations.SnapshotState, consultantID string, now time.Time) (string, time.Time) {
 	for _, item := range snapshot.ActiveServices {
 		if strings.TrimSpace(item.ConsultantID) == strings.TrimSpace(consultantID) {
-			return "service", maxInt64(item.ServiceStartedAt, now)
+			return "service", clampMoment(item.ServiceStartedAt, now)
 		}
 	}
 
 	for _, item := range snapshot.WaitingList {
 		if strings.TrimSpace(item.ConsultantID) == strings.TrimSpace(consultantID) {
-			return "queue", maxInt64(item.QueueJoinedAt, now)
+			return "queue", clampMoment(item.QueueJoinedAt, now)
 		}
 	}
 
 	for _, item := range snapshot.PausedEmployees {
 		if strings.TrimSpace(item.ConsultantID) == strings.TrimSpace(consultantID) {
-			return "paused", maxInt64(item.StartedAt, now)
+			return "paused", clampMoment(item.StartedAt, now)
 		}
 	}
 
 	if currentStatus, ok := snapshot.ConsultantCurrentStatus[consultantID]; ok {
-		return strings.TrimSpace(currentStatus.Status), maxInt64(currentStatus.StartedAt, now)
+		return strings.TrimSpace(currentStatus.Status), clampMoment(currentStatus.StartedAt, now)
 	}
 
 	return "available", now
@@ -808,4 +808,25 @@ func maxInt64(value int64, fallback int64) int64 {
 	}
 
 	return value
+}
+
+func elapsedMillis(start time.Time, end time.Time) int64 {
+	if start.IsZero() || end.IsZero() {
+		return 0
+	}
+
+	duration := end.UTC().Sub(start.UTC())
+	if duration < 0 {
+		return 0
+	}
+
+	return duration.Milliseconds()
+}
+
+func clampMoment(moment time.Time, fallback time.Time) time.Time {
+	if moment.IsZero() || moment.After(fallback) {
+		return fallback
+	}
+
+	return moment.UTC()
 }

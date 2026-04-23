@@ -42,8 +42,9 @@ func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID s
 	err := repository.pool.QueryRow(ctx, `
 		select exists(
 			select 1
-			from stores
+			from platform_core.tenant_stores
 			where id = $1::uuid
+			  and is_active = true
 		);
 	`, storeID).Scan(&exists)
 	if err != nil {

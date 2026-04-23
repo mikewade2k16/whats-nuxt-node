@@ -13,7 +13,7 @@ export type UserBusinessRole =
 
 export type UserFieldKey =
   | 'level'
-  | 'clientId'
+  | 'coreTenantId'
   | 'atendimentoAccess'
   | 'name'
   | 'nick'
@@ -31,10 +31,11 @@ export type UserFieldKey =
   | 'preferences'
 
 export interface UserItem {
-  id: number
+  id: string
+  coreUserId: string
+  coreTenantId: string | null
   isPlatformAdmin: boolean
   level: UserLevel
-  clientId: number | null
   clientName: string
   name: string
   nick: string
@@ -77,6 +78,7 @@ export interface UserMutationResponse {
 export interface SimpleSelectOption {
   label: string
   value: number | string
+  coreTenantId?: string
   moduleCodes?: string[]
   stores?: Array<{
     id: string

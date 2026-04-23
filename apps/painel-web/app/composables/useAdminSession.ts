@@ -29,6 +29,7 @@ interface RememberedAdminSessionResponse {
 }
 
 const SESSION_VALIDATION_INTERVAL_MS = 60_000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 let sessionExpiryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let lastSessionValidationAt = 0;
@@ -36,6 +37,28 @@ let pendingSessionValidation: Promise<boolean> | null = null;
 let pendingRememberedSessionRestore: Promise<boolean> | null = null;
 let rememberedSessionRestoreUnavailable = false;
 let redirectingToLogin = false;
+let sessionStateRevision = 0;
+
+function debugAdminSession(message: string, details?: Record<string, unknown>) {
+  if (!import.meta.dev || !import.meta.client) {
+    return;
+  }
+
+  const debugState = (window as typeof window & {
+    __adminAuthDebug?: {
+      events: Array<Record<string, unknown>>;
+      lastClearSessionStack?: string;
+    };
+  });
+  debugState.__adminAuthDebug ??= { events: [] };
+  debugState.__adminAuthDebug.events.push({
+    ts: Date.now(),
+    message,
+    ...(details ?? {})
+  });
+
+  console.info("[admin-session-debug]", message, details ?? {});
+}
 
 function clearSessionExpiryTimer() {
   if (sessionExpiryTimer !== null) {
@@ -93,7 +116,37 @@ export function useAdminSession() {
     && !isSessionExpired.value
   ));
 
-  function scheduleSessionExpiry() {
+  function bumpSessionStateRevision() {
+    sessionStateRevision += 1;
+    return sessionStateRevision;
+  }
+
+  function isCurrentSessionRevision(expectedRevision: number | null | undefined) {
+    return expectedRevision === null
+      || expectedRevision === undefined
+      || expectedRevision === sessionStateRevision;
+  }
+
+  function getCurrentSessionToken() {
+    return normalizeSessionToken(coreAuthRefs.token.value);
+  }
+
+  function isCurrentSessionSnapshot(snapshot: {
+    revision?: number | null;
+    accessToken?: string | null;
+  }) {
+    if (!isCurrentSessionRevision(snapshot.revision)) {
+      return false;
+    }
+
+    if (snapshot.accessToken !== undefined) {
+      return normalizeSessionToken(snapshot.accessToken) === getCurrentSessionToken();
+    }
+
+    return true;
+  }
+
+  function scheduleSessionExpiry(expectedRevision: number | null = sessionStateRevision) {
     clearSessionExpiryTimer();
 
     if (!import.meta.client) {
@@ -106,13 +159,46 @@ export function useAdminSession() {
     }
 
     if (ttlMs <= 0) {
-      void invalidateSession({ redirectToLogin: true });
+      if (!isCurrentSessionRevision(expectedRevision) || msUntilSessionExpiry(sessionExpiresAt.value) > 0) {
+        debugAdminSession("scheduleSessionExpiry:skip-immediate", {
+          expectedRevision,
+          currentRevision: sessionStateRevision,
+          expiresAt: sessionExpiresAt.value
+        });
+        return;
+      }
+
+      void invalidateSession({
+        redirectToLogin: true,
+        expectedRevision,
+        reason: "scheduleSessionExpiry:immediate-expiry"
+      });
       return;
     }
 
+    const nextTimeoutMs = Math.min(ttlMs, MAX_TIMEOUT_MS);
     sessionExpiryTimer = globalThis.setTimeout(() => {
-      void invalidateSession({ redirectToLogin: true });
-    }, ttlMs);
+      if (!isCurrentSessionRevision(expectedRevision)) {
+        debugAdminSession("scheduleSessionExpiry:skip-stale-timer", {
+          expectedRevision,
+          currentRevision: sessionStateRevision,
+          expiresAt: sessionExpiresAt.value
+        });
+        return;
+      }
+
+      const remainingMs = msUntilSessionExpiry(sessionExpiresAt.value);
+      if (remainingMs > 0) {
+        scheduleSessionExpiry(expectedRevision);
+        return;
+      }
+
+      void invalidateSession({
+        redirectToLogin: true,
+        expectedRevision,
+        reason: "scheduleSessionExpiry:timer-expired"
+      });
+    }, nextTimeoutMs);
   }
 
   async function restoreRememberedSession() {
@@ -133,13 +219,35 @@ export function useAdminSession() {
     }
 
     pendingRememberedSessionRestore = (async () => {
+      const restoreRevision = sessionStateRevision;
+      debugAdminSession("restoreRememberedSession:start", {
+        path: window.location.pathname,
+        isAuthenticated: isAuthenticated.value,
+        restoreRevision
+      });
+
       try {
         const response = await $fetch<RememberedAdminSessionResponse>("/api/admin/auth/session", {
           timeout: 10_000
         });
 
+        if (!isCurrentSessionRevision(restoreRevision) && isAuthenticated.value) {
+          debugAdminSession("restoreRememberedSession:stale-response", {
+            restoreRevision,
+            currentRevision: sessionStateRevision
+          });
+          return true;
+        }
+
         if (!response?.ok) {
           rememberedSessionRestoreUnavailable = true;
+          debugAdminSession("restoreRememberedSession:empty", {
+            reason: response?.reason ?? null,
+            restoreRevision
+          });
+          if (!isCurrentSessionRevision(restoreRevision)) {
+            return isAuthenticated.value;
+          }
           clearSession();
           return false;
         }
@@ -148,8 +256,24 @@ export function useAdminSession() {
         const coreUser = response.session?.user ?? null;
         if (!accessToken || !coreUser) {
           rememberedSessionRestoreUnavailable = true;
+          debugAdminSession("restoreRememberedSession:invalid-payload", {
+            hasAccessToken: Boolean(accessToken),
+            hasCoreUser: Boolean(coreUser),
+            restoreRevision
+          });
+          if (!isCurrentSessionRevision(restoreRevision)) {
+            return isAuthenticated.value;
+          }
           clearSession();
           return false;
+        }
+
+        if (!isCurrentSessionRevision(restoreRevision) && isAuthenticated.value) {
+          debugAdminSession("restoreRememberedSession:skip-set-session", {
+            restoreRevision,
+            currentRevision: sessionStateRevision
+          });
+          return true;
         }
 
         setSession({
@@ -158,12 +282,24 @@ export function useAdminSession() {
           coreUser,
           expiresAt: null
         });
+        debugAdminSession("restoreRememberedSession:done", {
+          path: window.location.pathname,
+          isAuthenticated: isAuthenticated.value,
+          expiresAt: sessionExpiresAt.value
+        });
 
         return true;
       } catch (error) {
         const statusCode = extractFetchStatusCode(error);
         if (statusCode === 401 || statusCode === 403) {
           rememberedSessionRestoreUnavailable = true;
+          debugAdminSession("restoreRememberedSession:invalid-status", {
+            statusCode,
+            restoreRevision
+          });
+          if (!isCurrentSessionRevision(restoreRevision)) {
+            return isAuthenticated.value;
+          }
           clearSession();
           return false;
         }
@@ -196,6 +332,10 @@ export function useAdminSession() {
       return;
     }
 
+    debugAdminSession("redirectToLogin", {
+      path: window.location.pathname,
+      search: window.location.search
+    });
     redirectingToLogin = true;
     try {
       const redirectPath = buildLoginRedirectPath();
@@ -221,14 +361,49 @@ export function useAdminSession() {
   }
 
   function clearSession() {
+    const stack = new Error().stack ?? "";
+    debugAdminSession("clearSession", {
+      path: import.meta.client ? window.location.pathname : null,
+      stack
+    });
+    if (import.meta.dev && import.meta.client) {
+      const debugState = window as typeof window & {
+        __adminAuthDebug?: {
+          events: Array<Record<string, unknown>>;
+          lastClearSessionStack?: string;
+        };
+      };
+      debugState.__adminAuthDebug ??= { events: [] };
+      debugState.__adminAuthDebug.lastClearSessionStack = stack;
+    }
     clearSessionExpiryTimer();
     lastSessionValidationAt = 0;
+    bumpSessionStateRevision();
     coreAuthStore.clearSession();
     clearLegacyAdminShadowSnapshot();
     sessionSimulation.reset();
   }
 
-  async function invalidateSession(options: { redirectToLogin?: boolean } = {}) {
+  async function invalidateSession(options: {
+    redirectToLogin?: boolean;
+    expectedRevision?: number | null;
+    expectedAccessToken?: string | null;
+    reason?: string;
+  } = {}) {
+    if (!isCurrentSessionSnapshot({
+      revision: options.expectedRevision,
+      accessToken: options.expectedAccessToken
+    })) {
+      debugAdminSession("invalidateSession:skip-stale", {
+        reason: options.reason ?? null,
+        expectedRevision: options.expectedRevision ?? null,
+        currentRevision: sessionStateRevision,
+        expectedAccessToken: normalizeSessionToken(options.expectedAccessToken),
+        currentAccessToken: getCurrentSessionToken()
+      });
+      return;
+    }
+
     clearSession();
 
     if (options.redirectToLogin !== false) {
@@ -276,8 +451,13 @@ export function useAdminSession() {
     }
 
     const accessToken = String(coreAuthRefs.token.value || "").trim();
+    const validationRevision = sessionStateRevision;
     if (!accessToken) {
-      await invalidateSession({ redirectToLogin: options.redirectToLogin !== false });
+      await invalidateSession({
+        redirectToLogin: options.redirectToLogin !== false,
+        expectedRevision: validationRevision,
+        reason: "validateSession:missing-token"
+      });
       return false;
     }
 
@@ -298,13 +478,34 @@ export function useAdminSession() {
           timeout: 10_000
         });
 
+        if (!isCurrentSessionSnapshot({
+          revision: validationRevision,
+          accessToken
+        })) {
+          debugAdminSession("validateSession:skip-stale-success", {
+            validationRevision,
+            currentRevision: sessionStateRevision
+          });
+          return isAuthenticated.value;
+        }
+
         lastSessionValidationAt = Date.now();
-        scheduleSessionExpiry();
+        scheduleSessionExpiry(validationRevision);
         return true;
       } catch (error) {
         if (isAdminSessionInvalidError(error)) {
-          await invalidateSession({ redirectToLogin: options.redirectToLogin !== false });
-          return false;
+          await invalidateSession({
+            redirectToLogin: options.redirectToLogin !== false,
+            expectedRevision: validationRevision,
+            expectedAccessToken: accessToken,
+            reason: "validateSession:invalid"
+          });
+          return isCurrentSessionSnapshot({
+            revision: validationRevision,
+            accessToken
+          })
+            ? false
+            : isAuthenticated.value;
         }
 
         console.warn("[admin-session] session validation skipped due to transient error", error);
@@ -324,8 +525,13 @@ export function useAdminSession() {
     redirectToLogin?: boolean;
   }) {
     const accessToken = normalizeSessionToken(options.accessToken);
+    const syncRevision = sessionStateRevision;
     if (!accessToken) {
-      await invalidateSession({ redirectToLogin: options.redirectToLogin !== false });
+      await invalidateSession({
+        redirectToLogin: options.redirectToLogin !== false,
+        expectedRevision: syncRevision,
+        reason: "syncSessionFromToken:missing-token"
+      });
       return null;
     }
 
@@ -336,6 +542,17 @@ export function useAdminSession() {
         },
         timeout: 10_000
       });
+
+      if (!isCurrentSessionSnapshot({
+        revision: syncRevision,
+        accessToken
+      }) && isAuthenticated.value) {
+        debugAdminSession("syncSessionFromToken:skip-stale-success", {
+          syncRevision,
+          currentRevision: sessionStateRevision
+        });
+        return coreAuthRefs.user.value;
+      }
 
       setSession({
         token: accessToken,
@@ -348,7 +565,12 @@ export function useAdminSession() {
       return response.user;
     } catch (error) {
       if (isAdminSessionInvalidError(error)) {
-        await invalidateSession({ redirectToLogin: options.redirectToLogin !== false });
+        await invalidateSession({
+          redirectToLogin: options.redirectToLogin !== false,
+          expectedRevision: syncRevision,
+          expectedAccessToken: accessToken,
+          reason: "syncSessionFromToken:invalid"
+        });
       }
       throw error;
     }
@@ -357,6 +579,10 @@ export function useAdminSession() {
   function setSession(payload: AdminSessionPayload) {
     const accessToken = normalizeSessionToken(payload.coreAccessToken ?? payload.token);
     if (!accessToken || !payload.coreUser) {
+      debugAdminSession("setSession:missing-payload", {
+        hasAccessToken: Boolean(accessToken),
+        hasCoreUser: Boolean(payload.coreUser)
+      });
       clearSession();
       return;
     }
@@ -367,10 +593,17 @@ export function useAdminSession() {
       ? {}
       : { persistent: payload.persistent };
 
+    const nextRevision = bumpSessionStateRevision();
     coreAuthStore.setSession(accessToken, payload.coreUser, payload.expiresAt ?? null, sessionOptions);
     clearLegacyAdminShadowSnapshot();
     lastSessionValidationAt = Date.now();
-    scheduleSessionExpiry();
+    scheduleSessionExpiry(nextRevision);
+    debugAdminSession("setSession:done", {
+      path: import.meta.client ? window.location.pathname : null,
+      isAuthenticated: isAuthenticated.value,
+      expiresAt: sessionExpiresAt.value,
+      sessionRevision: nextRevision
+    });
   }
 
   return {

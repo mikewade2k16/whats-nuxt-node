@@ -1,6 +1,6 @@
 import { getQuery } from 'h3'
 import { requireTenantAdmin } from '~~/server/utils/admin-route-auth'
-import { resolveManagedUsersClientId } from '~~/server/utils/admin-users-access'
+import { resolveManagedUsersCoreTenantId } from '~~/server/utils/admin-users-access'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 export default defineEventHandler(async (event) => {
@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const page = Number.parseInt(String(query.page ?? '1'), 10)
   const limit = Number.parseInt(String(query.limit ?? '30'), 10)
   const q = String(query.q ?? '')
-  const clientId = resolveManagedUsersClientId(access, String(query.clientId ?? ''))
+  const coreTenantId = resolveManagedUsersCoreTenantId(access, String(query.coreTenantId ?? ''))
 
   const response = await coreAdminFetch<{ items: unknown[], meta: unknown }>(
     event,
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
       page: Number.isFinite(page) ? page : 1,
       limit: Number.isFinite(limit) ? limit : 30,
       q,
-      clientId: clientId.trim() || undefined
+      coreTenantId: coreTenantId.trim() || undefined
     })}`
   )
 

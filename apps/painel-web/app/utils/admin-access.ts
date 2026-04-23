@@ -15,6 +15,7 @@ export type AdminFeatureCode =
   | 'themes'
   | 'manage.audit'
   | 'manage.users'
+  | 'manage.modules'
   | 'manage.clients'
   | 'manage.qa'
   | 'manage.componentes'
@@ -141,6 +142,13 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     defaultLevels: ['admin']
   },
   {
+    code: 'manage.modules',
+    label: 'Modulos',
+    description: 'Governanca de acesso por modulo no cliente ativo do painel.',
+    pathPrefixes: ['/admin/manage/modulos'],
+    defaultLevels: ['admin']
+  },
+  {
     code: 'themes',
     label: 'Temas',
     description: 'Personalizacao visual do painel.',
@@ -160,7 +168,7 @@ const ADMIN_FEATURES: AdminFeatureDefinition[] = [
     label: 'Fila de Atendimento',
     description: 'Host principal do modulo de fila, operacao e relatorios de loja.',
     pathPrefixes: ['/admin/fila-atendimento'],
-    defaultLevels: ['admin', 'manager'],
+    defaultLevels: ['admin', 'consultant', 'manager', 'marketing'],
     moduleCode: 'fila-atendimento'
   },
   {

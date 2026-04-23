@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAtendimentoModuleAccess, requireConversationWrite } from "../lib/guards.js";
+import { getTenantRuntimeOrFail } from "../services/tenant-runtime.js";
 
 const MAX_STICKERS_PER_TENANT = 200;
 const MAX_STICKER_MB_HARD_CAP = 20;
@@ -152,18 +153,9 @@ export async function stickerRoutes(app: FastifyInstance) {
         });
       }
 
-      const tenant = await prisma.tenant.findUnique({
-        where: {
-          id: request.authUser.tenantId
-        },
-        select: {
-          maxUploadMb: true
-        }
+      const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+        accessToken: request.coreAccessToken
       });
-
-      if (!tenant) {
-        return reply.code(404).send({ message: "Tenant nao encontrado" });
-      }
 
       const estimatedSizeBytes = estimateBase64Bytes(parsedDataUrl.base64);
       const uploadLimitBytes = resolveStickerUploadLimitBytes(tenant.maxUploadMb);

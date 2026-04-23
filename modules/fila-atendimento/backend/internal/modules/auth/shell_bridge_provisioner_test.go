@@ -14,8 +14,13 @@ func TestResolveShellBridgeRole(t *testing.T) {
 	}{
 		{
 			name:   "platform admin bypasses business role",
-			claims: ShellBridgeClaims{IsPlatformAdmin: true, BusinessRole: "consultant"},
+			claims: ShellBridgeClaims{IsPlatformAdmin: true, BusinessRole: "consultant", ScopeMode: "platform"},
 			want:   RolePlatformAdmin,
+		},
+		{
+			name:   "platform admin scoped to tenant falls back to tenant role",
+			claims: ShellBridgeClaims{IsPlatformAdmin: true, BusinessRole: "system_admin", UserLevel: "admin", ScopeMode: "all_stores"},
+			want:   RoleOwner,
 		},
 		{
 			name:   "consultant business role maps to consultant",
@@ -26,6 +31,11 @@ func TestResolveShellBridgeRole(t *testing.T) {
 			name:   "store manager business role maps to manager",
 			claims: ShellBridgeClaims{BusinessRole: "store_manager"},
 			want:   RoleManager,
+		},
+		{
+			name:   "general manager business role maps to owner",
+			claims: ShellBridgeClaims{BusinessRole: "general_manager"},
+			want:   RoleOwner,
 		},
 		{
 			name:   "consultant level fallback remains supported",
@@ -68,7 +78,7 @@ func TestResolveShellBridgeScopeMode(t *testing.T) {
 		{
 			name:   "general manager spans all stores",
 			claims: ShellBridgeClaims{BusinessRole: "general_manager"},
-			role:   RoleManager,
+			role:   RoleOwner,
 			want:   "all_stores",
 		},
 		{
@@ -97,5 +107,54 @@ func TestResolveShellBridgeStoreIDs(t *testing.T) {
 
 	if len(got) != 2 || got[0] != "store-2" || got[1] != "store-1" {
 		t.Fatalf("unexpected claimed stores: %+v", got)
+	}
+}
+
+func TestCanProvisionShellBridgeWithoutStores(t *testing.T) {
+	tests := []struct {
+		name      string
+		role      Role
+		scopeMode string
+		want      bool
+	}{
+		{
+			name:      "owner can enter tenant without stores",
+			role:      RoleOwner,
+			scopeMode: "all_stores",
+			want:      true,
+		},
+		{
+			name:      "marketing can enter tenant without stores",
+			role:      RoleMarketing,
+			scopeMode: "all_stores",
+			want:      true,
+		},
+		{
+			name:      "platform admin can enter scoped tenant without stores",
+			role:      RolePlatformAdmin,
+			scopeMode: "all_stores",
+			want:      true,
+		},
+		{
+			name:      "first store scope still requires store",
+			role:      RoleOwner,
+			scopeMode: "first_store",
+			want:      false,
+		},
+		{
+			name:      "manager cannot enter without store",
+			role:      RoleManager,
+			scopeMode: "all_stores",
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := canProvisionShellBridgeWithoutStores(tt.role, tt.scopeMode)
+			if got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
 	}
 }

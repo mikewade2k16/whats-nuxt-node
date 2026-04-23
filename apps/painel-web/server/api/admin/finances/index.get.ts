@@ -1,5 +1,6 @@
 import { getQuery } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 import type { FinanceSheetListItem, FinancesListMeta } from '~/types/finances'
 
@@ -9,10 +10,10 @@ export default defineEventHandler(async (event) => {
 
   const page = Number.parseInt(String(query.page ?? '1'), 10)
   const limit = Number.parseInt(String(query.limit ?? '120'), 10)
-  const clientIdRaw = Number.parseInt(String(query.clientId ?? ''), 10)
-  const clientId = Number.isFinite(clientIdRaw) && clientIdRaw > 0
-    ? (access.isAdmin ? clientIdRaw : access.clientId)
-    : (access.isAdmin ? 0 : access.clientId)
+  const scope = resolveOwnedTenantScope(access, {
+    clientId: query.clientId,
+    coreTenantId: query.coreTenantId
+  })
   const period = String(query.period ?? '').trim()
   const q = String(query.q ?? '').trim()
 
@@ -22,7 +23,7 @@ export default defineEventHandler(async (event) => {
       page: Number.isFinite(page) ? page : 1,
       limit: Number.isFinite(limit) ? limit : 120,
       q: q || undefined,
-      clientId: clientId > 0 ? clientId : undefined,
+  		coreTenantId: scope.coreTenantId || undefined,
       period: period || undefined
     })}`
   )

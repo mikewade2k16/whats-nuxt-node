@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
         email: normalizedBody.email as string,
         password: normalizedBody.password as string,
         phone: normalizedBody.phone as string,
-        clientId: normalizedBody.clientId as number | string | null,
+    		coreTenantId: normalizedBody.coreTenantId as string | null,
         level: normalizedBody.level as string,
         userType: normalizedBody.userType as string,
         businessRole: normalizedBody.businessRole as string,

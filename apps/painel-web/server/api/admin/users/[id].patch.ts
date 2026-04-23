@@ -4,7 +4,7 @@ import { assertUserFieldAllowedForScope, assertUserWithinManagedScope } from '~~
 import { coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 const allowedFields = new Set([
-  'clientId',
+  'coreTenantId',
   'atendimentoAccess',
   'level',
   'name',
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const id = String(getRouterParam(event, 'id') ?? '').trim()
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'User id invalido.' })
+    throw createError({ statusCode: 400, statusMessage: 'Usuario invalido.' })
   }
 
   const body = await readBody<Record<string, unknown>>(event)
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   }
 
   assertUserFieldAllowedForScope(access, field)
-  await assertUserWithinManagedScope(event, access, Number.parseInt(id, 10))
+  await assertUserWithinManagedScope(event, access, id)
 
   const updated = await coreAdminFetch(
     event,

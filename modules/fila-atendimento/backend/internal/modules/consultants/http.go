@@ -22,8 +22,7 @@ type listResponse struct {
 }
 
 type consultantResponse struct {
-	Consultant ConsultantView     `json:"consultant"`
-	Access     *ProvisionedAccess `json:"access,omitempty"`
+	Consultant ConsultantView `json:"consultant"`
 }
 
 type createRequest struct {
@@ -110,7 +109,7 @@ func RegisterRoutesWithOptions(mux *http.ServeMux, service *Service, options HTT
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse{Consultant: result.Consultant, Access: result.Access})
+		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse{Consultant: result.Consultant})
 	})
 
 	registerRoute("PATCH /v1/consultants/{id}", func(w http.ResponseWriter, r *http.Request, access AccessContext) {

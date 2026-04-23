@@ -1,0 +1,9 @@
+import { defineEventHandler } from 'h3'
+import { requireResolvedFeatureAccess } from '~~/server/utils/admin-route-auth'
+import { filaAtendimentoFetch } from '@fila-atendimento/server/utils/fila-atendimento-api'
+import { buildFilaAtendimentoQuery } from '@fila-atendimento/server/utils/fila-atendimento-query'
+
+export default defineEventHandler(async (event) => {
+  await requireResolvedFeatureAccess(event, '/admin/fila-atendimento')
+  return filaAtendimentoFetch(event, `/v1/settings${buildFilaAtendimentoQuery(event)}`)
+})

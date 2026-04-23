@@ -54,21 +54,28 @@ export function createFinanceUuid() {
   ].join('-')
 }
 
-export function financeRecurringRowId(clientId: number) {
-  const normalized = Math.trunc(Number(clientId || 0))
-  if (!Number.isFinite(normalized) || normalized <= 0) return ''
-  return `00000000-0000-4000-8000-${normalized.toString(16).padStart(12, '0').slice(-12)}`
+export function financeRecurringRowId(sourceCoreTenantId: string) {
+  const normalized = normalizeDeterministicSeed(sourceCoreTenantId)
+  if (!normalized) return ''
+
+  const hash = hashSeedToHex(normalized).slice(0, 12)
+  return `00000000-0000-4000-8000-${hash}`
 }
 
-export function financeRecurringStoreRowId(clientId: number, storeName: string) {
-  const normalizedClientId = Math.trunc(Number(clientId || 0))
+export function financeRecurringStoreRowId(sourceCoreTenantId: string, storeName: string) {
+  const normalizedClientId = normalizeDeterministicSeed(sourceCoreTenantId)
   const normalizedStoreName = normalizeDeterministicSeed(storeName)
-  if (!Number.isFinite(normalizedClientId) || normalizedClientId <= 0 || !normalizedStoreName) {
+  if (!normalizedClientId || !normalizedStoreName) {
     return ''
   }
 
   const hash = hashSeedToHex(`${normalizedClientId}:${normalizedStoreName}`).slice(0, 12)
   return `11111111-1111-4111-8111-${hash}`
+}
+
+export function isFinanceRecurringRowId(value: unknown) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  return RECURRING_ROW_UUID_RE.test(raw)
 }
 
 export function parseFinanceRecurringClientId(value: unknown) {
@@ -101,9 +108,8 @@ export function normalizeFinanceLinkedUuid(value: unknown) {
   const raw = String(value ?? '').trim().toLowerCase()
   if (!raw) return ''
 
-  const recurringClientId = parseFinanceRecurringClientId(raw)
-  if (recurringClientId > 0) {
-    return financeRecurringRowId(recurringClientId)
+  if (isFinanceRecurringRowId(raw) || isFinanceRecurringStoreRowId(raw)) {
+    return raw
   }
 
   return isFinanceUuid(raw) ? raw : ''

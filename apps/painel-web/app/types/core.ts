@@ -13,6 +13,7 @@ export interface CoreAuthUser {
   userType?: string;
   businessRole?: string;
   storeId?: string | null;
+  storeName?: string | null;
   registrationNumber?: string;
   preferences?: string;
   moduleCodes?: string[];

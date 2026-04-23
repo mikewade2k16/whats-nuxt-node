@@ -1,5 +1,7 @@
 package reports
 
+import "time"
+
 type Filters struct {
 	TenantID              string   `json:"tenantId,omitempty"`
 	StoreID               string   `json:"storeId"`
@@ -21,8 +23,8 @@ type Filters struct {
 }
 
 type repositoryFilters struct {
-	FinishedAtFrom     *int64
-	FinishedAtTo       *int64
+	FinishedAtFrom     *time.Time
+	FinishedAtTo       *time.Time
 	ConsultantIDs      []string
 	Outcomes           []string
 	StartModes         []string

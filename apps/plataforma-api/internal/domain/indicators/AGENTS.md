@@ -12,6 +12,7 @@
 - configuração do perfil ativo com pesos, itens, evidências e origem dos indicadores
 - override opcional por loja para indicadores habilitados no perfil
 - gestão de metas por período e por indicador, com recorte opcional por unidade
+ gestão de metas por período e por indicador, com recorte opcional por loja canônica do shell
 - registro de avaliações com snapshot imutável de configuração aplicada no momento da coleta
 - consolidação de dashboard por cliente, por loja e por indicador
 - ingestão de snapshots de providers externos ou híbridos
@@ -27,7 +28,7 @@
   - `PersistenceProvider`: PostgreSQL via `pgxpool` e schema `indicators`
   - `Clock`: `time.Now().UTC()` para timestamps, freshness e envelopes realtime
   - `TenantDirectory`: leitura de `platform_core.tenants` para resolver tenant UUID, `legacy_id` e nome do cliente
-  - `UnitsDirectory`: leitura de `platform_core.tenant_store_charges` para compor visão por loja
+  - `UnitsDirectory`: leitura de `platform_core.tenant_stores` para compor visão por loja; `tenant_store_charges` fica apenas como overlay financeiro do shell
 - opcionais:
   - `RealtimePublisher`: `internal/realtime.Hub` para broadcast tenant-scoped
   - `MetricsProvider`: qualquer integração externa que publique snapshots no contrato de `indicator_metric_snapshots`
@@ -113,6 +114,7 @@
   - `0023_indicators_governance.sql`
   - `0024_seed_indicators_default_template.sql`
   - `0025_restore_root_tenant_active.sql`
+  - `0033_indicators_store_id.sql`
 - índices relevantes:
   - published version única por template
   - perfil ativo único por tenant
@@ -161,6 +163,8 @@ erDiagram
 - replace de targets substitui integralmente os target sets do perfil ativo
 - exclusão de avaliação apaga categorias, indicadores, itens, snapshots e assets via cascata do schema
 - snapshots de provider são append-only; saúde do provider é derivada por `MAX(snapshot_at)` e cobertura encontrada
+- referências de loja em overrides, metas, avaliações e snapshots usam `store_id` UUID apontando para `platform_core.tenant_stores(id)`
+- `unit_code` e `unit_name` permanecem apenas como snapshot/apresentação em avaliações; não são mais a identidade da loja
 
 ## Endpoints, filas e interfaces expostas
 

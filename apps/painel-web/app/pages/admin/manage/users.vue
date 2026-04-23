@@ -50,10 +50,12 @@ const ACCESS_DRAFT_STATE_OPTIONS = [
 ] satisfies Array<{ label: string, value: AccessDraftState }>
 
 const accessModalOpen = ref(false)
-const accessDraftUserId = ref<number | null>(null)
+const accessDraftUserId = ref<string | null>(null)
 const accessDraftUserLabel = ref('')
 const accessDraftFeatureStates = reactive<Record<string, AccessDraftState>>({})
 const accessFeatures = listAdminFeatures().filter(feature => !['dashboard', 'profile', 'settings'].includes(feature.code))
+const storePopoverDrafts = reactive<Record<string, string>>({})
+const passwordPopoverDrafts = reactive<Record<string, string>>({})
 
 const createModalOpen = ref(false)
 const createForm = reactive({
@@ -62,7 +64,7 @@ const createForm = reactive({
   email: '',
   password: '',
   phone: '',
-  clientId: '' as string | number,
+  coreTenantId: '',
   level: 'marketing',
   userType: 'client',
   businessRole: 'marketing',
@@ -131,19 +133,18 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
         return true
       }
 
-      const currentClientId = (row as Record<string, unknown>).clientId
+      const currentCoreTenantId = String((row as Record<string, unknown>).coreTenantId ?? '').trim()
       if (selected === 'none') {
-        const parsed = Number(currentClientId ?? 0)
-        return !Number.isFinite(parsed) || parsed <= 0
+        return !currentCoreTenantId
       }
 
-      return String(currentClientId ?? '') === selected
+      return currentCoreTenantId === selected
     }
   }
 ])
 
 const clientSelectOptions = computed(() => [
-  { label: 'Sem cliente', value: 0 },
+  { label: 'Sem cliente', value: '' },
   ...clientOptions.value
 ])
 
@@ -169,12 +170,8 @@ const businessRoleSelectOptions = computed(() => {
   return BUSINESS_ROLE_OPTIONS.filter(option => option.value !== 'system_admin')
 })
 
-function normalizeClientOptionId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 0
-  }
-  return parsed
+function normalizeCoreTenantId(value: unknown) {
+  return String(value ?? '').trim()
 }
 
 function normalizeStoreValue(value: unknown) {
@@ -205,13 +202,31 @@ function businessRoleLabel(value: unknown) {
   return BUSINESS_ROLE_OPTIONS.find(option => option.value === normalized)?.label || 'Marketing'
 }
 
-function findClientOption(clientId: unknown) {
-  const normalizedClientId = normalizeClientOptionId(clientId)
-  return clientOptions.value.find(option => normalizeClientOptionId(option.value) === normalizedClientId)
+function levelLabel(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  switch (normalized) {
+    case 'admin':
+      return 'admin'
+    case 'consultant':
+      return 'consultant'
+    case 'manager':
+      return 'manager'
+    case 'finance':
+      return 'finance'
+    case 'viewer':
+      return 'viewer'
+    default:
+      return 'marketing'
+  }
 }
 
-function clientRequiresStoreAssignment(clientId: unknown, businessRole: unknown) {
-  const clientOption = findClientOption(clientId)
+function findClientOption(coreTenantId: unknown) {
+  const normalizedCoreTenantId = normalizeCoreTenantId(coreTenantId)
+  return clientOptions.value.find(option => normalizeCoreTenantId(option.value) === normalizedCoreTenantId)
+}
+
+function clientRequiresStoreAssignment(coreTenantId: unknown, businessRole: unknown) {
+  const clientOption = findClientOption(coreTenantId)
   const storeCount = Math.max(
     Number(clientOption?.storesCount || 0),
     Array.isArray(clientOption?.stores) ? clientOption.stores.length : 0
@@ -222,35 +237,12 @@ function clientRequiresStoreAssignment(clientId: unknown, businessRole: unknown)
     && storeCount > 1
 }
 
-function clientRequiresRegistration(clientId: unknown, businessRole: unknown) {
-  const clientOption = findClientOption(clientId)
+function clientRequiresRegistration(coreTenantId: unknown, businessRole: unknown) {
+  const clientOption = findClientOption(coreTenantId)
   return requiresRegistrationRole(businessRole) && Boolean(clientOption?.requireUserRegistration ?? true)
 }
 
-const allStoreAssignOptions = computed(() => {
-  const dedupe = new Set<string>()
-  const options = [{ label: 'Todas as lojas', value: 'all' }]
-
-  for (const clientOption of clientOptions.value) {
-    const clientLabel = String(clientOption.label ?? '').trim()
-    for (const store of clientOption.stores || []) {
-      const storeId = String(store.id ?? '').trim()
-      if (!storeId || dedupe.has(storeId)) {
-        continue
-      }
-
-      dedupe.add(storeId)
-      options.push({
-        label: clientLabel ? `${clientLabel} / ${store.name}` : String(store.name ?? '').trim(),
-        value: storeId
-      })
-    }
-  }
-
-  return options
-})
-
-const selectedCreateClientOption = computed(() => findClientOption(createForm.clientId))
+const selectedCreateClientOption = computed(() => findClientOption(createForm.coreTenantId))
 const createStoreOptions = computed(() => [
   { label: 'Todas as lojas', value: 'all' },
   ...((selectedCreateClientOption.value?.stores || []).map(store => ({
@@ -262,13 +254,13 @@ const createStoreRequired = computed(() => {
   if (createForm.isPlatformAdmin) {
     return false
   }
-  return clientRequiresStoreAssignment(createForm.clientId, createForm.businessRole)
+  return clientRequiresStoreAssignment(createForm.coreTenantId, createForm.businessRole)
 })
 const createRegistrationRequired = computed(() => {
   if (createForm.isPlatformAdmin) {
     return false
   }
-  return clientRequiresRegistration(createForm.clientId, createForm.businessRole)
+  return clientRequiresRegistration(createForm.coreTenantId, createForm.businessRole)
 })
 const createSubmitDisabled = computed(() => {
   if (creating.value) {
@@ -293,13 +285,13 @@ function clientLabelForRow(row: Record<string, unknown>) {
     return fallbackName
   }
 
-  const currentClientId = Number(user.clientId ?? 0)
-  if (!Number.isFinite(currentClientId) || currentClientId <= 0) {
+  const currentCoreTenantId = normalizeCoreTenantId(user.coreTenantId)
+  if (!currentCoreTenantId) {
     return 'Sem cliente'
   }
 
-  const matched = clientOptions.value.find(option => Number(option.value) === currentClientId)
-  return matched?.label || String(currentClientId)
+  const matched = clientOptions.value.find(option => normalizeCoreTenantId(option.value) === currentCoreTenantId)
+  return matched?.label || currentCoreTenantId
 }
 
 function storeLabelForRow(row: Record<string, unknown>) {
@@ -313,8 +305,18 @@ function storeLabelForRow(row: Record<string, unknown>) {
     return String(user.storeName ?? '').trim()
   }
 
-  const matched = (findClientOption(user.clientId)?.stores || []).find(store => store.id === normalizedStoreId)
+  const matched = (findClientOption(user.coreTenantId)?.stores || []).find(store => store.id === normalizedStoreId)
   return matched?.name || normalizedStoreId
+}
+
+function storeOptionsForRow(row: Record<string, unknown>) {
+  return [
+    { label: 'Todas as lojas', value: 'all' },
+    ...((findClientOption((row as UserItem).coreTenantId)?.stores || []).map(store => ({
+      label: store.name,
+      value: store.id
+    })))
+  ]
 }
 
 function isPlatformAdminRow(row: Record<string, unknown>) {
@@ -322,8 +324,7 @@ function isPlatformAdminRow(row: Record<string, unknown>) {
 }
 
 function hasClientAssignment(row: Record<string, unknown>) {
-  const parsedClientId = Number((row as UserItem).clientId ?? 0)
-  return Number.isFinite(parsedClientId) && parsedClientId > 0
+  return Boolean(normalizeCoreTenantId((row as UserItem).coreTenantId))
 }
 
 function canEditTenantScopedFields(row: Record<string, unknown>) {
@@ -360,11 +361,11 @@ function canApproveUser(row: Record<string, unknown>) {
     return false
   }
 
-  if (clientRequiresStoreAssignment(user.clientId, user.businessRole) && !normalizeStoreValue(user.storeId)) {
+  if (clientRequiresStoreAssignment(user.coreTenantId, user.businessRole) && !normalizeStoreValue(user.storeId)) {
     return false
   }
 
-  if (clientRequiresRegistration(user.clientId, user.businessRole) && !String(user.registrationNumber ?? '').trim()) {
+  if (clientRequiresRegistration(user.coreTenantId, user.businessRole) && !String(user.registrationNumber ?? '').trim()) {
     return false
   }
 
@@ -373,12 +374,12 @@ function canApproveUser(row: Record<string, unknown>) {
 
 function clientHasAtendimentoModule(row: Record<string, unknown>) {
   const user = row as UserItem
-  const currentClientId = Number(user.clientId ?? 0)
-  if (!Number.isFinite(currentClientId) || currentClientId <= 0) {
+  const currentCoreTenantId = normalizeCoreTenantId(user.coreTenantId)
+  if (!currentCoreTenantId) {
     return false
   }
 
-  const matched = clientOptions.value.find(option => Number(option.value) === currentClientId)
+  const matched = clientOptions.value.find(option => normalizeCoreTenantId(option.value) === currentCoreTenantId)
   const moduleCodes = Array.isArray((matched as { moduleCodes?: string[] } | undefined)?.moduleCodes)
     ? ((matched as { moduleCodes?: string[] }).moduleCodes || [])
     : []
@@ -503,7 +504,7 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     formatter: (value) => businessRoleLabel(value)
   },
   {
-    key: 'clientId',
+    key: 'coreTenantId',
     label: 'Cliente',
     adminOnly: true,
     type: 'select',
@@ -517,12 +518,10 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
   {
     key: 'storeId',
     label: 'Loja',
-    type: 'select',
-    editable: true,
-    editableWhen: row => canEditStoreAssignment(row),
+    type: 'text',
+    editable: false,
     immediate: true,
     minWidth: 220,
-    options: allStoreAssignOptions.value,
     formatter: (_value, row) => storeLabelForRow(row)
   },
   {
@@ -576,7 +575,7 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     key: 'actions',
     label: 'Opcoes',
     type: 'custom',
-    minWidth: 180,
+    minWidth: 300,
     align: 'center'
   }
 ])
@@ -596,10 +595,10 @@ const filteredRows = computed(() => {
 })
 
 const tableRows = computed(() => {
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   return filteredRows.value.filter((row) => {
-    const parsedId = Number((row as Record<string, unknown>).id)
-    if (!Number.isFinite(parsedId) || parsedId <= 0) {
+    const parsedId = String((row as Record<string, unknown>).id ?? '').trim()
+    if (!parsedId) {
       return false
     }
 
@@ -613,7 +612,7 @@ const tableRows = computed(() => {
 })
 
 const updatableFields = new Set<UserFieldKey>([
-  'clientId',
+  'coreTenantId',
   'atendimentoAccess',
   'level',
   'businessRole',
@@ -642,9 +641,76 @@ function toUser(row: Record<string, unknown>) {
 }
 
 function rowIdValue(row: Record<string, unknown>) {
-  const raw = row.id
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) ? parsed : 0
+  return String(row.id ?? '').trim()
+}
+
+function storeDraftValueForRow(row: Record<string, unknown>) {
+  const id = rowIdValue(row)
+  const draft = String(storePopoverDrafts[id] ?? '').trim()
+  if (draft) {
+    return draft
+  }
+
+  const normalized = normalizeStoreValue(toUser(row).storeId)
+  return normalized || 'all'
+}
+
+function setStoreDraftValue(row: Record<string, unknown>, value: unknown) {
+  const id = rowIdValue(row)
+  storePopoverDrafts[id] = normalizeStoreValue(value) || 'all'
+}
+
+function saveStoreAssignment(row: Record<string, unknown>) {
+  const id = rowIdValue(row)
+  if (!id) {
+    return
+  }
+
+  updateField(id, 'storeId', normalizeStoreValue(storeDraftValueForRow(row)), {
+    immediate: true
+  })
+}
+
+function passwordDraftValueForRow(row: Record<string, unknown>) {
+  const id = rowIdValue(row)
+  const draft = String(passwordPopoverDrafts[id] ?? '').trim()
+  if (draft) {
+    return draft
+  }
+
+  const generated = generateRandomPassword(12)
+  passwordPopoverDrafts[id] = generated
+  return generated
+}
+
+function regeneratePasswordDraftForRow(row: Record<string, unknown>) {
+  const id = rowIdValue(row)
+  passwordPopoverDrafts[id] = generateRandomPassword(12)
+}
+
+async function copyPasswordDraftForRow(row: Record<string, unknown>) {
+  const value = passwordDraftValueForRow(row)
+  if (!value || !import.meta.client || !navigator.clipboard?.writeText) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(value)
+  } catch {
+    // no-op
+  }
+}
+
+function applyPasswordReset(row: Record<string, unknown>) {
+  const id = rowIdValue(row)
+  const nextPassword = passwordDraftValueForRow(row)
+  if (!id || !nextPassword) {
+    return
+  }
+
+  updateField(id, 'password', nextPassword, {
+    immediate: true
+  })
 }
 
 function randomIndex(max: number) {
@@ -737,7 +803,7 @@ function applyCreateRoleDefaults(role: string) {
       createForm.level = 'admin'
       createForm.userType = 'admin'
       createForm.isPlatformAdmin = true
-      createForm.clientId = ''
+      createForm.coreTenantId = ''
       createForm.storeId = 'all'
       break
     default:
@@ -752,7 +818,7 @@ function resetCreateForm() {
   createForm.email = ''
   createForm.password = ''
   createForm.phone = ''
-  createForm.clientId = canChooseClient.value ? '' : sessionSimulation.clientId
+  createForm.coreTenantId = canChooseClient.value ? '' : String(sessionSimulation.activeClientCoreTenantId || '').trim()
   createForm.level = 'marketing'
   createForm.userType = canChooseClient.value ? 'client' : 'client'
   createForm.businessRole = canChooseClient.value ? 'marketing' : 'marketing'
@@ -785,8 +851,8 @@ function openAccessModalForRow(row: Record<string, unknown>) {
 }
 
 async function saveAccessOverrides() {
-  const targetId = Number(accessDraftUserId.value ?? 0)
-  if (!Number.isFinite(targetId) || targetId <= 0) {
+  const targetId = String(accessDraftUserId.value ?? '').trim()
+  if (!targetId) {
     accessModalOpen.value = false
     return
   }
@@ -827,7 +893,7 @@ async function submitCreateUser() {
     email: createForm.email,
     password: createForm.password,
     phone: createForm.phone,
-    clientId: createForm.clientId === '' ? null : Number(createForm.clientId),
+    coreTenantId: createForm.coreTenantId === '' ? null : String(createForm.coreTenantId || '').trim(),
     level: createForm.level,
     userType: createForm.userType,
     businessRole: createForm.businessRole,
@@ -855,8 +921,8 @@ function onCellUpdate(payload: OmniTableCellUpdate) {
     return
   }
 
-  const id = Number(payload.rowId)
-  if (!Number.isFinite(id) || id <= 0) {
+  const id = String(payload.rowId ?? '').trim()
+  if (!id) {
     return
   }
 
@@ -881,7 +947,7 @@ watch(
       createForm.businessRole = 'system_admin'
       createForm.level = 'admin'
       createForm.userType = 'admin'
-      createForm.clientId = ''
+      createForm.coreTenantId = ''
       createForm.storeId = 'all'
       return
     }
@@ -904,7 +970,7 @@ watch(
 )
 
 watch(
-  () => createForm.clientId,
+  () => createForm.coreTenantId,
   () => {
     const normalizedStoreId = normalizeStoreValue(createForm.storeId)
     const availableStores = selectedCreateClientOption.value?.stores || []
@@ -929,7 +995,7 @@ watch(
   { immediate: true }
 )
 
-async function onDeleteUser(id: number) {
+async function onDeleteUser(id: string) {
   const target = users.value.find(user => user.id === id)
   if (target?.isPlatformAdmin) {
     return
@@ -1017,6 +1083,100 @@ onMounted(() => {
             :loading="Boolean(savingMap[`${rowIdValue(row)}:approve`])"
             @click="approveLogin(rowIdValue(row))"
           />
+
+          <UPopover v-if="canEditStoreAssignment(row)" :content="{ align: 'end', side: 'bottom' }">
+            <UButton
+              icon="i-lucide-store"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              aria-label="Vincular loja"
+            />
+            <template #content>
+              <div class="w-[300px] space-y-3 p-3">
+                <div class="space-y-1">
+                  <p class="text-sm font-semibold text-[rgb(var(--text))]">Loja vinculada</p>
+                  <p class="text-xs text-[rgb(var(--muted))]">Selecione uma loja do cliente ou deixe como todas as lojas.</p>
+                </div>
+
+                <USelect
+                  :model-value="storeDraftValueForRow(row)"
+                  :items="storeOptionsForRow(row)"
+                  :disabled="!canEditStoreAssignment(row)"
+                  @update:model-value="setStoreDraftValue(row, $event)"
+                />
+
+                <p class="text-xs text-[rgb(var(--muted))]">
+                  Papel atual: {{ businessRoleLabel(toUser(row).businessRole) }}.
+                  Level efetivo: {{ levelLabel(toUser(row).level) }}.
+                </p>
+
+                <div class="flex items-center justify-end gap-2">
+                  <UButton
+                    label="Salvar loja"
+                    color="primary"
+                    size="xs"
+                    :disabled="!canEditStoreAssignment(row)"
+                    :loading="Boolean(savingMap[`${rowIdValue(row)}:storeId`])"
+                    @click="saveStoreAssignment(row)"
+                  />
+                </div>
+              </div>
+            </template>
+          </UPopover>
+
+          <UPopover :content="{ align: 'end', side: 'bottom' }">
+            <UButton
+              icon="i-lucide-key-round"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              aria-label="Redefinir senha"
+            />
+            <template #content>
+              <div class="w-[320px] space-y-3 p-3">
+                <div class="space-y-1">
+                  <p class="text-sm font-semibold text-[rgb(var(--text))]">Redefinir senha</p>
+                  <p class="text-xs text-[rgb(var(--muted))]">A senha atual nao pode ser exibida porque o core guarda apenas o hash. Aqui voce define uma nova senha temporaria.</p>
+                </div>
+
+                <UInput
+                  :model-value="passwordDraftValueForRow(row)"
+                  type="text"
+                  @update:model-value="passwordPopoverDrafts[rowIdValue(row)] = String($event || '')"
+                />
+
+                <div class="flex items-center justify-between gap-2">
+                  <UButton
+                    icon="i-lucide-refresh-cw"
+                    label="Gerar nova"
+                    color="neutral"
+                    variant="soft"
+                    size="xs"
+                    @click="regeneratePasswordDraftForRow(row)"
+                  />
+                  <UButton
+                    icon="i-lucide-copy"
+                    label="Copiar"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    @click="copyPasswordDraftForRow(row)"
+                  />
+                </div>
+
+                <div class="flex items-center justify-end gap-2">
+                  <UButton
+                    label="Aplicar senha"
+                    color="primary"
+                    size="xs"
+                    :loading="Boolean(savingMap[`${rowIdValue(row)}:password`])"
+                    @click="applyPasswordReset(row)"
+                  />
+                </div>
+              </div>
+            </template>
+          </UPopover>
 
           <UPopover :content="{ align: 'end', side: 'bottom' }">
             <UButton icon="i-lucide-info" color="neutral" variant="ghost" size="sm" aria-label="Info" />
@@ -1160,7 +1320,7 @@ onMounted(() => {
 
           <div v-if="canChooseClient && !createForm.isPlatformAdmin" class="space-y-1 sm:col-span-2">
             <p class="text-xs text-[rgb(var(--muted))]">Cliente vinculado</p>
-            <USelect v-model="createForm.clientId" :items="clientSelectOptions" placeholder="Sem cliente" />
+            <USelect v-model="createForm.coreTenantId" :items="clientSelectOptions" placeholder="Sem cliente" />
           </div>
 
           <div v-else-if="canChooseClient" class="space-y-1 sm:col-span-2">
@@ -1199,7 +1359,7 @@ onMounted(() => {
           </div>
 
           <UAlert
-            v-if="canChooseClient && !createForm.isPlatformAdmin && !normalizeClientOptionId(createForm.clientId)"
+            v-if="canChooseClient && !createForm.isPlatformAdmin && !normalizeCoreTenantId(createForm.coreTenantId)"
             class="sm:col-span-2"
             color="neutral"
             variant="soft"

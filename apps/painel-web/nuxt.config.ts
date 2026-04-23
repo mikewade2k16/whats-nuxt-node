@@ -1,35 +1,39 @@
+const watchPollingEnabled = process.env.NUXT_WATCH_POLLING === 'true'
+const watchPollingInterval = Number(process.env.NUXT_WATCH_POLL_INTERVAL ?? 1000)
+const watcher = process.env.NUXT_WATCHER || 'chokidar-granular'
+const isDevRuntime = process.env.NODE_ENV !== 'production'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  css: ['~/assets/css/main.css', '~/assets/css/fila-atendimento-operation.css'],
-  app: {
-    head: {
-      link: [
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/icon?family=Material+Icons+Round'
-        }
-      ]
+  extends: ['./modules/fila-atendimento/runtime'],
+  css: ['~/assets/css/main.css'],
+  modules: ['@nuxt/ui', '@pinia/nuxt'],
+  ui: {
+    fonts: false,
+    experimental: {
+      componentDetection: true
     }
   },
-  modules: ['@nuxt/ui', '@pinia/nuxt'],
+  icon: {
+    provider: 'server',
+    fallbackToApi: false,
+    collections: ['lucide']
+  },
+  routeRules: {
+    '/': { redirect: '/admin/login' },
+    ...(isDevRuntime ? {} : { '/admin/**': { ssr: false } }),
+    '/_nuxt/**': {
+      headers: {
+        'cache-control': 'public, max-age=31536000, immutable'
+      }
+    }
+  },
   runtimeConfig: {
     apiInternalBase: process.env.NUXT_API_INTERNAL_BASE ?? process.env.API_INTERNAL_BASE ?? 'http://atendimento-online-api:4000',
     coreApiInternalBase:
       process.env.NUXT_CORE_API_INTERNAL_BASE ??
       process.env.CORE_API_INTERNAL_BASE ??
       'http://plataforma-api:4100',
-    filaAtendimentoApiInternalBase:
-      process.env.NUXT_FILA_ATENDIMENTO_API_INTERNAL_BASE ??
-      process.env.FILA_ATENDIMENTO_API_INTERNAL_BASE ??
-      'http://plataforma-api:4100/core/modules/fila-atendimento',
-    filaAtendimentoWebInternalBase:
-      process.env.NUXT_FILA_ATENDIMENTO_WEB_INTERNAL_BASE ??
-      process.env.FILA_ATENDIMENTO_WEB_INTERNAL_BASE ??
-      'http://painel-web:3000',
-    filaAtendimentoShellBridgeSecret:
-      process.env.NUXT_FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET ??
-      process.env.FILA_ATENDIMENTO_SHELL_BRIDGE_SECRET ??
-      '',
     internalUpstreamTimeoutMs:
       process.env.NUXT_INTERNAL_UPSTREAM_TIMEOUT_MS ??
       process.env.INTERNAL_UPSTREAM_TIMEOUT_MS ??
@@ -44,24 +48,24 @@ export default defineNuxtConfig({
     tenorBaseUrl: process.env.NUXT_TENOR_BASE_URL ?? 'https://tenor.googleapis.com/v2',
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:4000',
-      filaAtendimentoBase: process.env.NUXT_PUBLIC_FILA_ATENDIMENTO_BASE ?? 'http://localhost:3000',
-      filaAtendimentoApiBase: process.env.NUXT_PUBLIC_FILA_ATENDIMENTO_API_BASE ?? 'http://localhost:3000/api/admin/modules/fila-atendimento',
       websocketUrl: process.env.NUXT_PUBLIC_WEBSOCKET_URL || '/ws/tenant',
       websocketEnabled: process.env.NUXT_PUBLIC_WEBSOCKET_ENABLED !== 'false'
     }
   },
   experimental: {
-    watcher: 'parcel'
+    watcher
   },
   vite: {
     server: {
       watch: {
-        usePolling: true,
-        interval: 320
+        usePolling: watchPollingEnabled,
+        interval: watchPollingInterval,
+        ignored: ['**/node_modules/**', '**/.nuxt/**', '**/.output/**', '**/.nitro/**']
       }
     }
   },
   nitro: {
+    compressPublicAssets: true,
     routeRules: {
       '/admin/core': { redirect: '/admin/manage/clientes' },
       '/admin/core/cadastro': { redirect: '/admin/manage/clientes' },
@@ -71,8 +75,9 @@ export default defineNuxtConfig({
       websocket: true
     },
     watchOptions: {
-      usePolling: true,
-      interval: 320,
+      usePolling: watchPollingEnabled,
+      interval: watchPollingInterval,
+      ignored: ['**/node_modules/**', '**/.nuxt/**', '**/.output/**', '**/.nitro/**'],
       awaitWriteFinish: {
         stabilityThreshold: 500,
         pollInterval: 180

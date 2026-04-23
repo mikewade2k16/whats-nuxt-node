@@ -22,6 +22,7 @@ type Service struct {
 	jwtSecret        []byte
 	issuer           string
 	ttl              time.Duration
+	persistentTTL    time.Duration
 	passwordResetTTL time.Duration
 	smtpConfig       SMTPConfig
 	now              func() time.Time
@@ -30,12 +31,17 @@ type Service struct {
 
 const globalSessionConfigKey = "global"
 
-func NewService(pool *pgxpool.Pool, jwtSecret, issuer string, ttl time.Duration) *Service {
+func NewService(pool *pgxpool.Pool, jwtSecret, issuer string, ttl time.Duration, persistentTTL time.Duration) *Service {
+	if persistentTTL <= 0 {
+		persistentTTL = ttl
+	}
+
 	return &Service{
 		pool:             pool,
 		jwtSecret:        []byte(jwtSecret),
 		issuer:           issuer,
 		ttl:              ttl,
+		persistentTTL:    persistentTTL,
 		passwordResetTTL: defaultPasswordResetTTL,
 		now:              time.Now,
 		sendMail:         defaultSendMail,
@@ -114,7 +120,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginOutput, err
 	}
 
 	now := time.Now().UTC()
-	sessionTTL, err := s.resolveSessionTTL(ctx)
+	sessionTTL, err := s.resolveSessionTTL(ctx, input.Remember)
 	if err != nil {
 		return LoginOutput{}, err
 	}
@@ -593,8 +599,8 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 		resolvedTenantID     string
 		resolvedTenantSlug   string
 		resolvedStoreID      string
+		resolvedStoreName    string
 		resolvedBusinessRole string
-		clientID             *int
 		moduleCodesJSON      []byte
 	)
 	profileTenantFilter := resolveProfileTenantFilter(claims)
@@ -608,20 +614,12 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 			u.is_platform_admin,
 			COALESCE(scope.tenant_id::text, ''),
 			COALESCE(t.slug, ''),
-			t.legacy_id,
 			COALESCE(t.name, ''),
-			CASE
-				WHEN NULLIF(scope.access_level, '') IS NOT NULL THEN scope.access_level
-				WHEN u.is_platform_admin THEN 'admin'
-				ELSE 'marketing'
-			END,
-			CASE
-				WHEN NULLIF(scope.user_type, '') IS NOT NULL THEN scope.user_type
-				WHEN u.is_platform_admin THEN 'admin'
-				ELSE 'client'
-			END,
-			COALESCE(scope.business_role, ''),
+			%s,
+			%s,
+			%s,
 			COALESCE(scope.store_id::text, ''),
+			COALESCE(store.name, ''),
 			COALESCE(scope.registration_number, ''),
 			COALESCE(u.preferences::text, '{}'),
 			COALESCE(module_scope.module_codes, '[]'::json),
@@ -648,13 +646,18 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 					WHEN 'invited' THEN 1
 					ELSE 2
 				END,
-				tu.is_owner DESC,
+				%s,
 				tu.created_at DESC
 			LIMIT 1
 		 ) scope ON true
 		 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
+		 LEFT JOIN tenant_stores store ON store.id = scope.store_id
 		 %s
 		 WHERE u.id = $1::uuid AND u.status = 'active' AND u.deleted_at IS NULL`,
+		effectiveScopeAccessLevelSQL("scope", "u"),
+		effectiveScopeUserTypeSQL("scope", "u"),
+		effectiveScopeBusinessRoleSQL("scope", "u"),
+		effectiveScopeOrderSQL("tu"),
 		authUserModuleScopeJoinClause(),
 	)
 	err := s.pool.QueryRow(
@@ -671,12 +674,12 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 		&user.IsPlatformAdmin,
 		&resolvedTenantID,
 		&resolvedTenantSlug,
-		&clientID,
 		&user.ClientName,
 		&user.Level,
 		&user.UserType,
 		&resolvedBusinessRole,
 		&resolvedStoreID,
+		&resolvedStoreName,
 		&user.RegistrationNumber,
 		&user.Preferences,
 		&moduleCodesJSON,
@@ -696,8 +699,8 @@ func (s *Service) Me(ctx context.Context, claims Claims) (MeOutput, error) {
 	if resolvedStoreID != "" {
 		user.StoreID = &resolvedStoreID
 	}
+	user.StoreName = strings.TrimSpace(resolvedStoreName)
 	user.BusinessRole = resolvedBusinessRole
-	user.ClientID = clientID
 	if err := json.Unmarshal(moduleCodesJSON, &user.ModuleCodes); err != nil {
 		user.ModuleCodes = []string{}
 	}
@@ -729,6 +732,52 @@ func resolveProfileTenantID(claims Claims, resolvedTenantID string) *string {
 	}
 
 	return &normalizedClaimsTenantID
+}
+
+func effectiveScopeAccessLevelSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.access_level, '') IS NOT NULL THEN %s.access_level
+		WHEN COALESCE(%s.business_role, '') IN ('owner', 'system_admin') THEN 'admin'
+		WHEN COALESCE(%s.business_role, '') = 'consultant' THEN 'consultant'
+		WHEN COALESCE(%s.business_role, '') IN ('store_manager', 'general_manager') THEN 'manager'
+		WHEN COALESCE(%s.business_role, '') = 'finance' THEN 'finance'
+		WHEN COALESCE(%s.business_role, '') = 'viewer' THEN 'viewer'
+		WHEN %s.is_platform_admin THEN 'admin'
+		ELSE 'marketing'
+	END`, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, userAlias)
+}
+
+func effectiveScopeUserTypeSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.user_type, '') IS NOT NULL THEN %s.user_type
+		WHEN COALESCE(%s.business_role, '') IN ('owner', 'system_admin') THEN 'admin'
+		WHEN %s.is_platform_admin THEN 'admin'
+		ELSE 'client'
+	END`, scopeAlias, scopeAlias, scopeAlias, userAlias)
+}
+
+func effectiveScopeBusinessRoleSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.business_role, '') IS NOT NULL THEN %s.business_role
+		WHEN %s.is_platform_admin THEN 'system_admin'
+		WHEN COALESCE(%s.access_level, '') = 'admin' THEN 'owner'
+		WHEN COALESCE(%s.access_level, '') = 'consultant' THEN 'consultant'
+		WHEN COALESCE(%s.access_level, '') = 'manager' THEN 'general_manager'
+		WHEN COALESCE(%s.access_level, '') = 'finance' THEN 'finance'
+		WHEN COALESCE(%s.access_level, '') = 'viewer' THEN 'viewer'
+		ELSE 'marketing'
+	END`, scopeAlias, scopeAlias, userAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias)
+}
+
+func effectiveScopeOrderSQL(scopeAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN %s.is_owner
+			OR COALESCE(%s.business_role, '') IN ('owner', 'system_admin')
+			OR COALESCE(%s.access_level, '') = 'admin'
+			OR COALESCE(%s.user_type, '') = 'admin'
+		THEN 0
+		ELSE 1
+	END`, scopeAlias, scopeAlias, scopeAlias, scopeAlias)
 }
 
 func authUserModuleScopeJoinClause() string {
@@ -770,6 +819,7 @@ func authUserModuleScopeJoinClause() string {
 			WHERE scope.id IS NOT NULL
 			  AND (
 				scope.is_owner
+				OR COALESCE(scope.business_role, '') IN ('owner', 'system_admin')
 				OR COALESCE(scope.access_level, '') = 'admin'
 				OR COALESCE(scope.user_type, '') = 'admin'
 			  )
@@ -783,7 +833,7 @@ func authUserModuleScopeJoinClause() string {
 		)
 		SELECT
 			COALESCE(json_agg(mod.code ORDER BY mod.code), '[]'::json) AS module_codes,
-			COALESCE(bool_or(mod.code = 'atendimento'), false) AS atendimento_access
+			COALESCE(bool_or(mod.code = 'fila-atendimento'), false) AS atendimento_access
 		FROM (
 			SELECT DISTINCT code
 			FROM effective_user_modules
@@ -848,13 +898,18 @@ func (s *Service) expireStaleSessions(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) resolveSessionTTL(ctx context.Context) (time.Duration, error) {
+func (s *Service) resolveSessionTTL(ctx context.Context, persistent bool) (time.Duration, error) {
 	config, err := s.GetSessionConfig(ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	return time.Duration(config.TTLMinutes) * time.Minute, nil
+	sessionTTL := time.Duration(config.TTLMinutes) * time.Minute
+	if persistent && s.persistentTTL > sessionTTL {
+		return s.persistentTTL, nil
+	}
+
+	return sessionTTL, nil
 }
 
 func (s *Service) defaultTTLMinutes() int {
@@ -930,7 +985,16 @@ func (s *Service) resolveTenantID(ctx context.Context, userID, requestedTenantID
 		`SELECT tenant_id
 		 FROM tenant_users
 		 WHERE user_id = $1 AND status = 'active'
-		 ORDER BY is_owner DESC, created_at ASC
+		 ORDER BY
+		 	CASE
+		 		WHEN is_owner
+		 			OR COALESCE(business_role, '') IN ('owner', 'system_admin')
+		 			OR COALESCE(access_level, '') = 'admin'
+		 			OR COALESCE(user_type, '') = 'admin'
+		 		THEN 0
+		 		ELSE 1
+		 	END,
+		 	created_at ASC
 		 LIMIT 1`,
 		userID,
 	).Scan(&tenantID)

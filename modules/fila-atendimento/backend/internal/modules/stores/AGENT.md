@@ -48,7 +48,7 @@ Ele nao deve cuidar de:
 - exclusao de loja nunca deve depender apenas do `on delete cascade`
 - antes de excluir, o modulo deve bloquear a operacao se ainda existirem:
   - consultores vinculados
-  - usuarios vinculados por `user_store_roles`
+  - vinculos de usuario resolvidos no core por `platform_core.tenant_users.store_id`
   - fila, atendimento, pausa ou status operacional
   - historico operacional
 - o bloqueio deve voltar para a UI com detalhes estruturados, para o admin entender o motivo

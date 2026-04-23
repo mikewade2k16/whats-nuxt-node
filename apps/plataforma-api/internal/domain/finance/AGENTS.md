@@ -18,7 +18,7 @@
 - `ActorContext`: usuário autenticado que opera a planilha
 - `TenantContext`: tenant ativo e isolamento de dados
 - `AccessPolicy`: validação de acesso ao módulo `finance`
-- `PersistenceProvider`: acesso ao schema `platform_core`
+- `PersistenceProvider`: acesso ao schema `finance` e leitura compartilhada de `platform_core.tenants`
 - `Clock`: datas automáticas e normalização de `effectiveDate` em `America/Sao_Paulo`
 
 ## Contratos que exporta
@@ -40,9 +40,10 @@
 
 ## Persistência sob responsabilidade do módulo
 
-- schema: `platform_core`
+- schema: `finance`
 - tabelas principais: `finance_configs`, `finance_categories`, `finance_fixed_accounts`, `finance_fixed_account_members`, `finance_recurring_entries`, `finance_sheets`, `finance_lines`, `finance_line_adjustments`
-- migrations-base: `0012_finance_module.sql`, `0013_backfill_finance_effective_dates.sql`, `0014_fix_finance_effective_dates_timezone.sql`, `0015_finance_scalability_indexes.sql`
+- tabelas compartilhadas consumidas por referência: `platform_core.tenants`
+- migrations-base: `0012_finance_module.sql`, `0013_backfill_finance_effective_dates.sql`, `0014_fix_finance_effective_dates_timezone.sql`, `0015_finance_scalability_indexes.sql`, `0030_extract_finance_schema.sql`
 - índices esperados: `config_id + position`, `fixed_account_id + position`, `sheet_id + kind + position`
 
 ## Endpoints, filas e interfaces expostas

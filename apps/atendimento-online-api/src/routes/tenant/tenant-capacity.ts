@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "../../domain/access.js";
 
 export function resolveConfiguredChannelCount(whatsappInstance: string | null | undefined) {
   return whatsappInstance?.trim() ? 1 : 0;

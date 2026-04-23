@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/directorysync"
 )
 
 type PostgresRepository struct {
@@ -23,7 +25,7 @@ func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID s
 	err := repository.pool.QueryRow(ctx, `
 		select exists(
 			select 1
-			from stores
+			from platform_core.tenant_stores
 			where id = $1::uuid
 			  and is_active = true
 		);
@@ -39,7 +41,7 @@ func (repository *PostgresRepository) GetStoreName(ctx context.Context, storeID 
 	var name string
 	err := repository.pool.QueryRow(ctx, `
 		select name
-		from stores
+		from platform_core.tenant_stores
 		where id = $1::uuid
 		limit 1;
 	`, storeID).Scan(&name)
@@ -76,23 +78,29 @@ func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Conte
 }
 
 func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID string) ([]ConsultantProfile, error) {
+	if err := directorysync.SyncConsultantsByStore(ctx, repository.pool, storeID); err != nil {
+		return nil, err
+	}
+
 	rows, err := repository.pool.Query(ctx, `
 		select
-			id::text,
-			store_id::text,
-			name,
-			role_label,
-			initials,
-			color,
-			monthly_goal,
-			commission_rate,
-			conversion_goal,
-			avg_ticket_goal,
-			pa_goal
-		from consultants
-		where store_id = $1::uuid
-		  and is_active = true
-		order by name asc;
+			c.id::text,
+			c.store_id::text,
+			coalesce(nullif(trim(u.nick), ''), nullif(trim(u.name), ''), nullif(trim(c.name), ''), split_part(lower(coalesce(u.email::text, '')), '@', 1)) as display_name,
+			c.role_label,
+			c.initials,
+			coalesce(nullif(trim(u.avatar_url), ''), '') as avatar_url,
+			c.color,
+			c.monthly_goal,
+			c.commission_rate,
+			c.conversion_goal,
+			c.avg_ticket_goal,
+			c.pa_goal
+		from consultants c
+		left join platform_core.users u on u.id = c.user_id
+		where c.store_id = $1::uuid
+		  and c.is_active = true
+		order by display_name asc;
 	`, storeID)
 	if err != nil {
 		return nil, err
@@ -108,6 +116,7 @@ func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID st
 			&consultant.Name,
 			&consultant.Role,
 			&consultant.Initials,
+			&consultant.AvatarURL,
 			&consultant.Color,
 			&consultant.MonthlyGoal,
 			&consultant.CommissionRate,
@@ -121,6 +130,7 @@ func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID st
 		consultant.Name = strings.TrimSpace(consultant.Name)
 		consultant.Role = strings.TrimSpace(consultant.Role)
 		consultant.Initials = strings.TrimSpace(consultant.Initials)
+		consultant.AvatarURL = strings.TrimSpace(consultant.AvatarURL)
 		consultant.Color = strings.TrimSpace(consultant.Color)
 		roster = append(roster, consultant)
 	}
@@ -132,7 +142,7 @@ func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID st
 	return roster, nil
 }
 
-func (repository *PostgresRepository) LoadSnapshot(ctx context.Context, storeID string) (SnapshotState, error) {
+func (repository *PostgresRepository) LoadSnapshot(ctx context.Context, storeID string, options SnapshotLoadOptions) (SnapshotState, error) {
 	waitingList, err := repository.loadWaitingList(ctx, storeID)
 	if err != nil {
 		return SnapshotState{}, err
@@ -153,14 +163,20 @@ func (repository *PostgresRepository) LoadSnapshot(ctx context.Context, storeID 
 		return SnapshotState{}, err
 	}
 
-	sessions, err := repository.loadSessions(ctx, storeID)
-	if err != nil {
-		return SnapshotState{}, err
+	var sessions []ConsultantSession
+	if options.IncludeActivitySessions {
+		sessions, err = repository.loadSessions(ctx, storeID)
+		if err != nil {
+			return SnapshotState{}, err
+		}
 	}
 
-	serviceHistory, err := repository.loadServiceHistory(ctx, storeID)
-	if err != nil {
-		return SnapshotState{}, err
+	var serviceHistory []ServiceHistoryEntry
+	if options.IncludeHistory {
+		serviceHistory, err = repository.loadServiceHistory(ctx, storeID)
+		if err != nil {
+			return SnapshotState{}, err
+		}
 	}
 
 	return SnapshotState{
@@ -229,6 +245,7 @@ func (repository *PostgresRepository) loadWaitingList(ctx context.Context, store
 		if err := rows.Scan(&item.ConsultantID, &item.QueueJoinedAt); err != nil {
 			return nil, err
 		}
+		item.QueueJoinedAt = normalizeMoment(item.QueueJoinedAt)
 		items = append(items, item)
 	}
 
@@ -272,6 +289,8 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			return nil, err
 		}
 
+		item.ServiceStartedAt = normalizeMoment(item.ServiceStartedAt)
+		item.QueueJoinedAt = normalizeMoment(item.QueueJoinedAt)
 		item.SkippedPeople = decodeSkippedPeople(skippedPeopleRaw)
 		items = append(items, item)
 	}
@@ -299,6 +318,7 @@ func (repository *PostgresRepository) loadPausedEmployees(ctx context.Context, s
 		}
 		item.Reason = strings.TrimSpace(item.Reason)
 		item.Kind = normalizePauseKind(item.Kind)
+		item.StartedAt = normalizeMoment(item.StartedAt)
 		items = append(items, item)
 	}
 
@@ -323,6 +343,7 @@ func (repository *PostgresRepository) loadCurrentStatus(ctx context.Context, sto
 		if err := rows.Scan(&consultantID, &status.Status, &status.StartedAt); err != nil {
 			return nil, err
 		}
+		status.StartedAt = normalizeMoment(status.StartedAt)
 		items[consultantID] = status
 	}
 
@@ -347,6 +368,8 @@ func (repository *PostgresRepository) loadSessions(ctx context.Context, storeID 
 		if err := rows.Scan(&item.PersonID, &item.Status, &item.StartedAt, &item.EndedAt, &item.DurationMs); err != nil {
 			return nil, err
 		}
+		item.StartedAt = normalizeMoment(item.StartedAt)
+		item.EndedAt = normalizeMoment(item.EndedAt)
 		items = append(items, item)
 	}
 
@@ -465,6 +488,8 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			return nil, err
 		}
 
+		entry.StartedAt = normalizeMoment(entry.StartedAt)
+		entry.FinishedAt = normalizeMoment(entry.FinishedAt)
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
@@ -490,7 +515,7 @@ func replaceWaitingList(ctx context.Context, tx pgx.Tx, storeID string, items []
 		if _, err := tx.Exec(ctx, `
 			insert into operation_queue_entries (store_id, consultant_id, queue_joined_at, sort_order)
 			values ($1::uuid, $2::uuid, $3, $4);
-		`, storeID, item.ConsultantID, item.QueueJoinedAt, index); err != nil {
+		`, storeID, item.ConsultantID, normalizeMoment(item.QueueJoinedAt), index); err != nil {
 			return err
 		}
 	}
@@ -526,8 +551,8 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			storeID,
 			item.ConsultantID,
 			item.ServiceID,
-			item.ServiceStartedAt,
-			item.QueueJoinedAt,
+			normalizeMoment(item.ServiceStartedAt),
+			normalizeMoment(item.QueueJoinedAt),
 			item.QueueWaitMs,
 			item.QueuePositionAtStart,
 			item.StartMode,
@@ -549,7 +574,7 @@ func replacePausedEmployees(ctx context.Context, tx pgx.Tx, storeID string, item
 		if _, err := tx.Exec(ctx, `
 			insert into operation_paused_consultants (store_id, consultant_id, reason, kind, started_at)
 			values ($1::uuid, $2::uuid, $3, $4, $5);
-		`, storeID, item.ConsultantID, item.Reason, normalizePauseKind(item.Kind), item.StartedAt); err != nil {
+		`, storeID, item.ConsultantID, item.Reason, normalizePauseKind(item.Kind), normalizeMoment(item.StartedAt)); err != nil {
 			return err
 		}
 	}
@@ -566,7 +591,7 @@ func replaceCurrentStatus(ctx context.Context, tx pgx.Tx, storeID string, items 
 		if _, err := tx.Exec(ctx, `
 			insert into operation_current_status (store_id, consultant_id, status, started_at)
 			values ($1::uuid, $2::uuid, $3, $4);
-		`, storeID, consultantID, item.Status, item.StartedAt); err != nil {
+		`, storeID, consultantID, item.Status, normalizeMoment(item.StartedAt)); err != nil {
 			return err
 		}
 	}
@@ -586,7 +611,7 @@ func appendSessions(ctx context.Context, tx pgx.Tx, storeID string, items []Cons
 				duration_ms
 			)
 			values ($1::uuid, $2::uuid, $3, $4, $5, $6);
-		`, storeID, item.PersonID, item.Status, item.StartedAt, item.EndedAt, item.DurationMs); err != nil {
+		`, storeID, item.PersonID, item.Status, normalizeMoment(item.StartedAt), normalizeMoment(item.EndedAt), item.DurationMs); err != nil {
 			return err
 		}
 	}
@@ -693,8 +718,8 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.ServiceID,
 			item.PersonID,
 			item.PersonName,
-			item.StartedAt,
-			item.FinishedAt,
+			normalizeMoment(item.StartedAt),
+			normalizeMoment(item.FinishedAt),
 			item.DurationMs,
 			item.FinishOutcome,
 			item.StartMode,

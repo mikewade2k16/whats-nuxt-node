@@ -14,7 +14,7 @@ func replaceFinanceCategories(ctx context.Context, tx pgx.Tx, configUUID string,
 	for index, category := range categories {
 		var categoryID string
 		err := tx.QueryRow(ctx, `
-			INSERT INTO finance_categories (id, config_id, name, kind, description, position)
+			INSERT INTO finance.finance_categories (id, config_id, name, kind, description, position)
 			VALUES (COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid, $2::uuid, $3, $4, $5, $6)
 			ON CONFLICT (id) DO UPDATE
 			SET name = EXCLUDED.name,
@@ -41,7 +41,7 @@ func replaceFinanceCategories(ctx context.Context, tx pgx.Tx, configUUID string,
 		keepIDs = append(keepIDs, categoryID)
 	}
 
-	return deleteScopedUUIDRows(ctx, tx, "finance_categories", "config_id", configUUID, "id", keepIDs)
+	return deleteScopedUUIDRows(ctx, tx, "finance.finance_categories", "config_id", configUUID, "id", keepIDs)
 }
 
 func replaceFinanceFixedAccounts(ctx context.Context, tx pgx.Tx, configUUID string, fixedAccounts []FixedAccountInput) error {
@@ -55,7 +55,7 @@ func replaceFinanceFixedAccounts(ctx context.Context, tx pgx.Tx, configUUID stri
 
 		var accountID string
 		err = tx.QueryRow(ctx, `
-			INSERT INTO finance_fixed_accounts (id, config_id, name, kind, category_id, default_amount, notes, position)
+			INSERT INTO finance.finance_fixed_accounts (id, config_id, name, kind, category_id, default_amount, notes, position)
 			VALUES (COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid, $2::uuid, $3, $4, $5::uuid, $6, $7, $8)
 			ON CONFLICT (id) DO UPDATE
 			SET name = EXCLUDED.name,
@@ -90,7 +90,7 @@ func replaceFinanceFixedAccounts(ctx context.Context, tx pgx.Tx, configUUID stri
 		keepIDs = append(keepIDs, accountID)
 	}
 
-	return deleteScopedUUIDRows(ctx, tx, "finance_fixed_accounts", "config_id", configUUID, "id", keepIDs)
+	return deleteScopedUUIDRows(ctx, tx, "finance.finance_fixed_accounts", "config_id", configUUID, "id", keepIDs)
 }
 
 func resolveScopedFinanceCategoryID(ctx context.Context, tx pgx.Tx, configUUID, rawCategoryID string) (*string, error) {
@@ -102,7 +102,7 @@ func resolveScopedFinanceCategoryID(ctx context.Context, tx pgx.Tx, configUUID, 
 	var scopedCategoryID string
 	err := tx.QueryRow(ctx, `
 		SELECT id::text
-		FROM finance_categories
+		FROM finance.finance_categories
 		WHERE id = $1::uuid
 		  AND config_id = $2::uuid
 	`, categoryID, configUUID).Scan(&scopedCategoryID)
@@ -122,7 +122,7 @@ func replaceFinanceFixedAccountMembers(ctx context.Context, tx pgx.Tx, fixedAcco
 	for index, member := range members {
 		var memberID string
 		err := tx.QueryRow(ctx, `
-			INSERT INTO finance_fixed_account_members (id, fixed_account_id, name, amount, position)
+			INSERT INTO finance.finance_fixed_account_members (id, fixed_account_id, name, amount, position)
 			VALUES (COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid, $2::uuid, $3, $4, $5)
 			ON CONFLICT (id) DO UPDATE
 			SET name = EXCLUDED.name,
@@ -147,25 +147,25 @@ func replaceFinanceFixedAccountMembers(ctx context.Context, tx pgx.Tx, fixedAcco
 		keepIDs = append(keepIDs, memberID)
 	}
 
-	return deleteScopedUUIDRows(ctx, tx, "finance_fixed_account_members", "fixed_account_id", fixedAccountID, "id", keepIDs)
+	return deleteScopedUUIDRows(ctx, tx, "finance.finance_fixed_account_members", "fixed_account_id", fixedAccountID, "id", keepIDs)
 }
 
 func replaceFinanceRecurringEntries(ctx context.Context, tx pgx.Tx, configUUID string, recurringEntries []RecurringEntryInput) error {
 	keepSourceTenantIDs := make([]string, 0, len(recurringEntries))
 
 	for _, entry := range recurringEntries {
-		if entry.SourceClientID <= 0 {
+		if strings.TrimSpace(entry.SourceCoreTenantID) == "" {
 			return ErrInvalidInput
 		}
 
 		var sourceTenantID string
 		err := tx.QueryRow(ctx, `
 			SELECT id::text
-			FROM tenants
-			WHERE legacy_id = $1
+			FROM platform_core.tenants
+			WHERE id = $1::uuid
 			  AND deleted_at IS NULL
 			LIMIT 1
-		`, entry.SourceClientID).Scan(&sourceTenantID)
+		`, strings.TrimSpace(entry.SourceCoreTenantID)).Scan(&sourceTenantID)
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				return ErrInvalidInput
@@ -174,7 +174,7 @@ func replaceFinanceRecurringEntries(ctx context.Context, tx pgx.Tx, configUUID s
 		}
 
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO finance_recurring_entries (config_id, source_tenant_id, adjustment_amount, notes)
+			INSERT INTO finance.finance_recurring_entries (config_id, source_tenant_id, adjustment_amount, notes)
 			VALUES ($1::uuid, $2::uuid, $3, $4)
 			ON CONFLICT (config_id, source_tenant_id) DO UPDATE
 			SET adjustment_amount = EXCLUDED.adjustment_amount,
@@ -191,7 +191,7 @@ func replaceFinanceRecurringEntries(ctx context.Context, tx pgx.Tx, configUUID s
 		keepSourceTenantIDs = append(keepSourceTenantIDs, sourceTenantID)
 	}
 
-	return deleteScopedUUIDRows(ctx, tx, "finance_recurring_entries", "config_id", configUUID, "source_tenant_id", keepSourceTenantIDs)
+	return deleteScopedUUIDRows(ctx, tx, "finance.finance_recurring_entries", "config_id", configUUID, "source_tenant_id", keepSourceTenantIDs)
 }
 
 func deleteScopedUUIDRows(ctx context.Context, tx pgx.Tx, tableName, scopeColumn, scopeValue, targetColumn string, keepIDs []string) error {

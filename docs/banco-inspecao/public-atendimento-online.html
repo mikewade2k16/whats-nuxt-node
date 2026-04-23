@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Runtime operacional do atendimento-online</title>
+  <link rel="stylesheet" href="schema-pages.css" />
+</head>
+<body class="theme-public">
+  <main class="shell">
+    <nav class="topbar">
+      <a class="back-link" href="index.html">Voltar ao hub do banco</a>
+      <div class="schema-nav">
+        <a href="platform-core.html">platform_core</a>
+        <a class="active" href="public-atendimento-online.html">atendimento_online</a>
+        <a href="indicators.html">indicators</a>
+        <a href="fila-atendimento.html">fila_atendimento</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">Runtime operacional omnichannel</div>
+      <h1>O schema <code>atendimento_online</code> sustenta o runtime operacional do atendimento-online; tenant, usuário, grants autoritativos e limites já vêm do <code>platform_core</code></h1>
+      <p class="lead">Este banco segura o fluxo operacional real do atendimento digital. Conversa, mensagem, contato, instância e trilha fazem sentido aqui. O que saiu deste schema foi o ownership de tenant, usuário, elegibilidade de acesso por instância e segredo operacional persistido.</p>
+      <div class="chip-row">
+        <span class="chip">8 tabelas</span>
+        <span class="chip">0 shadows autoritativos</span>
+        <span class="chip">0 whitelists locais de acesso</span>
+        <span class="chip">0 segredos persistidos no banco</span>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <article class="panel">
+        <p class="metric-value">0</p>
+        <div class="metric-label">estruturas de <code>Tenant</code> ou <code>User</code> locais</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">4</p>
+        <div class="metric-label">eixos canônicos do módulo: config runtime, instância, conversa e mensagem</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">3</p>
+        <div class="metric-label">tipos de id lógico vindos do core: tenant, usuário e responsável/ator</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">1</p>
+        <div class="metric-label">schema físico já convergido para <code>atendimento_online</code></div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Mapa visual do schema</h2>
+        <p class="subhead">A melhor forma de enxergar este schema é como um runtime operacional puro: contexto de tenant e usuário vem do shell, e o que fica aqui é o domínio de canal, conversa, mensagem, trilha e preferências locais.</p>
+        <div class="cluster-grid">
+          <section class="cluster">
+            <div class="cluster-kicker">Integração com o core</div>
+            <h3>Contexto canônico</h3>
+            <p class="copy">O módulo consome tenant, usuário, grants autoritativos e limites do <code>platform_core</code>. Não há shadow físico local de diretório nem regra local de elegibilidade de acesso.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">tenantId</span>
+              <span class="entity-pill">assignedToId</span>
+              <span class="entity-pill">senderUserId</span>
+              <span class="entity-pill">actorUserId</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Canônico no módulo</div>
+            <h3>Runtime operacional</h3>
+            <p class="copy">Aqui está o coração operacional real do atendimento-online.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">AtendimentoTenantConfig</span>
+              <span class="entity-pill">WhatsAppInstance</span>
+              <span class="entity-pill">Contact</span>
+              <span class="entity-pill">Conversation</span>
+              <span class="entity-pill">Message</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Preferências e trilha</div>
+            <h3>Comportamento do operador</h3>
+            <p class="copy">O módulo também guarda trilha operacional e preferências individuais, sempre usando ids canônicos de usuário do core.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">AuditEvent</span>
+              <span class="entity-pill">SavedSticker</span>
+              <span class="entity-pill">HiddenMessageForUser</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Convergência concluída</div>
+            <h3>Acesso e segredo fora do banco</h3>
+            <p class="copy">Quem pode acessar o módulo é resolvido pelo shell, e a API key global da Evolution ficou fora da persistência do runtime.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">platform_core</span>
+              <span class="entity-pill">grants autoritativos</span>
+              <span class="entity-pill">segredo em ambiente</span>
+            </div>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Fluxo visual do schema</h2>
+        <div class="flowline">
+          <article class="flow-step">
+            <div class="step-index">1</div>
+            <h3>Contexto vindo do core</h3>
+            <p>Tenant ativo, usuário autenticado, grants de módulo e limites entram do <code>platform_core</code>.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">2</div>
+            <h3>Config runtime local</h3>
+            <p><code>AtendimentoTenantConfig</code> guarda apenas retenção e upload por tenant canônico.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">3</div>
+            <h3>Instância do canal</h3>
+            <p><code>WhatsAppInstance</code> define conta, roteamento e ownership operacional do canal.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">4</div>
+            <h3>Contato, conversa e mensagem</h3>
+            <p><code>Contact</code>, <code>Conversation</code> e <code>Message</code> consolidam o atendimento digital do tenant canônico.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">5</div>
+            <h3>Trilha e preferências</h3>
+            <p><code>AuditEvent</code>, <code>SavedSticker</code> e <code>HiddenMessageForUser</code> completam a operação sem recriar identidade local.</p>
+          </article>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid decision-grid">
+      <article class="decision">
+        <div class="decision-kicker">Canônico no módulo</div>
+        <h3>O que faz sentido continuar aqui</h3>
+        <ul class="simple-list">
+          <li><code>AtendimentoTenantConfig</code>, <code>WhatsAppInstance</code>, <code>Contact</code>, <code>Conversation</code> e <code>Message</code>.</li>
+          <li><code>AuditEvent</code>, <code>SavedSticker</code> e <code>HiddenMessageForUser</code>.</li>
+          <li>ids de tenant e usuário consumidos do core, não projetados em tabelas locais próprias.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Integração resolvida</div>
+        <h3>O que já não é shadow</h3>
+        <ul class="simple-list">
+          <li>não existe mais <code>Tenant</code> local.</li>
+          <li>não existe mais <code>User</code> local.</li>
+          <li>não existe mais whitelist local de acesso por instância.</li>
+          <li>não existe mais <code>evolutionApiKey</code> persistido no banco do módulo.</li>
+          <li>não existem mais enums locais de acesso persistidos no schema.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Situação atual</div>
+        <h3>Convergência estrutural concluída</h3>
+        <ul class="simple-list">
+          <li>o schema físico já é <code>atendimento_online</code>.</li>
+          <li>o acesso ao módulo vem do shell.</li>
+          <li>o segredo operacional da Evolution vem do ambiente.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid risk-grid">
+      <article class="risk">
+        <div class="risk-kicker">Estado atual</div>
+        <h3>Ownership sem ambiguidades</h3>
+        <p class="copy">O runtime ficou dono apenas do dado operacional. Tenant, usuário, grants autoritativos e limites permanecem no <code>platform_core</code>.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Estado atual</div>
+        <h3>Segredo fora da persistência</h3>
+        <p class="copy">A API key da Evolution não é mais persistida em tabela local; o runtime depende apenas de configuração de ambiente.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Estado atual</div>
+        <h3>Acesso sem overlay local</h3>
+        <p class="copy">O banco do módulo não define mais elegibilidade de operador por instância. Esse recorte passa a ser resolvido fora daqui, no shell.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Tabelas detalhadas</h2>
+        <p class="subhead">O objetivo desta área é mostrar claramente quais tabelas compõem o runtime operacional real e como elas se conectam ao core sem recriar diretório local de tenant ou usuário.</p>
+
+        <div class="table-groups">
+          <section class="group-card">
+            <h3>Configuração e canal</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">AtendimentoTenantConfig</span><span class="status status-current">Atual + integração</span></summary>
+              <div class="table-body">
+                <p class="table-role">Configuração operacional local por tenant canônico do core.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code> string PK</li>
+                  <li><code>retentionDays</code>, <code>maxUploadMb</code></li>
+                  <li><code>createdAt</code>, <code>updatedAt</code></li>
+                </ul>
+                <pre>{
+  "tenantId": "67668cc8-bc63-457d-b6ce-94118c593d6f",
+  "retentionDays": 15,
+  "maxUploadMb": 500
+}</pre>
+                <p class="table-notes">O runtime não replica mais nome, slug, grant base, limite de usuários nem segredo de canal.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">WhatsAppInstance</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Instância operacional do canal.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>instanceName</code>, <code>displayName</code></li>
+                  <li><code>phoneNumber</code>, <code>queueLabel</code></li>
+                  <li><code>createdByUserId</code>, <code>responsibleUserId</code></li>
+                  <li><code>isDefault</code>, <code>isActive</code></li>
+                </ul>
+                <pre>{
+  "tenantId": "67668cc8-bc63-457d-b6ce-94118c593d6f",
+  "instanceName": "demo-instance",
+  "displayName": "WhatsApp Demo Core Tenant",
+  "isDefault": true
+}</pre>
+                <p class="table-notes">As colunas de usuário e tenant guardam ids do core. O ownership local é do canal e do roteamento operacional.</p>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Contato, conversa e mensagem</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">Contact</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Cadastro operacional de contato.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>name</code>, <code>phone</code></li>
+                  <li><code>avatarUrl</code>, <code>source</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">Conversation</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Conversa consolidada por contato, canal e instância.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>instanceId</code>, <code>instanceScopeKey</code></li>
+                  <li><code>assignedToId</code>, <code>contactId</code>, <code>channel</code>, <code>externalId</code></li>
+                  <li><code>status</code>, <code>lastMessageAt</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">Message</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Mensagem inbound ou outbound da operação.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>conversationId</code>, <code>instanceId</code></li>
+                  <li><code>senderUserId</code>, <code>direction</code>, <code>messageType</code></li>
+                  <li><code>content</code>, mídia, metadata e status</li>
+                </ul>
+                <pre>{
+  "direction": "OUTBOUND",
+  "senderUserId": "e0556192-acd1-4774-ac2f-f79410178cf7",
+  "content": "Perfeito! Aqui o runtime operacional já está vinculado ao core."
+}</pre>
+                <p class="table-notes">A autoria humana usa id de usuário do core; o módulo não replica mais operador local.</p>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Trilha e preferências</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">AuditEvent</span><span class="status status-current">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">Trilha operacional ligada a conversa e mensagem.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>actorUserId</code></li>
+                  <li><code>conversationId</code>, <code>messageId</code></li>
+                  <li><code>eventType</code>, <code>payloadJson</code>, <code>createdAt</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">SavedSticker</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Biblioteca operacional de figurinhas.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>createdByUserId</code>, <code>name</code></li>
+                  <li><code>dataUrl</code>, <code>mimeType</code>, <code>sizeBytes</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">HiddenMessageForUser</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Ocultação individual de mensagem para operador do core.</p>
+                <ul class="field-list">
+                  <li><code>tenantId</code>, <code>userId</code>, <code>messageId</code></li>
+                  <li><code>createdAt</code></li>
+                </ul>
+              </div>
+            </details>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <p class="footer-note">Síntese: o núcleo operacional deste schema faz sentido continuar. O runtime ficou dono apenas do dado operacional; tenant, usuário, auth, grants autoritativos, limites e segredo de canal já estão fora do banco do módulo.</p>
+  </main>
+</body>
+</html>

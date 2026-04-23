@@ -57,7 +57,7 @@ func main() {
 		filaAtendimentoHandler = runtime.Handler
 	}
 
-	authService := auth.NewService(pool, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTTTL)
+	authService := auth.NewService(pool, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTTTL, cfg.PersistentJWTTTL)
 	authService.ConfigurePasswordReset(cfg.PasswordResetTTL, auth.SMTPConfig{
 		Host:      cfg.SMTP.Host,
 		Port:      cfg.SMTP.Port,

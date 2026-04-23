@@ -25,27 +25,27 @@ func NewFinanceHandler(service *finance.Service, hub *realtime.Hub) *FinanceHand
 }
 
 type createFinanceSheetRequest struct {
-	Title    string              `json:"title"`
-	Period   string              `json:"period"`
-	Status   string              `json:"status,omitempty"`
-	Notes    string              `json:"notes,omitempty"`
-	ClientID *int                `json:"clientId,omitempty"`
-	Entradas []finance.LineInput `json:"entradas,omitempty"`
-	Saidas   []finance.LineInput `json:"saidas,omitempty"`
+	Title        string              `json:"title"`
+	Period       string              `json:"period"`
+	Status       string              `json:"status,omitempty"`
+	Notes        string              `json:"notes,omitempty"`
+	CoreTenantID *string             `json:"coreTenantId,omitempty"`
+	Entradas     []finance.LineInput `json:"entradas,omitempty"`
+	Saidas       []finance.LineInput `json:"saidas,omitempty"`
 }
 
 type replaceFinanceSheetRequest struct {
-	Title    string              `json:"title"`
-	Period   string              `json:"period"`
-	Status   string              `json:"status,omitempty"`
-	Notes    string              `json:"notes,omitempty"`
-	ClientID *int                `json:"clientId,omitempty"`
-	Entradas []finance.LineInput `json:"entradas"`
-	Saidas   []finance.LineInput `json:"saidas"`
+	Title        string              `json:"title"`
+	Period       string              `json:"period"`
+	Status       string              `json:"status,omitempty"`
+	Notes        string              `json:"notes,omitempty"`
+	CoreTenantID *string             `json:"coreTenantId,omitempty"`
+	Entradas     []finance.LineInput `json:"entradas"`
+	Saidas       []finance.LineInput `json:"saidas"`
 }
 
 type replaceFinanceConfigRequest struct {
-	ClientID         *int                          `json:"clientId,omitempty"`
+	CoreTenantID     *string                       `json:"coreTenantId,omitempty"`
 	Categories       []finance.CategoryInput       `json:"categories"`
 	FixedAccounts    []finance.FixedAccountInput   `json:"fixedAccounts"`
 	RecurringEntries []finance.RecurringEntryInput `json:"recurringEntries"`
@@ -66,14 +66,14 @@ func (h *FinanceHandler) ListAdminFinances(w http.ResponseWriter, r *http.Reques
 	page, limit := parsePageAndLimit(r)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	period := strings.TrimSpace(r.URL.Query().Get("period"))
-	clientID := parseIntQueryParam(r, "clientId")
+	coreTenantID := parseStringQueryParam(r, "coreTenantId")
 
 	items, total, err := h.service.ListSheets(r.Context(), finance.ListSheetsInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
 		Query:           q,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		Period:          period,
 		Page:            page,
 		Limit:           limit,
@@ -130,9 +130,9 @@ func (h *FinanceHandler) CreateAdminFinance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	clientID := 0
-	if req.ClientID != nil {
-		clientID = *req.ClientID
+	coreTenantID := ""
+	if req.CoreTenantID != nil {
+		coreTenantID = strings.TrimSpace(*req.CoreTenantID)
 	}
 
 	sheet, err := h.service.CreateSheet(r.Context(), finance.CreateSheetInput{
@@ -143,7 +143,7 @@ func (h *FinanceHandler) CreateAdminFinance(w http.ResponseWriter, r *http.Reque
 		Period:          req.Period,
 		Status:          req.Status,
 		Notes:           req.Notes,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		Entradas:        req.Entradas,
 		Saidas:          req.Saidas,
 	})
@@ -152,11 +152,12 @@ func (h *FinanceHandler) CreateAdminFinance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, clientID)
+	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, coreTenantID)
 	if tenantErr == nil {
-		h.broadcastFinanceEvent(tenantID, "created", sheet.ClientID, map[string]any{
-			"scope":   "sheet",
-			"sheetId": sheet.ID,
+		h.broadcastFinanceEvent(tenantID, "created", map[string]any{
+			"scope":        "sheet",
+			"coreTenantId": sheet.CoreTenantID,
+			"sheetId":      sheet.ID,
 		})
 	}
 
@@ -182,9 +183,9 @@ func (h *FinanceHandler) ReplaceAdminFinance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	clientID := 0
-	if req.ClientID != nil {
-		clientID = *req.ClientID
+	coreTenantID := ""
+	if req.CoreTenantID != nil {
+		coreTenantID = strings.TrimSpace(*req.CoreTenantID)
 	}
 
 	sheet, err := h.service.ReplaceSheet(r.Context(), finance.ReplaceSheetInput{
@@ -196,7 +197,7 @@ func (h *FinanceHandler) ReplaceAdminFinance(w http.ResponseWriter, r *http.Requ
 		Period:          req.Period,
 		Status:          req.Status,
 		Notes:           req.Notes,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		Entradas:        req.Entradas,
 		Saidas:          req.Saidas,
 	})
@@ -207,9 +208,10 @@ func (h *FinanceHandler) ReplaceAdminFinance(w http.ResponseWriter, r *http.Requ
 
 	tenantID, tenantErr := h.service.ResolveSheetRealtimeTenant(r.Context(), sheetID)
 	if tenantErr == nil {
-		h.broadcastFinanceEvent(tenantID, "updated", sheet.ClientID, map[string]any{
-			"scope":   "sheet",
-			"sheetId": sheet.ID,
+		h.broadcastFinanceEvent(tenantID, "updated", map[string]any{
+			"scope":        "sheet",
+			"coreTenantId": sheet.CoreTenantID,
+			"sheetId":      sheet.ID,
 		})
 	}
 
@@ -257,7 +259,7 @@ func (h *FinanceHandler) UpdateAdminFinanceLine(w http.ResponseWriter, r *http.R
 
 	tenantID, tenantErr := h.service.ResolveSheetRealtimeTenant(r.Context(), sheetID)
 	if tenantErr == nil {
-		h.broadcastFinanceEvent(tenantID, "updated", 0, map[string]any{
+		h.broadcastFinanceEvent(tenantID, "updated", map[string]any{
 			"scope":   "line",
 			"sheetId": sheetID,
 			"lineId":  lineID,
@@ -293,7 +295,7 @@ func (h *FinanceHandler) DeleteAdminFinance(w http.ResponseWriter, r *http.Reque
 	}
 
 	if tenantErr == nil {
-		h.broadcastFinanceEvent(tenantID, "deleted", 0, map[string]any{
+		h.broadcastFinanceEvent(tenantID, "deleted", map[string]any{
 			"scope":   "sheet",
 			"sheetId": sheetID,
 		})
@@ -309,12 +311,12 @@ func (h *FinanceHandler) GetAdminFinanceConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	clientID := parseIntQueryParam(r, "clientId")
+	coreTenantID := parseStringQueryParam(r, "coreTenantId")
 	config, err := h.service.GetConfig(r.Context(), finance.GetConfigInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeFinanceError(w, err, "failed to get finance config")
@@ -337,16 +339,16 @@ func (h *FinanceHandler) ReplaceAdminFinanceConfig(w http.ResponseWriter, r *htt
 		return
 	}
 
-	clientID := 0
-	if req.ClientID != nil {
-		clientID = *req.ClientID
+	coreTenantID := ""
+	if req.CoreTenantID != nil {
+		coreTenantID = strings.TrimSpace(*req.CoreTenantID)
 	}
 
 	config, err := h.service.ReplaceConfig(r.Context(), finance.ReplaceConfigInput{
 		UserID:           claims.Subject,
 		TenantID:         claims.TenantID,
 		IsPlatformAdmin:  claims.IsPlatformAdmin,
-		ClientID:         clientID,
+		CoreTenantID:     coreTenantID,
 		Categories:       req.Categories,
 		FixedAccounts:    req.FixedAccounts,
 		RecurringEntries: req.RecurringEntries,
@@ -356,18 +358,18 @@ func (h *FinanceHandler) ReplaceAdminFinanceConfig(w http.ResponseWriter, r *htt
 		return
 	}
 
-	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, clientID)
+	tenantID, tenantErr := h.service.ResolveRealtimeTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, coreTenantID)
 	if tenantErr == nil {
-		h.broadcastFinanceEvent(tenantID, "updated", config.ClientID, map[string]any{
-			"scope":    "config",
-			"clientId": config.ClientID,
+		h.broadcastFinanceEvent(tenantID, "updated", map[string]any{
+			"scope":        "config",
+			"coreTenantId": config.CoreTenantID,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"config": config})
 }
 
-func (h *FinanceHandler) broadcastFinanceEvent(tenantID, action string, clientID int, payload map[string]any) {
+func (h *FinanceHandler) broadcastFinanceEvent(tenantID, action string, payload map[string]any) {
 	if h.hub == nil || strings.TrimSpace(tenantID) == "" {
 		return
 	}
@@ -375,7 +377,7 @@ func (h *FinanceHandler) broadcastFinanceEvent(tenantID, action string, clientID
 	envelope := map[string]any{
 		"entity":    "finances",
 		"action":    action,
-		"clientId":  clientID,
+		"clientId":  0,
 		"payload":   payload,
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -407,4 +409,8 @@ func parseIntQueryParam(r *http.Request, key string) int {
 		return 0
 	}
 	return parsed
+}
+
+func parseStringQueryParam(r *http.Request, key string) string {
+	return strings.TrimSpace(r.URL.Query().Get(key))
 }

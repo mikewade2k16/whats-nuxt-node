@@ -1,91 +1,59 @@
 # Back
 
-Status atual: este diretório passou a ser a fonte oficial do runtime hospedado do backend do módulo.
+Status atual: este diretório é a implementação oficial do backend hospedado do módulo `fila-atendimento`.
 
-Regra desta etapa:
+## Situação arquitetural atual
 
-- o código concreto foi trazido da incubadora para cortar a dependência estrutural do runtime ativo
-- a incubadora passa a ser referência legada de transição, não mais fonte principal do build do `plataforma-api`
-- a próxima fase continua sendo internalizar gradualmente slices e remover o legado de auth/tenant/store local que ainda veio junto neste pacote
+- o runtime hospedado sobe dentro de `apps/plataforma-api`
+- autenticação e autorização do usuário vêm do shell por `POST /v1/auth/shell/exchange`
+- tenant, usuário, nível e loja global são resolvidos em `platform_core`
+- o schema local `fila_atendimento` ficou restrito ao domínio operacional
+- o backend hospedado não expõe mais login local, convite, troca de senha nem CRUD administrativo de usuários
 
-Base inicial da API em Go para o modulo de fila de atendimento.
+## Ownership atual do schema local
 
-## Objetivo desta fase
+Tabelas de domínio vivas em `fila_atendimento`:
 
-Subir um backend solido desde o inicio, com:
+- `consultants`
+- `store_profiles`
+- `store_operation_settings`
+- `store_setting_options`
+- `store_catalog_products`
+- `store_campaigns`
+- `operation_queue_entries`
+- `operation_active_services`
+- `operation_paused_consultants`
+- `operation_current_status`
+- `operation_status_sessions`
+- `operation_service_history`
 
-- modulo de auth/autorizacao real
-- arquitetura modular dentro de `internal/`
-- base pronta para multitenancy
-- transporte HTTP organizado para futura entrada de websocket, PostgreSQL e filas de eventos
+Estruturas removidas do schema local pela convergência com o core:
 
-## Modelo de tenant adotado
+- `users`
+- `tenants`
+- `stores`
+- `user_platform_roles`
+- `user_tenant_roles`
+- `user_store_roles`
+- `user_external_identities`
+- `user_invitations`
 
-Nesta primeira fase, o sistema ja nasce preparado para multitenancy com a seguinte regra:
+## Loja global
 
-- `owner` representa o dono do cliente, ou seja, o futuro tenant owner
-- `consultant`, `manager`, `store_terminal` e `marketing` pertencem a um `tenant_id`
-- `platform_admin` fica acima dos tenants e serve para areas internas da plataforma
+A loja canônica da plataforma agora vive em:
 
-Hoje usamos um tenant demo (`tenant-demo`) para nao travar a entrega inicial, mas o `tenant_id` ja existe no usuario autenticado e no token.
+- `platform_core.tenant_stores`
 
-Agora o auth ja usa PostgreSQL real para `users`, `user_platform_roles`, `user_tenant_roles` e `user_store_roles`.
+O módulo mantém apenas o complemento operacional em:
 
-## Roles iniciais
+- `fila_atendimento.store_profiles`
 
-- `consultant`
-  - escopo de loja
-- `store_terminal`
-  - escopo de loja, leitura operacional da unidade sem mutacoes
-- `manager`
-  - escopo de loja com visao acima dos consultores da loja
-- `marketing`
-  - escopo de tenant para campanhas e inteligencia cross-store
-- `owner`
-  - escopo de tenant com visao total do cliente/grupo
-- `platform_admin`
-  - escopo de plataforma para times internos/dev
-
-## Estrutura atual
-
-- `cmd/api`
-  - bootstrap da aplicacao
-- `cmd/migrate`
-  - aplica migrations no PostgreSQL
-- `internal/platform/config`
-  - leitura de envs e configuracao base
-- `internal/platform/httpapi`
-  - helpers JSON e middlewares HTTP
-- `internal/platform/server`
-  - configuracao do `http.Server`
-- `internal/platform/database`
-  - pool PostgreSQL e runner de migrations
-- `internal/platform/app`
-  - composicao dos modulos e montagem do handler principal
-- `internal/modules/auth`
-  - roles, usuarios, token, middleware e handlers do auth
-- `internal/modules/consultants`
-  - roster administrativo de consultores por loja, com conta autenticada 1:1 do consultor
-- `internal/modules/settings`
-  - bundle configuravel da operacao por loja
-- `internal/modules/realtime`
-  - WebSocket autenticado para sincronizacao operacional por loja
-- `internal/modules/reports`
-  - leituras analiticas e gerenciais server-side sobre o historico operacional
-- `internal/modules/analytics`
-  - agregados server-side para `ranking`, `dados` e `inteligencia`
-- `database`
-  - documentacao humana do schema e regras de banco
-
-## Endpoints iniciais
+## Endpoints hospedados
 
 - `GET /healthz`
 - `GET /v1/auth/roles`
-- `POST /v1/auth/login`
 - `POST /v1/auth/shell/exchange`
 - `GET /v1/auth/me`
-- `GET /v1/auth/invitations/{token}`
-- `POST /v1/auth/invitations/accept`
 - `GET /v1/me/context`
 - `GET /v1/tenants`
 - `GET /v1/stores`
@@ -121,62 +89,32 @@ Agora o auth ja usa PostgreSQL real para `users`, `user_platform_roles`, `user_t
 - `GET /v1/analytics/data`
 - `GET /v1/analytics/intelligence`
 - `GET /v1/dev/ping`
-  - protegido para `platform_admin`
 
-## Credenciais demo
+## Sessão integrada pelo shell
 
-Todos os usuarios abaixo usam a senha `dev123456`:
+Fluxo:
 
-- `consultor@demo.local`
-- `gerente@demo.local`
-- `marketing@demo.local`
-- `proprietario@demo.local`
-- `plataforma@demo.local`
+1. `apps/painel-web` autentica no shell principal.
+2. o host emite um token efêmero de bridge.
+3. o backend do módulo valida esse token em `POST /v1/auth/shell/exchange`.
+4. o módulo resolve o usuário no core, respeitando `businessRole`, `accessLevel`, `tenant_id` e `store_id`.
+5. o módulo devolve sua própria sessão para o frontend.
 
-## Gestao de acesso no runtime hospedado
+Regras:
 
-No runtime hospedado atual:
+- o bridge é o único caminho de entrada do runtime hospedado
+- o módulo continua com API e token próprios
+- o módulo não cria senha, convite nem vínculo de identidade local
+- o roster de consultores continua local, mas o vínculo com conta real usa `consultants.user_id -> platform_core.users(id)`
 
-- cadastro, nivel, loja vinculada e liberacao de acesso ficam centralizados no shell
-- o modulo nao expoe mais CRUD administrativo proprio de usuarios
-- o painel entra no modulo pelo bridge em `POST /v1/auth/shell/exchange`
-- consultores continuam nascendo pelo roster de `consultants`, com identidade local minima para operar
+## Política atual para consultores
 
-## Politica atual para consultores
+- cadastro e senha pertencem ao shell administrativo
+- o módulo mantém apenas o roster operacional em `consultants`
+- a listagem da fila sincroniza consultores elegíveis a partir de `platform_core.tenant_users`
+- a visibilidade por loja segue `platform_core.tenant_users.store_id`
 
-- todo consultor novo nasce como:
-  - registro em `consultants`
-  - usuario real em `users`
-  - papel `consultant` no escopo da loja
-- o email padrao e gerado automaticamente por nome + loja + dominio configurado
-- a senha inicial padrao vem de `AUTH_CONSULTANT_DEFAULT_PASSWORD`
-- no ambiente atual de desenvolvimento:
-  - dominio padrao: `acesso.omni.local`
-  - senha inicial padrao: `Omni@123`
-- o consultor nasce com `must_change_password = true`
-- o consultor deve trocar a senha em `/perfil` no primeiro acesso
-
-## Analytics server-side
-
-As telas abaixo ja nao devem depender de recalculo pesado no browser:
-
-- `/ranking`
-- `/dados`
-- `/inteligencia`
-
-Regra atual:
-
-- `GET /v1/analytics/ranking` entrega ranking mensal, ranking diario e alertas prontos
-- `GET /v1/analytics/data` entrega agregados de produtos, motivos, origens, profissoes e horarios
-- `GET /v1/analytics/intelligence` entrega diagnosticos, severidade, score e acoes recomendadas
-
-Objetivo:
-
-- reduzir custo de processamento no frontend
-- evitar trafegar historico bruto quando a tela so precisa de agregados
-- centralizar a regra analitica no backend para manter consistencia entre dispositivos e futuras exportacoes
-
-## Variaveis de ambiente
+## Variáveis de ambiente ainda relevantes
 
 - `APP_NAME`
 - `APP_ENV`
@@ -188,205 +126,10 @@ Objetivo:
 - `CORS_ALLOWED_ORIGINS`
 - `AUTH_TOKEN_SECRET`
 - `AUTH_TOKEN_TTL`
-- `AUTH_INVITE_TTL`
 - `AUTH_SHELL_BRIDGE_SECRET`
-- `AUTH_SHELL_BRIDGE_TENANT_SLUG`
 - `AUTH_BCRYPT_COST`
-- `AUTH_CONSULTANT_EMAIL_DOMAIN`
-- `AUTH_CONSULTANT_DEFAULT_PASSWORD`
 
-Arquivo base:
+## Checks mínimos
 
-- `.env.example`
-
-## Sessão integrada pelo shell
-
-O módulo agora aceita uma sessão integrada do painel principal por `POST /v1/auth/shell/exchange`.
-
-Fluxo:
-
-1. `apps/painel-web` autentica no shell principal
-2. o host emite um token efêmero de bridge
-3. o backend do módulo valida esse token
-4. o módulo cria ou sincroniza a identidade local mínima
-5. o módulo devolve sua própria sessão para o frontend
-
-Regras:
-
-- o bridge não elimina a fronteira do módulo
-- o módulo continua com API, banco e token próprios
-- o tenant local atual pode ser resolvido por `AUTH_SHELL_BRIDGE_TENANT_SLUG` enquanto a integração shell x módulo ainda estiver em transição
-- a identidade externa do shell deve ser reconciliada por `provider + user_id`, permitindo rotação segura de `external_subject`
-- a validação mínima de SSO precisa cobrir `shellBridgeToken -> /v1/auth/shell/exchange -> /v1/me/context -> /operacao`
-
-## Matriz de versoes
-
-- Go do modulo: `1.24.0`
-- toolchain Go: `1.24.3`
-- PostgreSQL alvo: `16`
-- imagem Docker do banco: `postgres:16-alpine`
-- imagem Docker do backend: `golang:1.24.0-bookworm`
-
-## Fluxo oficial com Docker
-
-O backend agora roda por padrao dentro do Compose da raiz.
-
-Pela raiz do repositorio:
-
-```bash
-npm run dev
-```
-
-Ou apenas a stack em background:
-
-```bash
-npm run dev:detach
-```
-
-Servicos relevantes:
-
-- `postgres`
-- `api`
-
-O container da API:
-
-- espera o PostgreSQL ficar saudavel
-- aplica `migrate up`
-- sobe a API em `:8080`
-
-Arquivo opcional para customizacao do Compose:
-
-- `../.env.docker.example`
-
-Validacao minima do Compose:
-
-```bash
-docker compose config
-docker compose ps
-```
-
-## Banco e migrations
-
-Versao alvo de PostgreSQL:
-
-- `16`
-- imagem recomendada para Docker futuro: `postgres:16-alpine`
-
-Comandos:
-
-```bash
-go run ./cmd/migrate up
-go run ./cmd/migrate status
-```
-
-## Setup local no Windows sem Docker
-
-Guia rapido:
-
-- `START_LOCAL.md`
-
-Esse fluxo agora e apenas fallback quando Docker nao estiver disponivel.
-
-Scripts de apoio:
-
-- `scripts/postgres/init-local.ps1`
-- `scripts/postgres/start-local.ps1`
-- `scripts/postgres/stop-local.ps1`
-- `scripts/postgres/status-local.ps1`
-- `scripts/postgres/open-pgadmin.ps1`
-- `scripts/api/start-local.ps1`
-- `scripts/api/status-local.ps1`
-- `scripts/api/stop-local.ps1`
-
-No fallback local da API:
-
-- `scripts/api/start-local.ps1` aplica `go run ./cmd/migrate up` antes do boot
-- `scripts/api/start-local.ps1` injeta defaults de `AUTH_SHELL_BRIDGE_SECRET=fila-atendimento-shell-bridge-dev`
-- `scripts/api/start-local.ps1` injeta `AUTH_SHELL_BRIDGE_TENANT_SLUG=tenant-demo`
-
-Fluxo recomendado:
-
-```powershell
-.\scripts\postgres\status-local.ps1
-.\scripts\postgres\init-local.ps1
-.\scripts\postgres\open-pgadmin.ps1
-```
-
-O script:
-
-- reutiliza o servico `postgresql-x64-16` quando ele existir
-- cai para um cluster manual em `%LOCALAPPDATA%\lista-da-vez\postgres16\data` quando o servico nao existir
-- sobe o servidor na porta `5432`
-- cria a role `lista_da_vez`
-- cria o banco `lista_da_vez`
-- aplica as migrations do projeto
-
-Credenciais padrao da aplicacao:
-
-- host: `localhost`
-- porta: `5432`
-- database: `lista_da_vez`
-- user: `lista_da_vez`
-- password: `lista_da_vez_dev`
-
-Observacao de CORS local:
-
-- a API aceita `localhost`, `127.0.0.1` e `[::1]` em qualquer porta local
-- isso evita `Failed to fetch` quando o Nuxt sobe em `3000` ou `3001`
-
-Visualizacao local:
-
-- `pgAdmin 4` instalado em `C:\Program Files\PostgreSQL\16\pgAdmin 4\runtime\pgAdmin4.exe`
-- atalho do projeto: `.\scripts\postgres\open-pgadmin.ps1`
-
-Visualizacao do schema:
-
-- `database/ERD.md`
-
-## Estado atual da operacao
-
-Hoje `operations` ja esta integrado em:
-
-- frontend Nuxt
-- API Go
-- PostgreSQL
-
-O snapshot operacional por loja e persistido e lido de:
-
-- `operation_queue_entries`
-- `operation_active_services`
-- `operation_paused_consultants`
-- `operation_current_status`
-- `operation_status_sessions`
-- `operation_service_history`
-
-O frontend ainda usa o `app-runtime` como camada de compatibilidade visual, mas a fonte de verdade da fila e do historico agora vem da API.
-
-Contrato atual de leitura e mutacao:
-
-- `GET /v1/operations/snapshot` devolve o snapshot completo da loja
-- `POST /v1/operations/queue|pause|resume|start|finish` devolvem apenas `ack` minimo
-- apos cada mutacao, o Nuxt revalida o snapshot operacional por `GET /v1/operations/snapshot`
-- `GET /v1/realtime/operations?storeId=...&access_token=...` entrega eventos leves de invalidacao para a UI revalidar a loja ativa sem refresh
-
-Regra atual de payload no backend:
-
-- leitura pode devolver bundle/snapshot quando isso for o proprio caso de uso
-- escrita deve ser granular por padrao
-- adicionar, editar ou excluir um item nao deve trafegar a colecao inteira
-- endpoints bulk ficam reservados para importacao, template ou substituicao total intencional
-
-Primeiro contrato de `reports`:
-
-- `GET /v1/reports/overview` entrega agregados pequenos para dashboards
-- `GET /v1/reports/results` entrega linhas paginadas para a tabela de resultados
-- `GET /v1/reports/recent-services` entrega leitura administrativa dos ultimos atendimentos
-- produtos fechados passam a considerar `productsClosed[]` como fonte de verdade, com `productClosed` apenas como fallback legado
-
-## Proxima etapa recomendada
-
-1. evoluir o hub local de realtime para broker externo quando houver multiplas replicas da API
-2. ligar a futura tela de ultimos atendimentos ao endpoint `GET /v1/reports/recent-services`
-3. sincronizar `settings.updated` e `campaigns.updated` sem refresh
-4. avancar para analytics, multiloja e campanhas server-side
-5. adicionar replay/resume e metricas de conexao do realtime
+- `go test ./...`
+- `docker compose -f docker-compose.yml config`

@@ -1,6 +1,6 @@
 import { createError, readBody } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
-import { resolveOwnedClientId } from '~~/server/utils/access-context'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 import type { FinanceSheetItem } from '~/types/finances'
 
@@ -15,10 +15,14 @@ export default defineEventHandler(async (event) => {
     entradas?: unknown
     saidas?: unknown
     clientId?: number
+    coreTenantId?: string
   }>(event)
 
-  const clientId = resolveOwnedClientId(access, body?.clientId)
-  if (access.isClient && clientId <= 0) {
+	const scope = resolveOwnedTenantScope(access, {
+		clientId: body?.clientId,
+		coreTenantId: body?.coreTenantId
+	})
+	if (access.isClient && !scope.coreTenantId) {
     throw createError({ statusCode: 400, statusMessage: 'Cliente do usuario nao identificado.' })
   }
 
@@ -34,7 +38,7 @@ export default defineEventHandler(async (event) => {
         notes: body?.notes,
         entradas: body?.entradas,
         saidas: body?.saidas,
-        clientId: clientId > 0 ? clientId : undefined
+		coreTenantId: scope.coreTenantId || undefined
       }
     }
   )

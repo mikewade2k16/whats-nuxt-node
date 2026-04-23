@@ -1,11 +1,11 @@
 {
-  "startedAt": "2026-04-08T19:19:34.076Z",
-  "finishedAt": "2026-04-08T19:19:40.278Z",
-  "baseUrl": "http://localhost:3000",
+  "startedAt": "2026-04-15T03:30:28.320Z",
+  "finishedAt": "2026-04-15T03:30:43.236Z",
+  "baseUrl": "http://127.0.0.1:3100",
   "logins": {
     "root": {
       "ok": false,
-      "status": 404,
+      "status": 502,
       "message": "Root login failed. Check credentials or running services."
     },
     "tenantAdmin": null

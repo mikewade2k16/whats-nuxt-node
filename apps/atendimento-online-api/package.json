@@ -19,6 +19,7 @@
     "worker:retention:dev": "tsx watch src/workers/retention-worker.ts",
     "worker:retention:start": "node dist/workers/retention-worker.js",
     "prisma:generate": "prisma generate",
+    "prisma:converge": "tsx prisma/converge-atendimento-online.ts",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts"
   },
@@ -27,7 +28,6 @@
     "@prisma/client": "^6.4.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.8.1",
-    "bcryptjs": "^2.4.3",
     "bullmq": "^5.46.1",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1",
@@ -36,7 +36,6 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.13.8",
     "prisma": "^6.4.1",
     "tsx": "^4.19.3",

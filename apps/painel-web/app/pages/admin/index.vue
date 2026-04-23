@@ -8,6 +8,7 @@ definePageMeta({
 const sessionSimulation = useSessionSimulationStore();
 const { isAuthenticated, coreUser } = useAdminSession();
 const redirecting = ref(false);
+const sessionContextReady = computed(() => !sessionSimulation.loadingClientOptions && sessionSimulation.clientOptionsSynced);
 
 const redirectTarget = computed(() => {
   if (!isAuthenticated.value) {
@@ -28,6 +29,10 @@ const redirectTarget = computed(() => {
 
 watchEffect(() => {
   if (!import.meta.client || redirecting.value) {
+    return;
+  }
+
+  if (isAuthenticated.value && !sessionContextReady.value) {
     return;
   }
 

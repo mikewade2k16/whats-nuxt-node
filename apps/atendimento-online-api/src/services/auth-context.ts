@@ -1,9 +1,6 @@
-import bcrypt from "bcryptjs";
-import { UserRole } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { UserRole } from "../domain/access.js";
 import type { FastifyRequest } from "fastify";
 import { env } from "../config.js";
-import { prisma } from "../db.js";
 import type { JwtUser } from "../plugins/auth.js";
 import {
   CoreApiError,
@@ -60,16 +57,9 @@ export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-function normalizeOptionalIdentity(value: unknown) {
+export function normalizeOptionalIdentity(value: unknown) {
   const normalized = String(value ?? "").trim();
   return normalized.length > 0 ? normalized : null;
-}
-
-function throwIdentityProjectionConflict(
-  entity: "tenant" | "user",
-  details: Record<string, unknown>
-): never {
-  throw new AuthContextError(`Conflito na projecao local de ${entity}`, 409, details);
 }
 
 function normalizeModuleCodes(value: unknown) {
@@ -365,207 +355,6 @@ export async function resolveLegacyRoleForCoreUser(options: {
   };
 }
 
-export async function ensureLocalTenant(coreTenant: CoreTenant, requestedSlug: string) {
-  const normalizedRequestedSlug = normalizeTenantSlug(requestedSlug || coreTenant.slug);
-  const normalizedCoreTenantId = coreTenant.id.trim();
-
-  const existingByCoreId = await prisma.tenant.findUnique({
-    where: {
-      coreTenantId: normalizedCoreTenantId
-    }
-  });
-  if (existingByCoreId) {
-    const shouldUpdate =
-      existingByCoreId.slug !== normalizedRequestedSlug
-      || existingByCoreId.name !== coreTenant.name;
-
-    if (!shouldUpdate) {
-      return existingByCoreId;
-    }
-
-    return prisma.tenant.update({
-      where: { id: existingByCoreId.id },
-      data: {
-        slug: normalizedRequestedSlug,
-        name: coreTenant.name
-      }
-    });
-  }
-
-  const existingBySlug = await prisma.tenant.findUnique({
-    where: {
-      slug: normalizedRequestedSlug
-    }
-  });
-  if (existingBySlug) {
-    const currentCoreTenantId = normalizeOptionalIdentity(existingBySlug.coreTenantId);
-    if (currentCoreTenantId && currentCoreTenantId !== normalizedCoreTenantId) {
-      throwIdentityProjectionConflict("tenant", {
-        localTenantId: existingBySlug.id,
-        localCoreTenantId: currentCoreTenantId,
-        requestedCoreTenantId: normalizedCoreTenantId,
-        slug: normalizedRequestedSlug
-      });
-    }
-
-    if (existingBySlug.name !== coreTenant.name || currentCoreTenantId !== normalizedCoreTenantId) {
-      return prisma.tenant.update({
-        where: { id: existingBySlug.id },
-        data: {
-          coreTenantId: normalizedCoreTenantId,
-          name: coreTenant.name
-        }
-      });
-    }
-    return existingBySlug;
-  }
-
-  const existingByName = await prisma.tenant.findFirst({
-    where: {
-      name: coreTenant.name
-    }
-  });
-  if (existingByName) {
-    const currentCoreTenantId = normalizeOptionalIdentity(existingByName.coreTenantId);
-    if (currentCoreTenantId && currentCoreTenantId !== normalizedCoreTenantId) {
-      throwIdentityProjectionConflict("tenant", {
-        localTenantId: existingByName.id,
-        localCoreTenantId: currentCoreTenantId,
-        requestedCoreTenantId: normalizedCoreTenantId,
-        name: coreTenant.name
-      });
-    }
-
-    if (existingByName.slug !== normalizedRequestedSlug || currentCoreTenantId !== normalizedCoreTenantId) {
-      return prisma.tenant.update({
-        where: { id: existingByName.id },
-        data: {
-          coreTenantId: normalizedCoreTenantId,
-          slug: normalizedRequestedSlug
-        }
-      });
-    }
-
-    return existingByName;
-  }
-
-  return prisma.tenant.create({
-    data: {
-      coreTenantId: normalizedCoreTenantId,
-      slug: normalizedRequestedSlug,
-      name: coreTenant.name
-    }
-  });
-}
-
-export async function ensureLocalUser(options: {
-  tenantId: string;
-  coreUserId: string;
-  coreTenantUserId?: string | null;
-  email: string;
-  name: string;
-  role: UserRole;
-}) {
-  const normalizedCoreUserId = options.coreUserId.trim();
-  const normalizedCoreTenantUserId = normalizeOptionalIdentity(options.coreTenantUserId);
-
-  const existing =
-    (normalizedCoreTenantUserId
-      ? await prisma.user.findUnique({
-          where: {
-            coreTenantUserId: normalizedCoreTenantUserId
-          }
-        })
-      : null)
-    ?? await prisma.user.findFirst({
-      where: {
-        tenantId: options.tenantId,
-        coreUserId: normalizedCoreUserId
-      }
-    })
-    ?? await prisma.user.findUnique({
-      where: {
-        tenantId_email: {
-          tenantId: options.tenantId,
-          email: options.email
-        }
-      }
-    });
-
-  if (existing) {
-    const currentCoreUserId = normalizeOptionalIdentity(existing.coreUserId);
-    const currentCoreTenantUserId = normalizeOptionalIdentity(existing.coreTenantUserId);
-
-    if (existing.tenantId !== options.tenantId) {
-      throwIdentityProjectionConflict("user", {
-        localUserId: existing.id,
-        localTenantId: existing.tenantId,
-        requestedTenantId: options.tenantId,
-        coreUserId: normalizedCoreUserId,
-        coreTenantUserId: normalizedCoreTenantUserId
-      });
-    }
-
-    if (currentCoreUserId && currentCoreUserId !== normalizedCoreUserId) {
-      throwIdentityProjectionConflict("user", {
-        localUserId: existing.id,
-        localCoreUserId: currentCoreUserId,
-        requestedCoreUserId: normalizedCoreUserId,
-        email: options.email
-      });
-    }
-
-    if (
-      normalizedCoreTenantUserId
-      && currentCoreTenantUserId
-      && currentCoreTenantUserId !== normalizedCoreTenantUserId
-    ) {
-      throwIdentityProjectionConflict("user", {
-        localUserId: existing.id,
-        localCoreTenantUserId: currentCoreTenantUserId,
-        requestedCoreTenantUserId: normalizedCoreTenantUserId,
-        email: options.email
-      });
-    }
-
-    if (
-      existing.email !== options.email
-      || existing.name !== options.name
-      || existing.role !== options.role
-      || currentCoreUserId !== normalizedCoreUserId
-      || currentCoreTenantUserId !== normalizedCoreTenantUserId
-    ) {
-      return prisma.user.update({
-        where: {
-          id: existing.id
-        },
-        data: {
-          coreUserId: normalizedCoreUserId,
-          coreTenantUserId: normalizedCoreTenantUserId,
-          email: options.email,
-          name: options.name,
-          role: options.role
-        }
-      });
-    }
-
-    return existing;
-  }
-
-  const passwordHash = await bcrypt.hash(`core-shadow-${randomUUID()}`, 8);
-  return prisma.user.create({
-    data: {
-      tenantId: options.tenantId,
-      coreUserId: normalizedCoreUserId,
-      coreTenantUserId: normalizedCoreTenantUserId,
-      email: options.email,
-      name: options.name,
-      role: options.role,
-      passwordHash
-    }
-  });
-}
-
 export async function resolveCoreTenantForUser(
   coreUser: CoreAuthUser,
   options: { accessToken?: string | null } = {}
@@ -640,26 +429,16 @@ export async function resolveAuthUserFromCoreContext(options: {
     accessToken: options.accessToken
   });
 
-  const localTenant = await ensureLocalTenant(options.coreTenant, options.requestedTenantSlug || options.coreTenant.slug);
-  const localUser = await ensureLocalUser({
-    tenantId: localTenant.id,
+  return {
+    sub: options.coreUser.id,
+    tenantId: options.coreTenant.id,
     coreUserId: options.coreUser.id,
+    coreTenantId: options.coreTenant.id,
     coreTenantUserId: resolvedLegacyRole.coreTenantUserId,
+    tenantSlug: normalizeTenantSlug(options.requestedTenantSlug || options.coreTenant.slug),
     email,
     name: options.coreUser.name?.trim() || email,
     role: resolvedLegacyRole.role
-  });
-
-  return {
-    sub: localUser.id,
-    tenantId: localTenant.id,
-    coreUserId: options.coreUser.id,
-    coreTenantId: localTenant.coreTenantId?.trim() || options.coreTenant.id,
-    coreTenantUserId: normalizeOptionalIdentity(localUser.coreTenantUserId),
-    tenantSlug: localTenant.slug,
-    email: localUser.email,
-    name: localUser.name,
-    role: localUser.role
   } satisfies JwtUser;
 }
 

@@ -1,29 +1,21 @@
 <script setup lang="ts">
+import AdminHeader from '~/components/admin/AdminHeader.vue'
 import { useAdminSession } from '~/composables/useAdminSession'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { TenantSettings } from '~/types'
 
-interface AdminProfileResponse {
-  status?: string
-  data?: {
-    nick?: string
-    profileImage?: string
-  }
-}
-
 const sessionSimulation = useSessionSimulationStore()
 const { user, coreUser, legacyRole, tenantSlug, isAuthenticated, validateSession, logout: performLogout, hydrate } = useAdminSession()
 const { apiFetch } = useApi()
-const { bffFetch } = useBffFetch()
 const route = useRoute()
 const realtime = useTenantRealtime()
-realtime.start()
 
-const layoutReady = ref(false)
 const resolvedTenantName = ref('')
 const resolvedNick = ref('')
 const resolvedProfileImage = ref('')
 const SESSION_HEARTBEAT_INTERVAL_MS = 60_000
+let cancelTenantRealtimeStart: (() => void) | null = null
+let tenantRealtimeStartedFromLayout = false
 
 let sessionHeartbeatTimer: number | null = null
 
@@ -32,6 +24,7 @@ function normalizeText(value: unknown) {
 }
 
 const isRootAdmin = computed(() => Boolean(coreUser.value?.isPlatformAdmin))
+const routeAccessReady = computed(() => !sessionSimulation.loadingClientOptions && sessionSimulation.clientOptionsSynced)
 const accessContext = computed(() => ({
   isAuthenticated: Boolean(isAuthenticated.value),
   isRootUser: isRootAdmin.value,
@@ -45,6 +38,7 @@ const accessContext = computed(() => ({
 const accessFlags = computed(() => resolveAdminAccessFlags(accessContext.value))
 const canAccessRootManage = computed(() => evaluateAdminRouteAccess('/admin/manage/clientes', accessContext.value).allowed)
 const canAccessUsersManage = computed(() => evaluateAdminRouteAccess('/admin/manage/users', accessContext.value).allowed)
+const canAccessModulesManage = computed(() => evaluateAdminRouteAccess('/admin/manage/modulos', accessContext.value).allowed)
 const canAccessQa = computed(() => evaluateAdminRouteAccess('/admin/manage/qa', accessContext.value).allowed)
 const canAccessAudit = computed(() => evaluateAdminRouteAccess('/admin/manage/auditoria', accessContext.value).allowed)
 const canAccessIndicatorsGovernance = computed(() => evaluateAdminRouteAccess('/admin/manage/indicadores', accessContext.value).allowed)
@@ -121,18 +115,18 @@ const profileAvatar = computed(() => ({
 }))
 
 watch(
-  () => [normalizeText(user.value?.nick), normalizeText(coreUser.value?.nick)],
-  ([authNick, coreNick]) => {
-    const next = authNick || coreNick
+  () => [normalizeText(user.value?.nick), normalizeText(coreUser.value?.nick), normalizeText(sessionSimulation.profileNick)],
+  ([authNick, coreNick, profileNick]) => {
+    const next = authNick || coreNick || profileNick
     resolvedNick.value = next || ''
   },
   { immediate: true }
 )
 
 watch(
-  () => [normalizeText(user.value?.profileImage), normalizeText(coreUser.value?.profileImage)],
-  ([authProfileImage, coreProfileImage]) => {
-    const next = authProfileImage || coreProfileImage
+  () => [normalizeText(user.value?.profileImage), normalizeText(coreUser.value?.profileImage), normalizeText(sessionSimulation.profileImage)],
+  ([authProfileImage, coreProfileImage, profileImage]) => {
+    const next = authProfileImage || coreProfileImage || profileImage
     resolvedProfileImage.value = next || ''
   },
   { immediate: true }
@@ -223,6 +217,7 @@ const menuItems = computed(() => {
     const rootManageChildren: DropdownMenuItem[] = [
       { label: 'Clientes', icon: 'i-lucide-users-round', to: '/admin/manage/clientes' },
       { label: 'Users', icon: 'i-lucide-user-cog', to: '/admin/manage/users' },
+      { label: 'Modulos', icon: 'i-lucide-blocks', to: '/admin/manage/modulos' },
       { label: 'Temas', icon: 'i-lucide-palette', to: '/admin/themes' },
       { label: 'Componentes', icon: 'i-lucide-component', to: '/admin/manage/componentes' }
     ]
@@ -250,6 +245,9 @@ const menuItems = computed(() => {
   const scopedManageChildren: DropdownMenuItem[] = []
   if (canAccessUsersManage.value) {
     scopedManageChildren.push({ label: 'Users', icon: 'i-lucide-user-cog', to: '/admin/manage/users' })
+  }
+  if (canAccessModulesManage.value) {
+    scopedManageChildren.push({ label: 'Modulos', icon: 'i-lucide-blocks', to: '/admin/manage/modulos' })
   }
   if (canAccessQa.value) {
     scopedManageChildren.push({ label: 'QA', icon: 'i-lucide-list-checks', to: '/admin/manage/qa' })
@@ -371,16 +369,50 @@ function startSessionHeartbeat() {
   document.addEventListener('visibilitychange', handleVisibilityChange)
 }
 
+function startTenantRealtimeAfterPaint() {
+  if (!import.meta.client || tenantRealtimeStartedFromLayout) {
+    return
+  }
+
+  const startRealtime = () => {
+    cancelTenantRealtimeStart = null
+    if (tenantRealtimeStartedFromLayout) {
+      return
+    }
+
+    tenantRealtimeStartedFromLayout = true
+    realtime.start()
+  }
+
+  if ('requestIdleCallback' in window) {
+    const requestIdleCallback = window.requestIdleCallback as (callback: () => void, options?: { timeout?: number }) => number
+    const idleId = requestIdleCallback(startRealtime, { timeout: 2500 })
+    cancelTenantRealtimeStart = () => {
+      if ('cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId)
+      }
+    }
+    return
+  }
+
+  const timerId = globalThis.setTimeout(startRealtime, 1200)
+  cancelTenantRealtimeStart = () => globalThis.clearTimeout(timerId)
+}
+
 function initializeSessionContext() {
   sessionSimulation.initialize()
 }
 
-async function refreshSessionContext() {
-  await sessionSimulation.refreshClientOptions()
+async function refreshSessionContext(options: { force?: boolean } = {}) {
+  await sessionSimulation.refreshClientOptions(options)
 }
 
 async function ensureCurrentRouteAccess() {
   if (!import.meta.client) {
+    return
+  }
+
+  if (isAuthenticated.value && !routeAccessReady.value) {
     return
   }
 
@@ -429,7 +461,7 @@ const stopClientsRealtimeSubscription = realtime.subscribeEntity('clients', (eve
   }
 
   void (async () => {
-    await refreshSessionContext()
+    await refreshSessionContext({ force: true })
     await ensureCurrentRouteAccess()
   })()
 })
@@ -440,10 +472,7 @@ const stopUsersRealtimeSubscription = realtime.subscribeEntity('users', (event) 
   }
 
   void (async () => {
-    await Promise.all([
-      refreshSessionContext(),
-      resolveProfileIdentity()
-    ])
+    await refreshSessionContext({ force: true })
     await ensureCurrentRouteAccess()
   })()
 })
@@ -454,45 +483,41 @@ async function resolveTenantName() {
     return
   }
 
-  try {
-    const tenant = await apiFetch<TenantSettings>('/tenant')
-    resolvedTenantName.value = normalizeText(tenant?.name)
-  } catch {
-    resolvedTenantName.value = normalizeText(coreUser.value?.clientName) || normalizeText(tenantSlug.value)
-  }
-}
-
-async function resolveProfileIdentity() {
-  if (!profileEmail.value && !user.value && !coreUser.value) {
+  const coreClientName = normalizeText(coreUser.value?.clientName)
+  const currentTenantSlug = normalizeText(tenantSlug.value)
+  if (coreClientName || currentTenantSlug) {
+    resolvedTenantName.value = coreClientName || currentTenantSlug
     return
   }
 
   try {
-    const response = await bffFetch<AdminProfileResponse>('/api/admin/profile')
-    resolvedNick.value = normalizeText(response?.data?.nick)
-    resolvedProfileImage.value = normalizeText(response?.data?.profileImage)
+    const tenant = await apiFetch<TenantSettings>('/tenant')
+    resolvedTenantName.value = normalizeText(tenant?.name)
   } catch {
-    resolvedNick.value = ''
-    resolvedProfileImage.value = ''
+    resolvedTenantName.value = currentTenantSlug
   }
 }
 
 onMounted(async () => {
   hydrate()
   initializeSessionContext()
-  layoutReady.value = true
   startSessionHeartbeat()
 
   await nextTick()
-  void Promise.allSettled([
-    refreshSessionContext(),
-    resolveTenantName(),
-    resolveProfileIdentity()
-  ])
+  startTenantRealtimeAfterPaint()
+  const startupTasks: Promise<unknown>[] = [resolveTenantName()]
+
+  if (!sessionSimulation.clientOptionsSynced) {
+    startupTasks.unshift(refreshSessionContext())
+  }
+
+  void Promise.allSettled(startupTasks).then(() => ensureCurrentRouteAccess())
 })
 
 onBeforeUnmount(() => {
 	clearSessionHeartbeat()
+  cancelTenantRealtimeStart?.()
+  cancelTenantRealtimeStart = null
 	if (import.meta.client) {
 		window.removeEventListener('focus', handleWindowFocus)
 		document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -504,6 +529,10 @@ watch(isAuthenticated, () => {
 })
 
 watch(() => sessionSimulation.requestContextHash, () => {
+  if (!routeAccessReady.value) {
+    return
+  }
+
   void ensureCurrentRouteAccess()
 })
 
@@ -515,27 +544,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="admin-layout">
-    <ClientOnly>
-      <AdminHeader logo-title="crow" logo-subtitle="visuais" :menu-items="menuItems" :action-items="actionItems"
-        :profile-name="profileDisplayName" :profile-role="profileRoleLabel" :profile-items="profileItems"
-        :profile-avatar="profileAvatar" :viewer-user-type="viewerUserType" :viewer-level="viewerLevel"
-        slideover-title="Menu" slideover-description="Navegacao rapida do admin." />
-      <template #fallback>
-        <header class="h-[72px] border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]" />
-      </template>
-    </ClientOnly>
+    <AdminHeader logo-title="crow" logo-subtitle="visuais" :menu-items="menuItems" :action-items="actionItems"
+      :profile-name="profileDisplayName" :profile-role="profileRoleLabel" :profile-items="profileItems"
+      :profile-avatar="profileAvatar" :viewer-user-type="viewerUserType" :viewer-level="viewerLevel"
+      slideover-title="Menu" slideover-description="Navegacao rapida do admin." />
 
     <main class="admin-layout__main">
       <section class="admin-layout__content">
-        <div v-if="layoutReady">
-          <slot />
-        </div>
-        <div v-else class="px-3 py-4 sm:px-0">
-          <AppPageLoadingShell
-            title="Carregando painel"
-            description="Preparando autenticação, preferências e contexto do shell."
-          />
-        </div>
+        <slot />
       </section>
     </main>
   </div>

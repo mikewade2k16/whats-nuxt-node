@@ -203,7 +203,7 @@ func (s *Service) loadGovernanceProviders(ctx context.Context) ([]ProviderHealth
 			COALESCE(pio.source_module, ''),
 			MAX(ims.snapshot_at),
 			COUNT(DISTINCT pio.code)::int,
-			COUNT(DISTINCT COALESCE(ims.unit_external_id, 'global')) FILTER (WHERE ims.id IS NOT NULL)::int,
+			COUNT(DISTINCT COALESCE(ims.store_id::text, 'global')) FILTER (WHERE ims.id IS NOT NULL)::int,
 			ARRAY_REMOVE(ARRAY_AGG(DISTINCT pio.code), NULL)
 		FROM indicators.indicator_profiles p
 		JOIN indicators.indicator_profile_indicator_overrides pio ON pio.profile_id = p.id
@@ -417,9 +417,9 @@ func (s *Service) loadGovernancePolicyDriftCount(ctx context.Context, policies [
 		if err := s.pool.QueryRow(ctx, `
 			SELECT COUNT(*)::int
 			FROM (
-				SELECT profile_id, unit_external_id
+				SELECT profile_id, store_id
 				FROM indicators.indicator_profile_store_overrides
-				GROUP BY profile_id, unit_external_id
+				GROUP BY profile_id, store_id
 				HAVING COUNT(*) > $1
 			) drift
 		`, storeOverrideLimit).Scan(&overrideDrift); err != nil {

@@ -25,6 +25,7 @@ import {
   releaseWebhookIdempotency
 } from "./idempotency.js";
 import { ensureTenantWhatsAppRegistry, normalizeWhatsAppInstanceName } from "../../services/whatsapp-instances.js";
+import { resolveTenantRuntimeContextBySlug } from "../../services/tenant-runtime.js";
 
 const webhookContentTypeAllowlist = [
   "application/json",
@@ -116,9 +117,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       return reply.code(413).send({ message: "Payload de webhook acima do limite permitido" });
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { slug: params.data.tenantSlug }
-    });
+    const tenant = await resolveTenantRuntimeContextBySlug(params.data.tenantSlug);
 
     if (!tenant) {
       return reply.code(404).send({ message: "Tenant nao encontrado" });
@@ -133,8 +132,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       id: tenant.id,
       slug: tenant.slug,
       name: tenant.name,
-      whatsappInstance: tenant.whatsappInstance,
-      evolutionApiKey: tenant.evolutionApiKey
+      whatsappInstance: tenant.whatsappInstance
     });
     let resolvedInstance =
       knownInstances.find((entry) => entry.instanceName === extractedInstanceName) ??
@@ -146,7 +144,6 @@ export async function webhookRoutes(app: FastifyInstance) {
           tenantId: tenant.id,
           instanceName: extractedInstanceName,
           displayName: extractedInstanceName,
-          evolutionApiKey: tenant.evolutionApiKey,
           isDefault: knownInstances.length < 1,
           isActive: true
         }
@@ -155,23 +152,11 @@ export async function webhookRoutes(app: FastifyInstance) {
         id: tenant.id,
         slug: tenant.slug,
         name: tenant.name,
-        whatsappInstance: tenant.whatsappInstance,
-        evolutionApiKey: tenant.evolutionApiKey
+        whatsappInstance: tenant.whatsappInstance
       });
       resolvedInstance =
         refreshedInstances.find((entry) => entry.instanceName === extractedInstanceName) ??
         null;
-
-      if (!tenant.whatsappInstance || resolvedInstance?.isDefault) {
-        await prisma.tenant.update({
-          where: {
-            id: tenant.id
-          },
-          data: {
-            whatsappInstance: resolvedInstance?.instanceName || extractedInstanceName
-          }
-        });
-      }
     }
 
     const instanceName = resolvedInstance?.instanceName || extractedInstanceName || "default";

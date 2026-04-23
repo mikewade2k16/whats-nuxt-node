@@ -65,6 +65,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.20
+    profiles: ["ops"]
     environment:
       MP_SMTP_BIND_ADDR: 0.0.0.0:1025
       MP_UI_BIND_ADDR: 0.0.0.0:8025
@@ -74,13 +75,16 @@ services:
     restart: unless-stopped
 
   atendimento-online-api:
+    profiles: ["atendimento", "workers"]
     image: node:22-alpine
     working_dir: /app
     command: >
       sh -c "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm install --no-audit --no-fund; fi;
       npm run prisma:generate;
+      npm run prisma:converge;
+      npm run prisma:push;
       if [ \"${API_DB_BOOTSTRAP_ALWAYS:-false}\" = \"true\" ] || [ ! -f node_modules/.api-db-bootstrapped ]; then
-        npm run prisma:push && npm run prisma:seed && touch node_modules/.api-db-bootstrapped;
+        npm run prisma:seed && touch node_modules/.api-db-bootstrapped;
       fi;
       npm run dev"
     environment:
@@ -132,6 +136,7 @@ services:
       CORE_JWT_SECRET: ${CORE_JWT_SECRET:-change-this-core-secret}
       CORE_JWT_ISSUER: ${CORE_JWT_ISSUER:-plataforma-api}
       CORE_JWT_TTL_MINUTES: ${CORE_JWT_TTL_MINUTES:-60}
+      CORE_PERSISTENT_JWT_TTL_MINUTES: ${CORE_PERSISTENT_JWT_TTL_MINUTES:-43200}
       CORE_PASSWORD_RESET_TTL_MINUTES: ${CORE_PASSWORD_RESET_TTL_MINUTES:-15}
       CORE_DEFAULT_USERS_LIMIT: ${CORE_DEFAULT_USERS_LIMIT:-3}
       CORE_ALLOWED_ORIGINS: ${CORE_ALLOWED_ORIGINS:-http://localhost:3000}
@@ -168,6 +173,7 @@ services:
     restart: unless-stopped
 
   atendimento-online-worker:
+    profiles: ["workers"]
     image: node:22-alpine
     working_dir: /app
     command: >
@@ -201,6 +207,7 @@ services:
       - atendimento_online_worker_node_modules:/app/node_modules
 
   atendimento-online-retencao-worker:
+    profiles: ["workers"]
     image: node:22-alpine
     working_dir: /app
     command: >
@@ -241,13 +248,20 @@ services:
       NUXT_GIF_PROVIDER: ${NUXT_GIF_PROVIDER:-tenor}
       NUXT_TENOR_API_KEY: ${NUXT_TENOR_API_KEY:-}
       NUXT_TENOR_BASE_URL: ${NUXT_TENOR_BASE_URL:-https://tenor.googleapis.com/v2}
+      NUXT_WATCHER: ${NUXT_WATCHER:-chokidar-granular}
+      NUXT_WATCH_POLLING: ${NUXT_WATCH_POLLING:-false}
+      NUXT_WATCH_POLL_INTERVAL: ${NUXT_WATCH_POLL_INTERVAL:-1000}
+      WEB_CLEAN_ARTIFACTS: ${WEB_CLEAN_ARTIFACTS:-0}
+      WEB_WARMUP_ROUTES: ${WEB_WARMUP_ROUTES:-1}
+      WEB_WARMUP_READY_TIMEOUT: ${WEB_WARMUP_READY_TIMEOUT:-2}
+      WEB_WARMUP_ROUTE_TIMEOUT: ${WEB_WARMUP_ROUTE_TIMEOUT:-90}
       PROJECT_DOCS_DIR: /project-docs
       NODE_OPTIONS: ${WEB_NODE_OPTIONS:---max-old-space-size=1024}
     ports:
       - "3000:3000"
     depends_on:
-      - atendimento-online-api
-      - plataforma-api
+      plataforma-api:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -262,12 +276,25 @@ services:
   whatsapp-evolution-gateway:
     image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     profiles: ["channels"]
+    entrypoint:
+      - /bin/bash
+      - -c
+      - >
+        for attempt in $(seq 1 60); do
+          if (echo > /dev/tcp/postgres/5432) >/dev/null 2>&1; then
+            break;
+          fi;
+          echo "[whatsapp-evolution-gateway] aguardando postgres:5432 ($${attempt}/60)";
+          sleep 2;
+        done;
+        . ./Docker/scripts/deploy_database.sh && npm run start:prod
     environment:
       SERVER_URL: http://localhost:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
       CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_CONFIG_SESSION_PHONE_VERSION:-2,3000,1025205472}
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: "postgresql"
+      DATABASE_URL: ${EVOLUTION_DATABASE_URL}
       DATABASE_CONNECTION_URI: ${EVOLUTION_DATABASE_URL}
       DATABASE_CONNECTION_CLIENT_NAME: evolution_api
       DATABASE_SAVE_DATA_INSTANCE: "true"
@@ -311,3 +338,8 @@ volumes:
   whatsapp_evolution_instances:
     name: omnichannel-mvp_evolution_instances
   fila_atendimento_uploads:
+
+networks:
+  default:
+    name: omnichannel-network
+    driver: bridge

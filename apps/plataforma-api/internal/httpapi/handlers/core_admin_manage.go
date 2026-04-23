@@ -39,18 +39,18 @@ type createAdminClientRequest struct {
 }
 
 type createAdminUserRequest struct {
-	Name               string `json:"name"`
-	Nick               string `json:"nick,omitempty"`
-	Email              string `json:"email"`
-	Password           string `json:"password,omitempty"`
-	Phone              string `json:"phone,omitempty"`
-	ClientID           *int   `json:"clientId,omitempty"`
-	Level              string `json:"level,omitempty"`
-	UserType           string `json:"userType,omitempty"`
-	BusinessRole       string `json:"businessRole,omitempty"`
-	StoreID            string `json:"storeId,omitempty"`
-	RegistrationNumber string `json:"registrationNumber,omitempty"`
-	IsPlatformAdmin    bool   `json:"isPlatformAdmin,omitempty"`
+	Name               string  `json:"name"`
+	Nick               string  `json:"nick,omitempty"`
+	Email              string  `json:"email"`
+	Password           string  `json:"password,omitempty"`
+	Phone              string  `json:"phone,omitempty"`
+	CoreTenantID       *string `json:"coreTenantId,omitempty"`
+	Level              string  `json:"level,omitempty"`
+	UserType           string  `json:"userType,omitempty"`
+	BusinessRole       string  `json:"businessRole,omitempty"`
+	StoreID            string  `json:"storeId,omitempty"`
+	RegistrationNumber string  `json:"registrationNumber,omitempty"`
+	IsPlatformAdmin    bool    `json:"isPlatformAdmin,omitempty"`
 }
 
 func writeOwnProfileUpdateError(w http.ResponseWriter, field string, err error) bool {
@@ -114,7 +114,7 @@ func (h *CoreHandler) GetAdminClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientID, err := parseLegacyIDParam(r, "clientId")
+	coreTenantID, err := parseCanonicalIDParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -124,7 +124,7 @@ func (h *CoreHandler) GetAdminClient(w http.ResponseWriter, r *http.Request) {
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to load admin client")
@@ -171,7 +171,7 @@ func (h *CoreHandler) UpdateAdminClientField(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	clientID, err := parseLegacyIDParam(r, "clientId")
+	coreTenantID, err := parseCanonicalIDParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -187,7 +187,7 @@ func (h *CoreHandler) UpdateAdminClientField(w http.ResponseWriter, r *http.Requ
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		Field:           strings.TrimSpace(request.Field),
 		Value:           request.Value,
 	})
@@ -216,7 +216,7 @@ func (h *CoreHandler) ReplaceAdminClientStores(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	clientID, err := parseLegacyIDParam(r, "clientId")
+	coreTenantID, err := parseCanonicalIDParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -232,7 +232,7 @@ func (h *CoreHandler) ReplaceAdminClientStores(w http.ResponseWriter, r *http.Re
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		Stores:          request.Stores,
 	})
 	if err != nil {
@@ -260,7 +260,7 @@ func (h *CoreHandler) RotateAdminClientWebhook(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	clientID, err := parseLegacyIDParam(r, "clientId")
+	coreTenantID, err := parseCanonicalIDParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -270,7 +270,7 @@ func (h *CoreHandler) RotateAdminClientWebhook(w http.ResponseWriter, r *http.Re
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to rotate admin client webhook")
@@ -287,7 +287,7 @@ func (h *CoreHandler) DeleteAdminClient(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	clientID, err := parseLegacyIDParam(r, "clientId")
+	coreTenantID, err := parseCanonicalIDParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -296,7 +296,7 @@ func (h *CoreHandler) DeleteAdminClient(w http.ResponseWriter, r *http.Request) 
 	err = h.service.DeleteAdminClient(r.Context(), core.DeleteAdminClientInput{
 		UserID:          claims.Subject,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to delete admin client")
@@ -315,7 +315,7 @@ func (h *CoreHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageAndLimit(r)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	clientIDFilter, err := parseOptionalLegacyIDQueryParam(r, "clientId")
+	coreTenantIDFilter, err := parseOptionalCanonicalIDQueryParam(r, "coreTenantId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -326,7 +326,7 @@ func (h *CoreHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
 		Query:           q,
-		ClientID:        clientIDFilter,
+		CoreTenantID:    coreTenantIDFilter,
 		Page:            page,
 		Limit:           limit,
 	})
@@ -365,7 +365,7 @@ func (h *CoreHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		Email:                 strings.TrimSpace(strings.ToLower(request.Email)),
 		Password:              strings.TrimSpace(request.Password),
 		Phone:                 strings.TrimSpace(request.Phone),
-		ClientID:              request.ClientID,
+		CoreTenantID:          request.CoreTenantID,
 		Level:                 strings.TrimSpace(request.Level),
 		UserType:              strings.TrimSpace(request.UserType),
 		BusinessRole:          strings.TrimSpace(request.BusinessRole),
@@ -389,7 +389,7 @@ func (h *CoreHandler) UpdateAdminUserField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := parseLegacyIDParam(r, "userId")
+	coreUserID, err := parseCanonicalIDParam(r, "coreUserId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -402,12 +402,12 @@ func (h *CoreHandler) UpdateAdminUserField(w http.ResponseWriter, r *http.Reques
 	}
 
 	item, tenantID, err := h.service.UpdateAdminUserField(r.Context(), core.UpdateAdminUserFieldInput{
-		UserID:          claims.Subject,
-		TenantID:        claims.TenantID,
-		IsPlatformAdmin: claims.IsPlatformAdmin,
-		UserIDLegacy:    userID,
-		Field:           strings.TrimSpace(request.Field),
-		Value:           request.Value,
+		UserID:           claims.Subject,
+		TenantID:         claims.TenantID,
+		IsPlatformAdmin:  claims.IsPlatformAdmin,
+		TargetCoreUserID: coreUserID,
+		Field:            strings.TrimSpace(request.Field),
+		Value:            request.Value,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to update admin user")
@@ -428,17 +428,17 @@ func (h *CoreHandler) ApproveAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := parseLegacyIDParam(r, "userId")
+	coreUserID, err := parseCanonicalIDParam(r, "coreUserId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 
 	item, tenantID, err := h.service.ApproveAdminUser(r.Context(), core.ApproveAdminUserInput{
-		UserID:          claims.Subject,
-		TenantID:        claims.TenantID,
-		IsPlatformAdmin: claims.IsPlatformAdmin,
-		UserIDLegacy:    userID,
+		UserID:           claims.Subject,
+		TenantID:         claims.TenantID,
+		IsPlatformAdmin:  claims.IsPlatformAdmin,
+		TargetCoreUserID: coreUserID,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to approve admin user")
@@ -460,17 +460,17 @@ func (h *CoreHandler) DeleteAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := parseLegacyIDParam(r, "userId")
+	coreUserID, err := parseCanonicalIDParam(r, "coreUserId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 
 	item, tenantID, err := h.service.DeleteAdminUser(r.Context(), core.DeleteAdminUserInput{
-		UserID:          claims.Subject,
-		TenantID:        claims.TenantID,
-		IsPlatformAdmin: claims.IsPlatformAdmin,
-		UserIDLegacy:    userID,
+		UserID:           claims.Subject,
+		TenantID:         claims.TenantID,
+		IsPlatformAdmin:  claims.IsPlatformAdmin,
+		TargetCoreUserID: coreUserID,
 	})
 	if err != nil {
 		h.writeCoreError(w, err, "failed to delete admin user")
@@ -487,15 +487,13 @@ func (h *CoreHandler) broadcastAdminUserEvent(tenantID, action string, item core
 		return
 	}
 
-	clientID := 0
-	if item.ClientID != nil && *item.ClientID > 0 {
-		clientID = *item.ClientID
-	}
-
 	envelopePayload := map[string]any{
 		"userId":     item.ID,
 		"coreUserId": strings.TrimSpace(item.CoreUserID),
 		"email":      strings.TrimSpace(strings.ToLower(item.Email)),
+	}
+	if item.CoreTenantID != nil && strings.TrimSpace(*item.CoreTenantID) != "" {
+		envelopePayload["coreTenantId"] = strings.TrimSpace(*item.CoreTenantID)
 	}
 	for key, value := range payload {
 		envelopePayload[key] = value
@@ -504,23 +502,19 @@ func (h *CoreHandler) broadcastAdminUserEvent(tenantID, action string, item core
 	h.hub.BroadcastTenant(tenantID, map[string]any{
 		"entity":    "users",
 		"action":    action,
-		"clientId":  clientID,
+		"clientId":  0,
 		"payload":   envelopePayload,
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }
 
-func parseLegacyIDParam(r *http.Request, param string) (int, error) {
+func parseCanonicalIDParam(r *http.Request, param string) (string, error) {
 	raw := strings.TrimSpace(chi.URLParam(r, param))
 	if raw == "" {
-		return 0, core.ErrInvalidInput
+		return "", core.ErrInvalidInput
 	}
 
-	parsed, err := strconv.Atoi(raw)
-	if err != nil || parsed <= 0 {
-		return 0, core.ErrInvalidInput
-	}
-	return parsed, nil
+	return raw, nil
 }
 
 func parsePageAndLimit(r *http.Request) (int, int) {
@@ -542,18 +536,13 @@ func parsePageAndLimit(r *http.Request) (int, int) {
 	return page, limit
 }
 
-func parseOptionalLegacyIDQueryParam(r *http.Request, key string) (*int, error) {
+func parseOptionalCanonicalIDQueryParam(r *http.Request, key string) (*string, error) {
 	raw := strings.TrimSpace(r.URL.Query().Get(key))
 	if raw == "" {
 		return nil, nil
 	}
 
-	parsed, err := strconv.Atoi(raw)
-	if err != nil || parsed < 0 {
-		return nil, core.ErrInvalidInput
-	}
-
-	return &parsed, nil
+	return &raw, nil
 }
 
 // UpdateSelfProfile handles PATCH /core/auth/profile â€” updates a single field

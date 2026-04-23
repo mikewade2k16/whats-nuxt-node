@@ -1,4 +1,10 @@
+import { toValue, type MaybeRefOrGetter } from 'vue'
+
 import type { UserFieldKey, UserItem, UserMutationResponse, UsersListResponse, SimpleSelectOption } from '~/types/users'
+
+interface UseUsersManagerOptions {
+  scopedCoreTenantId?: MaybeRefOrGetter<string | null | undefined>
+}
 
 interface UpdateFieldOptions {
   immediate?: boolean
@@ -10,7 +16,7 @@ interface UserCreatePayload {
   email: string
   password: string
   phone: string
-  clientId: number | null
+  coreTenantId: string | null
   level: string
   userType: string
   businessRole: string
@@ -31,26 +37,9 @@ function normalizeEmail(value: unknown) {
   return normalizeText(value, 255).toLowerCase()
 }
 
-function normalizeClientId(value: unknown) {
-  if (value === '' || value === null || value === undefined) {
-    return null
-  }
-
-  const parsed = Number.parseInt(String(value), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null
-  }
-
-  return parsed
-}
-
-function normalizeOptionClientId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 0
-  }
-
-  return parsed
+function normalizeCoreTenantId(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  return normalized || null
 }
 
 function normalizeLevel(value: unknown) {
@@ -86,6 +75,27 @@ function normalizeBusinessRole(value: unknown) {
       return normalized
     default:
       return 'marketing'
+  }
+}
+
+function resolveLevelForBusinessRole(value: unknown, fallback: unknown) {
+  switch (normalizeBusinessRole(value)) {
+    case 'consultant':
+      return 'consultant'
+    case 'store_manager':
+    case 'general_manager':
+      return 'manager'
+    case 'finance':
+      return 'finance'
+    case 'viewer':
+      return 'viewer'
+    case 'owner':
+    case 'system_admin':
+      return 'admin'
+    case 'marketing':
+      return 'marketing'
+    default:
+      return normalizeLevel(fallback)
   }
 }
 
@@ -155,11 +165,36 @@ function normalizeBooleanLike(value: unknown, fallback = false) {
   return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
 }
 
+function resolveUsersManagerErrorMessage(error: unknown, fallback: string) {
+  const statusMessage = normalizeText((error as { statusMessage?: unknown })?.statusMessage, 240)
+  if (statusMessage) {
+    return statusMessage
+  }
+
+  const data = (error as { data?: unknown })?.data
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const message = normalizeText((data as { message?: unknown }).message, 240)
+    if (message) {
+      return message
+    }
+  }
+
+  if (error instanceof Error) {
+    const message = normalizeText(error.message, 240)
+    if (message) {
+      return message
+    }
+  }
+
+  return fallback
+}
+
 function normalizeClientOption(option: SimpleSelectOption): SimpleSelectOption {
   return {
     ...option,
     label: normalizeText(option.label, 120),
-    value: typeof option.value === 'number' ? option.value : String(option.value ?? '').trim(),
+    value: String(option.value ?? '').trim(),
+    coreTenantId: String(option.coreTenantId ?? '').trim(),
     moduleCodes: normalizeModuleCodes(option.moduleCodes),
     stores: normalizeClientStores(option.stores),
     requireUserStoreLink: normalizeBooleanLike(option.requireUserStoreLink, true),
@@ -169,48 +204,60 @@ function normalizeClientOption(option: SimpleSelectOption): SimpleSelectOption {
 }
 
 function normalizeUserRecord(item: UserItem): UserItem {
-  const normalizedClientId = normalizeClientId(item.clientId)
   const normalizedLevel = normalizeLevel(item.level) as UserItem['level']
   const normalizedType = normalizeUserType(item.userType) as UserItem['userType']
   const normalizedBusinessRole = (item.isPlatformAdmin ? 'system_admin' : normalizeBusinessRole(item.businessRole)) as UserItem['businessRole']
   const moduleCodes = normalizeModuleCodes(item.moduleCodes)
   const normalizedStoreId = normalizeStoreId(item.storeId)
+  const normalizedCoreUserId = String(item.coreUserId ?? item.id ?? '').trim()
 
   return {
     ...item,
+    id: normalizedCoreUserId,
+    coreUserId: normalizedCoreUserId,
+    coreTenantId: String(item.coreTenantId ?? '').trim() || null,
     level: normalizedLevel,
     userType: normalizedType,
     businessRole: normalizedBusinessRole,
-    clientId: normalizedClientId,
     storeId: normalizedStoreId,
     storeName: normalizeText(item.storeName ?? '', 120),
     registrationNumber: normalizeRegistrationNumber(item.registrationNumber),
     clientName: String(item.clientName ?? '').trim() || (item.isPlatformAdmin ? 'Root' : ''),
     moduleCodes,
-    atendimentoAccess: Boolean(item.atendimentoAccess) || moduleCodes.includes('atendimento')
+    atendimentoAccess: Boolean(item.atendimentoAccess)
   }
 }
 
-export function useUsersManager() {
+export function useUsersManager(options: UseUsersManagerOptions = {}) {
   const sessionSimulation = useSessionSimulationStore()
   const { bffFetch } = useBffFetch()
   const { coreToken, coreUser, sessionExpiresAt, setSession, hydrate } = useAdminSession()
   const realtime = useTenantRealtime()
   realtime.start()
 
+  const hasScopedCoreTenantResolver = Object.prototype.hasOwnProperty.call(options, 'scopedCoreTenantId')
+
   const users = ref<UserItem[]>([])
   const clientOptions = ref<SimpleSelectOption[]>([])
 
   const loading = ref(false)
   const creating = ref(false)
-  const deletingId = ref<number | null>(null)
+  const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
 
   const pendingFieldTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const isCrossClientViewer = computed(() => Boolean(coreUser.value?.isPlatformAdmin) && sessionSimulation.effectiveUserType === 'admin')
 
-  function keyFor(id: number, field: UserFieldKey | 'delete' | 'create' | 'approve') {
+  function resolveScopedCoreTenantId() {
+    if (!hasScopedCoreTenantResolver) {
+      return ''
+    }
+
+    return String(toValue(options.scopedCoreTenantId) ?? '').trim()
+  }
+
+  function keyFor(id: string, field: UserFieldKey | 'delete' | 'create' | 'approve') {
     return `${id}:${field}`
   }
 
@@ -225,9 +272,13 @@ export function useUsersManager() {
     savingMap.value = next
   }
 
+  function getUserRouteId(id: string) {
+    return String(users.value.find(user => user.id === id)?.coreUserId ?? id ?? '').trim()
+  }
+
   function replaceUserRow(payload: UserItem) {
     const normalizedPayload = normalizeUserRecord(payload)
-    const index = users.value.findIndex(user => user.id === payload.id)
+    const index = users.value.findIndex(user => user.id === normalizedPayload.id)
     if (index < 0) {
       users.value.unshift(normalizedPayload)
       syncSessionFromUserRecord(normalizedPayload)
@@ -238,7 +289,7 @@ export function useUsersManager() {
     syncSessionFromUserRecord(normalizedPayload)
   }
 
-  function patchUserLocally(id: number, patch: Partial<UserItem>) {
+  function patchUserLocally(id: string, patch: Partial<UserItem>) {
     const target = users.value.find(user => user.id === id)
     if (!target) return
 
@@ -254,7 +305,7 @@ export function useUsersManager() {
     const recordEmail = normalizeEmail(record.email)
     const currentEmail = normalizeEmail(coreUser.value?.email ?? '')
 
-    const recordCoreUserID = String((record as unknown as { coreUserId?: unknown }).coreUserId ?? '').trim()
+    const recordCoreUserID = String(record.coreUserId ?? '').trim()
     const currentCoreUserID = String(coreUser.value?.id ?? '').trim()
     if (recordCoreUserID && currentCoreUserID && recordCoreUserID === currentCoreUserID) {
       return true
@@ -299,22 +350,32 @@ export function useUsersManager() {
       return
     }
 
-    if (!sessionSimulation.modulesHydrated || !sessionSimulation.lastClientOptionsSyncAt) {
+    if (!sessionSimulation.clientOptionsSynced) {
       await sessionSimulation.refreshClientOptions()
     }
   }
 
-  async function fetchUsers() {
+  async function fetchUsers(requestedCoreTenantId?: string | null) {
     loading.value = true
     errorMessage.value = ''
 
     try {
       await ensureSessionScopeReady()
 
+      const scopedCoreTenantId = requestedCoreTenantId !== undefined
+        ? String(requestedCoreTenantId ?? '').trim()
+        : resolveScopedCoreTenantId()
+
+      if (hasScopedCoreTenantResolver && !scopedCoreTenantId) {
+        users.value = []
+        return
+      }
+
       const response = await bffFetch<UsersListResponse>('/api/admin/users', {
         query: {
           page: 1,
-          limit: DEFAULT_USERS_FETCH_LIMIT
+          limit: DEFAULT_USERS_FETCH_LIMIT,
+          coreTenantId: scopedCoreTenantId || undefined
         }
       })
 
@@ -330,7 +391,7 @@ export function useUsersManager() {
       if (statusCode === 401 || statusCode === 403) {
         errorMessage.value = 'Voce nao tem permissao para acessar usuarios nesta sessao.'
       } else {
-        errorMessage.value = 'Falha ao carregar usuarios.'
+        errorMessage.value = resolveUsersManagerErrorMessage(error, 'Falha ao carregar usuarios.')
       }
     } finally {
       loading.value = false
@@ -341,10 +402,10 @@ export function useUsersManager() {
     await ensureSessionScopeReady()
 
     if (!isCrossClientViewer.value) {
-      const currentClientId = normalizeOptionClientId(sessionSimulation.effectiveClientId)
+      const currentCoreTenantId = String(sessionSimulation.activeClientCoreTenantId ?? '').trim()
       const currentClientLabel = String(sessionSimulation.activeClientLabel ?? '').trim()
 
-      if (currentClientId <= 0) {
+      if (!currentCoreTenantId) {
         clientOptions.value = []
         return
       }
@@ -359,11 +420,12 @@ export function useUsersManager() {
           storesCount?: number
           requireUserStoreLink?: boolean
           requireUserRegistration?: boolean
-        }>(`/api/core-bff/core/admin/clients/${currentClientId}`)
+		}>(`/api/core-bff/core/admin/clients/${encodeURIComponent(currentCoreTenantId)}`)
 
         clientOptions.value = [normalizeClientOption({
-          label: String(clientDetail?.name ?? '').trim() || currentClientLabel || `Cliente #${currentClientId}`,
-          value: currentClientId,
+          label: String(clientDetail?.name ?? '').trim() || currentClientLabel || 'Cliente atual',
+          value: currentCoreTenantId,
+          coreTenantId: currentCoreTenantId,
           moduleCodes: normalizeModuleCodes(
             Array.isArray(clientDetail?.moduleCodes) && clientDetail.moduleCodes.length > 0
               ? clientDetail.moduleCodes
@@ -376,8 +438,9 @@ export function useUsersManager() {
         })]
       } catch {
         clientOptions.value = [normalizeClientOption({
-          label: currentClientLabel || `Cliente #${currentClientId}`,
-          value: currentClientId,
+          label: currentClientLabel || 'Cliente atual',
+          value: currentCoreTenantId,
+          coreTenantId: currentCoreTenantId,
           moduleCodes: [...sessionSimulation.activeClientModuleCodes],
           stores: [],
           storesCount: 0,
@@ -394,6 +457,7 @@ export function useUsersManager() {
         status: string,
         data: Array<{
           id: number,
+          coreTenantId?: string,
           name: string,
           moduleCodes?: string[],
           modules?: Array<{ code?: string }>,
@@ -413,7 +477,8 @@ export function useUsersManager() {
       const options = (response.data || [])
         .map(item => normalizeClientOption({
           label: item.name,
-          value: item.id,
+          value: String(item.coreTenantId ?? '').trim(),
+          coreTenantId: String(item.coreTenantId ?? '').trim(),
           moduleCodes: normalizeModuleCodes(
             Array.isArray(item.moduleCodes) && item.moduleCodes.length > 0
               ? item.moduleCodes
@@ -431,34 +496,39 @@ export function useUsersManager() {
     }
   }
 
-  async function fetchAll() {
-    await Promise.all([fetchUsers(), fetchClientOptions()])
+  async function fetchAll(requestedCoreTenantId?: string | null) {
+    await Promise.all([fetchUsers(requestedCoreTenantId), fetchClientOptions()])
   }
 
-  async function persistField(id: number, field: UserFieldKey, value: unknown) {
+  async function persistField(id: string, field: UserFieldKey, value: unknown) {
     const savingKey = keyFor(id, field)
     setSaving(savingKey, true)
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<UserMutationResponse>(`/api/admin/users/${id}`, {
+    const routeId = getUserRouteId(id)
+    if (!routeId) {
+      throw new Error('Usuario sem coreUserId para atualizacao.')
+    }
+
+    const response = await bffFetch<UserMutationResponse>(`/api/admin/users/${encodeURIComponent(routeId)}`, {
         method: 'PATCH',
         body: {
-          field,
-          value
+      field,
+      value
         }
       })
 
       replaceUserRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao salvar alteracao do usuario.'
+    } catch (error) {
+      errorMessage.value = resolveUsersManagerErrorMessage(error, 'Falha ao salvar alteracao do usuario.')
       await fetchUsers()
     } finally {
       setSaving(savingKey, false)
     }
   }
 
-  function queueFieldPersist(id: number, field: UserFieldKey, value: unknown, options: UpdateFieldOptions = {}) {
+  function queueFieldPersist(id: string, field: UserFieldKey, value: unknown, options: UpdateFieldOptions = {}) {
     const timerKey = keyFor(id, field)
     const existingTimer = pendingFieldTimers.get(timerKey)
     if (existingTimer) {
@@ -480,24 +550,24 @@ export function useUsersManager() {
     pendingFieldTimers.set(timerKey, timer)
   }
 
-  function updateField(id: number, field: UserFieldKey, value: unknown, options: UpdateFieldOptions = {}) {
+  function updateField(id: string, field: UserFieldKey, value: unknown, options: UpdateFieldOptions = {}) {
     if (field === 'level') {
       patchUserLocally(id, { level: normalizeLevel(value) as UserItem['level'] })
     }
 
-    if (field === 'clientId') {
-      const nextClientId = normalizeClientId(value)
+    if (field === 'coreTenantId') {
+      const nextCoreTenantId = normalizeCoreTenantId(value)
       const target = users.value.find(user => user.id === id)
       const nextClientOption = clientOptions.value.find(
-        option => normalizeOptionClientId(option.value) === (nextClientId ?? 0)
+        option => normalizeCoreTenantId(option.value) === nextCoreTenantId
       )
       const nextClientName = nextClientOption?.label ?? ''
       const currentStoreId = normalizeStoreId(target?.storeId)
       const matchedStore = (nextClientOption?.stores || []).find(store => store.id === currentStoreId)
 
       patchUserLocally(id, {
-        clientId: nextClientId,
-        clientName: nextClientId ? nextClientName : '',
+        coreTenantId: nextCoreTenantId,
+        clientName: nextCoreTenantId ? nextClientName : '',
         storeId: matchedStore?.id ?? null,
         storeName: matchedStore?.name ?? ''
       })
@@ -546,6 +616,7 @@ export function useUsersManager() {
     if (field === 'businessRole') {
       const nextBusinessRole = normalizeBusinessRole(value) as UserItem['businessRole']
       patchUserLocally(id, {
+        level: resolveLevelForBusinessRole(nextBusinessRole, users.value.find(user => user.id === id)?.level) as UserItem['level'],
         businessRole: nextBusinessRole,
         storeId: isStoreScopedBusinessRole(nextBusinessRole) ? users.value.find(user => user.id === id)?.storeId ?? null : null,
         storeName: isStoreScopedBusinessRole(nextBusinessRole) ? users.value.find(user => user.id === id)?.storeName ?? '' : ''
@@ -554,8 +625,8 @@ export function useUsersManager() {
 
     if (field === 'storeId') {
       const target = users.value.find(user => user.id === id)
-      const targetClientId = normalizeClientId(target?.clientId)
-      const clientOption = clientOptions.value.find(option => normalizeOptionClientId(option.value) === (targetClientId ?? 0))
+			const targetCoreTenantId = normalizeCoreTenantId(target?.coreTenantId)
+			const clientOption = clientOptions.value.find(option => normalizeCoreTenantId(option.value) === targetCoreTenantId)
       const nextStoreId = normalizeStoreId(value)
       const matchedStore = (clientOption?.stores || []).find(store => store.id === nextStoreId)
 
@@ -580,19 +651,24 @@ export function useUsersManager() {
     queueFieldPersist(id, field, value, options)
   }
 
-  async function approveLogin(id: number) {
+  async function approveLogin(id: string) {
     const savingKey = keyFor(id, 'approve')
     setSaving(savingKey, true)
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<UserMutationResponse>(`/api/admin/users/${id}/approve`, {
+    const routeId = getUserRouteId(id)
+    if (!routeId) {
+      throw new Error('Usuario sem coreUserId para aprovacao.')
+    }
+
+    const response = await bffFetch<UserMutationResponse>(`/api/admin/users/${encodeURIComponent(routeId)}/approve`, {
         method: 'POST'
       })
 
       replaceUserRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao aprovar login do usuario.'
+    } catch (error) {
+      errorMessage.value = resolveUsersManagerErrorMessage(error, 'Falha ao aprovar login do usuario.')
       await fetchUsers()
     } finally {
       setSaving(savingKey, false)
@@ -601,10 +677,12 @@ export function useUsersManager() {
 
   async function createUser(payload?: Partial<UserCreatePayload>) {
     creating.value = true
-    setSaving(keyFor(0, 'create'), true)
+    setSaving(keyFor('__create__', 'create'), true)
     errorMessage.value = ''
 
     try {
+			const selectedCoreTenantId = normalizeCoreTenantId(payload?.coreTenantId)
+
       const response = await bffFetch<UserMutationResponse>('/api/admin/users', {
         method: 'POST',
         body: {
@@ -613,7 +691,7 @@ export function useUsersManager() {
           email: normalizeEmail(payload?.email ?? ''),
           password: normalizeText(payload?.password ?? 'Senha@123', 255),
           phone: normalizeText(payload?.phone ?? '', 20),
-          clientId: normalizeClientId(payload?.clientId),
+			coreTenantId: Boolean(payload?.isPlatformAdmin) ? null : selectedCoreTenantId,
           level: normalizeLevel(payload?.level),
           userType: normalizeUserType(payload?.userType),
           businessRole: normalizeBusinessRole(payload?.businessRole),
@@ -626,28 +704,33 @@ export function useUsersManager() {
       const normalizedCreated = normalizeUserRecord(response.data)
       users.value.unshift(normalizedCreated)
       return normalizedCreated.id
-    } catch {
-      errorMessage.value = 'Falha ao criar usuario.'
+    } catch (error) {
+      errorMessage.value = resolveUsersManagerErrorMessage(error, 'Falha ao criar usuario.')
       return null
     } finally {
       creating.value = false
-      setSaving(keyFor(0, 'create'), false)
+      setSaving(keyFor('__create__', 'create'), false)
     }
   }
 
-  async function deleteUser(id: number) {
+  async function deleteUser(id: string) {
     deletingId.value = id
     setSaving(keyFor(id, 'delete'), true)
     errorMessage.value = ''
 
     try {
-      await bffFetch<{ status: 'success' }>(`/api/admin/users/${id}`, {
+    const routeId = getUserRouteId(id)
+    if (!routeId) {
+      throw new Error('Usuario sem coreUserId para exclusao.')
+    }
+
+    await bffFetch<{ status: 'success' }>(`/api/admin/users/${encodeURIComponent(routeId)}`, {
         method: 'DELETE'
       })
 
       users.value = users.value.filter(user => user.id !== id)
-    } catch {
-      errorMessage.value = 'Falha ao excluir usuario.'
+    } catch (error) {
+      errorMessage.value = resolveUsersManagerErrorMessage(error, 'Falha ao excluir usuario.')
     } finally {
       deletingId.value = null
       setSaving(keyFor(id, 'delete'), false)
@@ -662,15 +745,23 @@ export function useUsersManager() {
     pendingFieldTimers.clear()
   })
 
+  function refreshCurrentScope() {
+    if (hasScopedCoreTenantResolver) {
+      return fetchUsers()
+    }
+
+    return fetchAll()
+  }
+
   watch(
     () => sessionSimulation.requestContextHash,
     () => {
-      void fetchAll()
+      void refreshCurrentScope()
     }
   )
 
   const stopRealtimeSubscription = realtime.subscribeEntity('users', () => {
-    void fetchAll()
+    void refreshCurrentScope()
   })
 
   onScopeDispose(() => {

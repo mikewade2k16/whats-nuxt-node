@@ -11,6 +11,7 @@ interface CoreAdminClientModulesPayload {
 interface CoreAdminClientsListPayload {
   items?: Array<{
     id?: number
+    coreTenantId?: string
     modules?: Array<{ code?: string }>
   }>
 }
@@ -30,7 +31,7 @@ function normalizeModuleCode(value: unknown) {
 
 function shouldFallbackToClientsList(error: unknown) {
   const statusCode = getErrorStatusCode(error)
-  return statusCode === 404 || statusCode === 405
+  return statusCode === 400 || statusCode === 404 || statusCode === 405 || statusCode === 500
 }
 
 async function resolveClientModuleCodesFromList(event: H3Event, access: AccessContext) {
@@ -42,14 +43,14 @@ async function resolveClientModuleCodesFromList(event: H3Event, access: AccessCo
     })}`
   )
 
-  const matched = (response.items || []).find(item => Number(item.id) === access.clientId)
+  const matched = (response.items || []).find(item => String(item.coreTenantId || '').trim() === String(access.tenantId || '').trim())
   return Array.isArray(matched?.modules)
     ? matched.modules.map(module => normalizeModuleCode(module?.code)).filter(Boolean)
     : []
   }
 
 async function resolveClientModuleCodes(event: H3Event, access: AccessContext) {
-  if (access.clientId <= 0) {
+	if (!String(access.tenantId || '').trim()) {
     return [] as string[]
   }
 
@@ -63,7 +64,7 @@ async function resolveClientModuleCodes(event: H3Event, access: AccessContext) {
   try {
 	const response = await coreAdminFetch<CoreAdminClientModulesPayload>(
 	  event,
-	  `/core/admin/clients/${access.clientId}`
+    `/core/admin/clients/${encodeURIComponent(String(access.tenantId || '').trim())}`
 	)
 
 	moduleCodes = Array.isArray(response.modules)

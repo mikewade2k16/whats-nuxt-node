@@ -60,19 +60,24 @@ func (repository *PostgresRepository) FindAccessibleByID(ctx context.Context, pr
 }
 
 func (repository *PostgresRepository) Create(ctx context.Context, store Store) (Store, error) {
-	query := `
-		insert into stores (
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Store{}, err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	var createdID string
+	err = tx.QueryRow(ctx, `
+		insert into platform_core.tenant_stores (
 			tenant_id,
 			code,
 			name,
 			city,
-			default_template_id,
-			monthly_goal,
-			weekly_goal,
-			avg_ticket_goal,
-			conversion_goal,
-			pa_goal,
-			is_active
+			is_active,
+			sort_order,
+			metadata
 		)
 		values (
 			$1::uuid,
@@ -80,117 +85,126 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 			$3,
 			$4,
 			$5,
-			$6,
-			$7,
-			$8,
-			$9,
-			$10,
-			$11
+			coalesce((
+				select max(sort_order) + 1
+				from platform_core.tenant_stores
+				where tenant_id = $1::uuid
+			), 0),
+			'{}'::jsonb
 		)
-		returning
-			id::text,
-			tenant_id::text,
-			code,
-			name,
-			city,
-			default_template_id,
-			monthly_goal,
-			weekly_goal,
-			avg_ticket_goal,
-			conversion_goal,
-			pa_goal,
-			is_active,
-			created_at,
-			updated_at;
-	`
-
-	created, err := scanStore(repository.pool.QueryRow(
-		ctx,
-		query,
-		store.TenantID,
-		store.Code,
-		store.Name,
-		store.City,
-		store.DefaultTemplateID,
-		store.MonthlyGoal,
-		store.WeeklyGoal,
-		store.AvgTicketGoal,
-		store.ConversionGoal,
-		store.PAGoal,
-		store.Active,
-	))
+		returning id::text;
+	`, store.TenantID, store.Code, store.Name, store.City, store.Active).Scan(&createdID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Store{}, ErrStoreConflict
 		}
-
 		return Store{}, err
 	}
 
-	return created, nil
+	if err := upsertStoreProfile(ctx, tx, Store{
+		ID:                createdID,
+		TenantID:          store.TenantID,
+		DefaultTemplateID: store.DefaultTemplateID,
+		MonthlyGoal:       store.MonthlyGoal,
+		WeeklyGoal:        store.WeeklyGoal,
+		AvgTicketGoal:     store.AvgTicketGoal,
+		ConversionGoal:    store.ConversionGoal,
+		PAGoal:            store.PAGoal,
+	}); err != nil {
+		return Store{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		insert into platform_core.tenant_store_charges (
+			tenant_id,
+			store_id,
+			store_name,
+			amount,
+			sort_order,
+			metadata
+		)
+		select
+			$1::uuid,
+			$2::uuid,
+			$3,
+			0,
+			coalesce(ts.sort_order, 0),
+			'{}'::jsonb
+		from platform_core.tenant_stores ts
+		where ts.id = $2::uuid
+		on conflict (store_id) do update
+		set
+			tenant_id = excluded.tenant_id,
+			store_name = excluded.store_name,
+			sort_order = excluded.sort_order,
+			updated_at = now();
+	`, store.TenantID, createdID, store.Name); err != nil {
+		return Store{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Store{}, err
+	}
+
+	return repository.FindAccessibleByID(ctx, auth.Principal{
+		UserID:   store.ID,
+		Role:     auth.RolePlatformAdmin,
+		TenantID: store.TenantID,
+	}, createdID)
 }
 
 func (repository *PostgresRepository) Update(ctx context.Context, store Store) (Store, error) {
-	query := `
-		update stores
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Store{}, err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	commandTag, err := tx.Exec(ctx, `
+		update platform_core.tenant_stores
 		set
 			code = $2,
 			name = $3,
 			city = $4,
-			default_template_id = $5,
-			monthly_goal = $6,
-			weekly_goal = $7,
-			avg_ticket_goal = $8,
-			conversion_goal = $9,
-			pa_goal = $10,
-			is_active = $11,
+			is_active = $5,
 			updated_at = now()
-		where id = $1::uuid
-		returning
-			id::text,
-			tenant_id::text,
-			code,
-			name,
-			city,
-			default_template_id,
-			monthly_goal,
-			weekly_goal,
-			avg_ticket_goal,
-			conversion_goal,
-			pa_goal,
-			is_active,
-			created_at,
-			updated_at;
-	`
-
-	updated, err := scanStore(repository.pool.QueryRow(
-		ctx,
-		query,
-		store.ID,
-		store.Code,
-		store.Name,
-		store.City,
-		store.DefaultTemplateID,
-		store.MonthlyGoal,
-		store.WeeklyGoal,
-		store.AvgTicketGoal,
-		store.ConversionGoal,
-		store.PAGoal,
-		store.Active,
-	))
+		where id = $1::uuid;
+	`, store.ID, store.Code, store.Name, store.City, store.Active)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Store{}, ErrStoreNotFound
-		}
-
 		if isUniqueViolation(err) {
 			return Store{}, ErrStoreConflict
 		}
+		return Store{}, err
+	}
+	if commandTag.RowsAffected() == 0 {
+		return Store{}, ErrStoreNotFound
+	}
 
+	if err := upsertStoreProfile(ctx, tx, store); err != nil {
 		return Store{}, err
 	}
 
-	return updated, nil
+	if _, err := tx.Exec(ctx, `
+		update platform_core.tenant_store_charges
+		set
+			store_name = $2,
+			updated_at = now()
+		where store_id = $1::uuid;
+	`, store.ID, store.Name); err != nil {
+		return Store{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Store{}, err
+	}
+
+	return repository.FindAccessibleByID(ctx, auth.Principal{
+		UserID:   store.ID,
+		Role:     auth.RolePlatformAdmin,
+		TenantID: store.TenantID,
+	}, store.ID)
 }
 
 func (repository *PostgresRepository) ListDeleteDependencies(ctx context.Context, storeID string) ([]DeleteDependency, error) {
@@ -198,12 +212,6 @@ func (repository *PostgresRepository) ListDeleteDependencies(ctx context.Context
 		with dependency_rows as (
 			select 'consultants'::text as key, 'Consultores cadastrados'::text as label, count(*)::integer as total
 			from consultants
-			where store_id = $1::uuid
-
-			union all
-
-			select 'user_store_roles'::text as key, 'Usuarios vinculados a loja'::text as label, count(*)::integer as total
-			from user_store_roles
 			where store_id = $1::uuid
 
 			union all
@@ -270,8 +278,23 @@ func (repository *PostgresRepository) ListDeleteDependencies(ctx context.Context
 }
 
 func (repository *PostgresRepository) Delete(ctx context.Context, storeID string) error {
-	commandTag, err := repository.pool.Exec(ctx, `
-		delete from stores
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `delete from platform_core.tenant_store_charges where store_id = $1::uuid;`, storeID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `delete from store_profiles where store_id = $1::uuid;`, storeID); err != nil {
+		return err
+	}
+
+	commandTag, err := tx.Exec(ctx, `
+		delete from platform_core.tenant_stores
 		where id = $1::uuid;
 	`, storeID)
 	if err != nil {
@@ -282,11 +305,10 @@ func (repository *PostgresRepository) Delete(ctx context.Context, storeID string
 		return ErrStoreNotFound
 	}
 
-	return nil
+	return tx.Commit(ctx)
 }
 
 func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string, []any) {
-	tenantID := strings.TrimSpace(input.TenantID)
 	activeClause := ""
 	if !input.IncludeInactive {
 		activeClause = " and s.is_active = true"
@@ -294,194 +316,119 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 
 	switch principal.Role {
 	case auth.RolePlatformAdmin:
-		if tenantID != "" {
-			return `
-				select
-					s.id::text,
-					s.tenant_id::text,
-					s.code,
-					s.name,
-					s.city,
-					s.default_template_id,
-					s.monthly_goal,
-					s.weekly_goal,
-					s.avg_ticket_goal,
-					s.conversion_goal,
-					s.pa_goal,
-					s.is_active,
-					s.created_at,
-					s.updated_at
-				from stores s
+		if strings.TrimSpace(input.TenantID) != "" {
+			return storeSelectBase() + `
 				where s.tenant_id = $1::uuid
 				` + activeClause + `
-				order by s.created_at asc, s.code asc;
-			`, []any{tenantID}
+				order by s.sort_order asc, s.created_at asc;
+			`, []any{input.TenantID}
 		}
 
-		return `
-			select
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
+		return storeSelectBase() + `
 			where 1 = 1
 			` + activeClause + `
-			order by s.created_at asc, s.code asc;
+			order by s.sort_order asc, s.created_at asc;
 		`, nil
 	case auth.RoleOwner, auth.RoleMarketing:
-		query := `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_tenant_roles utr on utr.tenant_id = s.tenant_id
-			where utr.user_id = $1::uuid
-		`
-		query += activeClause
-		args := []any{principal.UserID}
-		if tenantID != "" {
-			query += `
-				and s.tenant_id = $2::uuid
-			`
-			args = append(args, tenantID)
-		}
-
-		query += `
-			order by s.created_at asc, s.code asc;
-		`
-
-		return query, args
+		return storeSelectBase() + `
+			where s.tenant_id = $1::uuid
+			` + activeClause + `
+			order by s.sort_order asc, s.created_at asc;
+		`, []any{principal.TenantID}
 	default:
-		query := `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_store_roles usr on usr.store_id = s.id
-			where usr.user_id = $1::uuid
-		`
-		query += activeClause
-		args := []any{principal.UserID}
-		if tenantID != "" {
-			query += `
-				and s.tenant_id = $2::uuid
-			`
-			args = append(args, tenantID)
-		}
-
-		query += `
-			order by s.created_at asc, s.code asc;
-		`
-
-		return query, args
+		return storeSelectBase() + `
+			where s.tenant_id = $1::uuid
+			  and s.id::text = any($2)
+			` + activeClause + `
+			order by s.sort_order asc, s.created_at asc;
+		`, []any{principal.TenantID, append([]string{}, principal.StoreIDs...)}
 	}
 }
 
 func buildFindAccessibleQuery(principal auth.Principal, storeID string) (string, []any) {
 	switch principal.Role {
 	case auth.RolePlatformAdmin:
-		return `
-			select
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
+		return storeSelectBase() + `
 			where s.id = $1::uuid
 			limit 1;
 		`, []any{storeID}
 	case auth.RoleOwner, auth.RoleMarketing:
-		return `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_tenant_roles utr on utr.tenant_id = s.tenant_id
+		return storeSelectBase() + `
 			where s.id = $1::uuid
-				and utr.user_id = $2::uuid
+			  and s.tenant_id = $2::uuid
 			limit 1;
-		`, []any{storeID, principal.UserID}
+		`, []any{storeID, principal.TenantID}
 	default:
-		return `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_store_roles usr on usr.store_id = s.id
+		return storeSelectBase() + `
 			where s.id = $1::uuid
-				and usr.user_id = $2::uuid
+			  and s.tenant_id = $2::uuid
+			  and s.id::text = any($3)
 			limit 1;
-		`, []any{storeID, principal.UserID}
+		`, []any{storeID, principal.TenantID, append([]string{}, principal.StoreIDs...)}
 	}
+}
+
+func storeSelectBase() string {
+	return `
+		select
+			s.id::text,
+			s.tenant_id::text,
+			s.code,
+			s.name,
+			s.city,
+			coalesce(profile.default_template_id, '') as default_template_id,
+			coalesce(profile.monthly_goal, 0)::float8 as monthly_goal,
+			coalesce(profile.weekly_goal, 0)::float8 as weekly_goal,
+			coalesce(profile.avg_ticket_goal, 0)::float8 as avg_ticket_goal,
+			coalesce(profile.conversion_goal, 0)::float8 as conversion_goal,
+			coalesce(profile.pa_goal, 0)::float8 as pa_goal,
+			s.is_active,
+			s.created_at,
+			s.updated_at
+		from platform_core.tenant_stores s
+		left join store_profiles profile on profile.store_id = s.id
+	`
+}
+
+func upsertStoreProfile(ctx context.Context, tx pgx.Tx, store Store) error {
+	_, err := tx.Exec(ctx, `
+		insert into store_profiles (
+			store_id,
+			default_template_id,
+			monthly_goal,
+			weekly_goal,
+			avg_ticket_goal,
+			conversion_goal,
+			pa_goal
+		)
+		values (
+			$1::uuid,
+			$2,
+			$3,
+			$4,
+			$5,
+			$6,
+			$7
+		)
+		on conflict (store_id) do update
+		set
+			default_template_id = excluded.default_template_id,
+			monthly_goal = excluded.monthly_goal,
+			weekly_goal = excluded.weekly_goal,
+			avg_ticket_goal = excluded.avg_ticket_goal,
+			conversion_goal = excluded.conversion_goal,
+			pa_goal = excluded.pa_goal,
+			updated_at = now();
+	`,
+		store.ID,
+		strings.TrimSpace(store.DefaultTemplateID),
+		store.MonthlyGoal,
+		store.WeeklyGoal,
+		store.AvgTicketGoal,
+		store.ConversionGoal,
+		store.PAGoal,
+	)
+	return err
 }
 
 func scanStore(row pgx.Row) (Store, error) {

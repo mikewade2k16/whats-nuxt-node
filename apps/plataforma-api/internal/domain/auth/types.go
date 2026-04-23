@@ -22,6 +22,7 @@ type LoginInput struct {
 	Email     string
 	Password  string
 	TenantID  string
+	Remember  bool
 	RemoteIP  string
 	UserAgent string
 }
@@ -55,6 +56,7 @@ type UserSummary struct {
 	UserType           string   `json:"userType,omitempty"`
 	BusinessRole       string   `json:"businessRole,omitempty"`
 	StoreID            *string  `json:"storeId,omitempty"`
+	StoreName          string   `json:"storeName,omitempty"`
 	RegistrationNumber string   `json:"registrationNumber,omitempty"`
 	Preferences        string   `json:"preferences,omitempty"`
 	ModuleCodes        []string `json:"moduleCodes,omitempty"`

@@ -5,6 +5,7 @@ import { env } from "../../config.js";
 import { prisma } from "../../db.js";
 import { requireConversationWrite } from "../../lib/guards.js";
 import { EvolutionApiError, type EvolutionClient } from "../../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import { handleMessageUpsertWebhook } from "../webhooks/handlers/message-upsert.js";
 import type { IncomingWebhookPayload } from "../webhooks/shared.js";
 import { asRecord } from "./object-utils.js";
@@ -457,20 +458,9 @@ export function registerConversationMessageHistorySyncRoute(protectedApp: Fastif
       return reply.code(409).send({ message: "Sincronizacao disponivel apenas para conversas WhatsApp" });
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: request.authUser.tenantId },
-      select: {
-        id: true,
-        whatsappInstance: true,
-        evolutionApiKey: true
-      }
+    const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+      accessToken: request.coreAccessToken
     });
-
-    if (!tenant) {
-      return reply.code(400).send({
-        message: "Tenant sem instancia WhatsApp configurada"
-      });
-    }
 
     const routedInstance = await resolveConversationInstanceRouting({
       tenantId: tenant.id,

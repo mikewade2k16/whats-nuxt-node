@@ -82,6 +82,17 @@ describe("admin module access", () => {
     });
   });
 
+  it("permite a pagina de modulos para admin sem depender de modulo ativo no cliente", () => {
+    const result = evaluateAdminRouteAccess("/admin/manage/modulos", buildAccessContext({
+      enabledModules: []
+    }));
+
+    expect(result).toMatchObject({
+      allowed: true,
+      featureCode: "manage.modules"
+    });
+  });
+
   it("permite indicadores quando o cliente selecionado possui o modulo", () => {
     const result = evaluateAdminRouteAccess("/admin/indicadores", buildAccessContext({
       isRootUser: true,

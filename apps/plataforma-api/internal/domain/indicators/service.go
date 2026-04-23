@@ -14,6 +14,12 @@ type Service struct {
 	pool *pgxpool.Pool
 }
 
+type tenantStoreSnapshot struct {
+	ID   string
+	Code string
+	Name string
+}
+
 type activeProfileRow struct {
 	RecordID              string
 	Name                  string
@@ -71,8 +77,8 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool}
 }
 
-func (s *Service) ResolveRealtimeTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, jwtTenantID, isPlatformAdmin, clientLegacyID)
+func (s *Service) ResolveRealtimeTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, coreTenantID string, clientLegacyID int) (string, error) {
+	tenantUUID, _, _, err := s.resolveTenant(ctx, jwtTenantID, isPlatformAdmin, coreTenantID, clientLegacyID)
 	if err != nil {
 		return "", err
 	}
@@ -100,24 +106,29 @@ func (s *Service) ResolveEvaluationRealtimeTenant(ctx context.Context, evaluatio
 	return tenantUUID, nil
 }
 
-func (s *Service) resolveTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, int, string, error) {
-	if isPlatformAdmin && clientLegacyID > 0 {
-		var tenantUUID string
-		var legacyID int
-		var name string
-		err := s.pool.QueryRow(ctx, `
-			SELECT id::text, legacy_id, name
-			FROM platform_core.tenants
-			WHERE legacy_id = $1 AND deleted_at IS NULL
-			LIMIT 1
-		`, clientLegacyID).Scan(&tenantUUID, &legacyID, &name)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return "", 0, "", ErrNotFound
+func (s *Service) resolveTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, coreTenantID string, clientLegacyID int) (string, int, string, error) {
+	_ = clientLegacyID
+
+	if isPlatformAdmin {
+		normalizedCoreTenantID := normalizeUUID(coreTenantID)
+		if normalizedCoreTenantID != "" {
+			var tenantUUID string
+			var legacyID int
+			var name string
+			err := s.pool.QueryRow(ctx, `
+				SELECT id::text, legacy_id, name
+				FROM platform_core.tenants
+				WHERE id = $1::uuid AND deleted_at IS NULL
+				LIMIT 1
+			`, normalizedCoreTenantID).Scan(&tenantUUID, &legacyID, &name)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return "", 0, "", ErrNotFound
+				}
+				return "", 0, "", err
 			}
-			return "", 0, "", err
+			return tenantUUID, legacyID, name, nil
 		}
-		return tenantUUID, legacyID, name, nil
 	}
 
 	tenantUUID := normalizeUUID(jwtTenantID)
@@ -141,6 +152,33 @@ func (s *Service) resolveTenant(ctx context.Context, jwtTenantID string, isPlatf
 	}
 
 	return tenantUUID, legacyID, name, nil
+}
+
+func (s *Service) loadTenantStoreSnapshots(ctx context.Context, tenantUUID string) (map[string]tenantStoreSnapshot, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, COALESCE(code, ''), name
+		FROM platform_core.tenant_stores
+		WHERE tenant_id = $1::uuid
+		  AND is_active = true
+	`, tenantUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stores := map[string]tenantStoreSnapshot{}
+	for rows.Next() {
+		var item tenantStoreSnapshot
+		if err := rows.Scan(&item.ID, &item.Code, &item.Name); err != nil {
+			return nil, err
+		}
+		stores[item.ID] = item
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return stores, nil
 }
 
 func (s *Service) getActiveProfileRow(ctx context.Context, tenantUUID string) (activeProfileRow, error) {

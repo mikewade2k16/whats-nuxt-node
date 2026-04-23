@@ -40,6 +40,10 @@ func (service *Service) SetContextPublisher(notifier ContextPublisher) {
 }
 
 func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResult, error) {
+	if service.password == nil {
+		return LoginResult{}, ErrForbidden
+	}
+
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	password := input.Password
 
@@ -109,9 +113,15 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 
 	principal.DisplayName = user.DisplayName
 	principal.Email = user.Email
-	principal.Role = user.Role
-	principal.TenantID = user.TenantID
-	principal.StoreIDs = append([]string{}, user.StoreIDs...)
+	if principal.Role == "" {
+		principal.Role = user.Role
+	}
+	if principal.TenantID == "" {
+		principal.TenantID = user.TenantID
+	}
+	if len(principal.StoreIDs) == 0 {
+		principal.StoreIDs = append([]string{}, user.StoreIDs...)
+	}
 
 	return principal, nil
 }
@@ -130,7 +140,18 @@ func (service *Service) CurrentUser(ctx context.Context, principal Principal) (U
 		return UserView{}, ErrUserInactive
 	}
 
-	return user.View(), nil
+	view := user.View()
+	if principal.Role != "" {
+		view.Role = principal.Role
+	}
+	if strings.TrimSpace(principal.TenantID) != "" {
+		view.TenantID = principal.TenantID
+	}
+	if len(principal.StoreIDs) > 0 {
+		view.StoreIDs = append([]string{}, principal.StoreIDs...)
+	}
+
+	return view, nil
 }
 
 func (service *Service) UpdateProfile(ctx context.Context, principal Principal, input UpdateProfileInput) (UserView, error) {
@@ -157,6 +178,10 @@ func (service *Service) UpdateProfile(ctx context.Context, principal Principal, 
 }
 
 func (service *Service) ChangePassword(ctx context.Context, principal Principal, input ChangePasswordInput) (UserView, error) {
+	if service.password == nil {
+		return UserView{}, ErrForbidden
+	}
+
 	currentPassword := strings.TrimSpace(input.CurrentPassword)
 	newPassword := strings.TrimSpace(input.NewPassword)
 

@@ -20,6 +20,7 @@ import {
 import { requireConversationWrite } from "../../lib/guards.js";
 import { outboundQueue, outboundRetryJobOptions } from "../../queue.js";
 import { recordAuditEvent } from "../../services/audit-log.js";
+import { findTenantDirectoryUserById } from "../../services/core-tenant-directory.js";
 import type { EvolutionClient } from "../../services/evolution-client.js";
 import { validateOutboundUpload } from "../../services/upload-policy.js";
 import { asRecord } from "./object-utils.js";
@@ -96,11 +97,8 @@ export function registerConversationAssignRoute(protectedApp: FastifyInstance) {
       }
 
       if (body.data.assignedToId) {
-        const user = await prisma.user.findFirst({
-          where: {
-            id: body.data.assignedToId,
-            tenantId: request.authUser.tenantId
-          }
+        const user = await findTenantDirectoryUserById(request.authUser.tenantId, body.data.assignedToId, {
+          accessToken: request.coreAccessToken
         });
         if (!user) {
           return reply.code(404).send({ message: "Usuario nao encontrado no tenant" });

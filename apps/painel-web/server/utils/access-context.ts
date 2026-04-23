@@ -60,6 +60,10 @@ function normalizeUserType(raw: unknown): AccessUserType {
   return String(raw ?? '').trim().toLowerCase() === 'client' ? 'client' : 'admin'
 }
 
+function normalizeTenantId(raw: unknown) {
+  return String(raw ?? '').trim()
+}
+
 export function createDefaultAccessContext(): AccessContext {
   return {
     isAuthenticated: false,
@@ -123,6 +127,8 @@ export async function resolveAccessContextOrThrow(event: H3Event): Promise<Acces
     const headerUserType = String(getHeader(event, 'x-user-type') ?? '').trim()
     const headerUserLevel = String(getHeader(event, 'x-user-level') ?? '').trim()
     const headerClientId = getHeader(event, 'x-client-id')
+    const headerTenantId = normalizeTenantId(getHeader(event, 'x-tenant-id'))
+    const profileTenantId = normalizeTenantId(profile.tenantId)
 
     const effectiveUserType = baseFlags.canSimulate
       ? normalizeUserType(headerUserType || profileUserType)
@@ -135,6 +141,10 @@ export async function resolveAccessContextOrThrow(event: H3Event): Promise<Acces
     const effectiveClientId = baseFlags.canSimulate
       ? (parseClientId(headerClientId) || fallbackClientId(profileClientId))
       : profileClientId
+
+    const effectiveTenantId = baseFlags.canSimulate
+      ? (headerTenantId || profileTenantId || undefined)
+      : (profileTenantId || undefined)
 
     const flags = resolveAdminAccessFlags({
       isAuthenticated: true,
@@ -167,7 +177,7 @@ export async function resolveAccessContextOrThrow(event: H3Event): Promise<Acces
       profileId: profile.id,
       coreUserId: profile.coreUserId,
       email: profile.email,
-      tenantId: profile.tenantId,
+  		tenantId: effectiveTenantId,
       userType: dataScopedUserType,
       userLevel: flags.activeUserLevel,
       profileUserType,
@@ -218,4 +228,42 @@ export function resolveOwnedClientId(
   }
 
   return fallbackAdminClientId
+}
+
+export function resolveOwnedTenantScope(
+  access: AccessContext,
+  requested: {
+    clientId?: unknown
+    coreTenantId?: unknown
+  },
+  fallbackAdminClientId = DEFAULT_ADMIN_CLIENT_ID
+) {
+  const requestedCoreTenantId = normalizeTenantId(requested.coreTenantId)
+  const requestedClientId = parseClientId(requested.clientId)
+
+  if (!access.canCrossClientAccess) {
+    return {
+      clientId: access.clientId,
+      coreTenantId: normalizeTenantId(access.tenantId)
+    }
+  }
+
+  if (requestedCoreTenantId) {
+    return {
+      clientId: requestedClientId > 0 ? requestedClientId : (access.clientId > 0 ? access.clientId : fallbackAdminClientId),
+      coreTenantId: requestedCoreTenantId
+    }
+  }
+
+  if (normalizeTenantId(access.tenantId)) {
+    return {
+      clientId: requestedClientId > 0 ? requestedClientId : (access.clientId > 0 ? access.clientId : fallbackAdminClientId),
+      coreTenantId: normalizeTenantId(access.tenantId)
+    }
+  }
+
+  return {
+    clientId: resolveOwnedClientId(access, requestedClientId, fallbackAdminClientId),
+    coreTenantId: ''
+  }
 }

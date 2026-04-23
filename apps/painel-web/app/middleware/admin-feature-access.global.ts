@@ -11,6 +11,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   const { isAuthenticated, hasSessionMismatch, hydrate, clearSession, coreUser, restoreRememberedSession } = useAdminSession()
+  if (import.meta.dev && import.meta.client) {
+    console.info("[admin-feature-debug] enter", {
+      path: to.fullPath,
+      isAuthenticated: isAuthenticated.value
+    })
+  }
   hydrate()
 
   if (!isAuthenticated.value) {
@@ -35,8 +41,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }, { replace: true })
   }
 
-  if (isAuthenticated.value && (!sessionSimulation.modulesHydrated || !sessionSimulation.lastClientOptionsSyncAt)) {
+  if (isAuthenticated.value && !sessionSimulation.clientOptionsSynced) {
+    if (import.meta.dev && import.meta.client) {
+      console.info("[admin-feature-debug] refresh-start", {
+        path: to.fullPath,
+        isAuthenticated: isAuthenticated.value
+      })
+    }
     await sessionSimulation.refreshClientOptions()
+    if (import.meta.dev && import.meta.client) {
+      console.info("[admin-feature-debug] refresh-done", {
+        path: to.fullPath,
+        isAuthenticated: isAuthenticated.value,
+        clientOptionsSynced: sessionSimulation.clientOptionsSynced
+      })
+    }
   }
 
   const access = evaluateAdminRouteAccess(path, {
@@ -55,6 +74,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (access.reason === 'login-required') {
+    if (import.meta.dev && import.meta.client) {
+      console.info("[admin-feature-debug] login-required", {
+        path: to.fullPath,
+        isAuthenticated: isAuthenticated.value,
+        profileUserType: sessionSimulation.profileUserType,
+        profileUserLevel: sessionSimulation.profileUserLevel
+      })
+    }
     clearSession()
     return navigateTo({
       path: '/admin/login',
@@ -64,6 +91,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }, { replace: true })
   }
 
+  if (import.meta.dev && import.meta.client) {
+    console.info("[admin-feature-debug] access-denied", {
+      path: to.fullPath,
+      reason: access.reason,
+      featureCode: access.featureCode
+    })
+  }
   return navigateTo({
     path: '/admin/access-denied',
     query: {

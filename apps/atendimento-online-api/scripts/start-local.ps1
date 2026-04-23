@@ -63,6 +63,17 @@ try {
     throw "Falha ao gerar o Prisma Client da atendimento-online-api."
   }
 
+  $convergeProcess = Start-Process -FilePath "npm.cmd" `
+    -ArgumentList "run", "prisma:converge" `
+    -WorkingDirectory $appDir `
+    -RedirectStandardOutput $outLog `
+    -RedirectStandardError $errLog `
+    -PassThru `
+    -Wait
+  if ($convergeProcess.ExitCode -ne 0) {
+    throw "Falha ao convergir o schema da atendimento-online-api."
+  }
+
   $pushProcess = Start-Process -FilePath "npm.cmd" `
     -ArgumentList "run", "prisma:push" `
     -WorkingDirectory $appDir `

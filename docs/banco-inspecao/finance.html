@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schema Finance</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --paper: rgba(255, 252, 246, 0.92);
+      --ink: #1e1916;
+      --muted: #685d54;
+      --line: rgba(74, 58, 44, 0.16);
+      --accent: #8d4b18;
+      --accent-soft: rgba(141, 75, 24, 0.12);
+      --forest: #294b46;
+      --shadow: 0 18px 46px rgba(53, 34, 18, 0.12);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(141, 75, 24, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(41, 75, 70, 0.14), transparent 26%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    .hero,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      bottom: -90px;
+      width: 240px;
+      height: 240px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(141, 75, 24, 0.18), transparent 72%);
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    h1 {
+      margin: 8px 0 12px;
+      font-size: clamp(34px, 6vw, 62px);
+      line-height: 0.98;
+      max-width: 760px;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 820px;
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .chip-row,
+    .schema-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .chip,
+    .schema-meta span {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .two-up {
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .metric-value {
+      margin: 0 0 8px;
+      font-size: 36px;
+      line-height: 1;
+    }
+
+    .metric-label,
+    .copy,
+    .table-role,
+    .table-notes,
+    .field-list li,
+    .simple-list li {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .flowline {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .flow-step {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(255, 252, 246, 0.86);
+    }
+
+    .step-index {
+      width: 34px;
+      height: 34px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(41, 75, 70, 0.12);
+      color: var(--forest);
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .simple-list,
+    .field-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .table-group {
+      display: grid;
+      gap: 14px;
+    }
+
+    .table-detail {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 252, 246, 0.84);
+      overflow: hidden;
+    }
+
+    .table-detail summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .status {
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(41, 75, 70, 0.12);
+      color: var(--forest);
+      white-space: nowrap;
+    }
+
+    .table-body {
+      padding: 0 18px 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 14px;
+      overflow: auto;
+      border-radius: 16px;
+      background: #1f1c19;
+      color: #f5ede3;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .back-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .schema-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .schema-nav a {
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 252, 246, 0.82);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .schema-nav a.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(141, 75, 24, 0.28);
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="topbar">
+      <a class="back-link" href="index.html">Voltar ao hub do banco</a>
+      <div class="schema-nav">
+        <a href="platform-core.html">platform_core</a>
+        <a class="active" href="finance.html">finance</a>
+        <a href="public-atendimento-online.html">atendimento_online</a>
+        <a href="indicators.html">indicators</a>
+        <a href="fila-atendimento.html">fila_atendimento</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">Schema Finance</div>
+      <h1>Catálogo visual do módulo financeiro extraído do shell</h1>
+      <p class="lead">O financeiro saiu do `platform_core` e passou a viver em schema próprio `finance`, mantendo apenas a dependência compartilhada em `platform_core.tenants` para isolamento por cliente. Aqui ficam a configuração estrutural do tenant, as recorrências, a planilha do período, suas linhas e os ajustes detalhados.</p>
+      <div class="chip-row">
+        <span class="chip">8 tabelas</span>
+        <span class="chip">Migration de extração: 0030</span>
+        <span class="chip">Sem tocar no schema atendimento_online</span>
+      </div>
+    </section>
+
+    <section class="grid metrics">
+      <article class="panel">
+        <p class="metric-value">8</p>
+        <div class="metric-label">Tabelas próprias do schema <strong>finance</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">2</p>
+        <div class="metric-label">Pontos de vínculo com o shell: tenant canônico e compatibilidade por <strong>legacy_id</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">1</p>
+        <div class="metric-label">Soft reference ainda ativa em <strong>finance_lines.fixed_account_id</strong></div>
+      </article>
+    </section>
+
+    <section class="grid two-up">
+      <article class="panel">
+        <h2 class="section-title">Fluxo estrutural</h2>
+        <div class="flowline">
+          <article class="flow-step">
+            <div class="step-index">1</div>
+            <h3>Tenant ancora o módulo</h3>
+            <p class="copy">`finance_configs` nasce por tenant, mas o owner do tenant continua no shell canônico.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">2</div>
+            <h3>Estrutura fixa é montada</h3>
+            <p class="copy">Categorias, contas fixas e composição interna definem a base operacional do financeiro.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">3</div>
+            <h3>Recorrências se ligam ao tenant</h3>
+            <p class="copy">`finance_recurring_entries` referencia tenants do shell para rateios e ajustes recorrentes.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">4</div>
+            <h3>Período abre a planilha</h3>
+            <p class="copy">Cada fechamento cria uma `finance_sheets` com compatibilidade histórica por `legacy_id`.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">5</div>
+            <h3>Linhas e ajustes fecham o saldo</h3>
+            <p class="copy">`finance_lines` e `finance_line_adjustments` materializam o lançamento mensal com resumo calculado em SQL.</p>
+          </article>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2 class="section-title">Fronteira de ownership</h2>
+        <div class="schema-meta">
+          <span>Owner do tenant: platform_core</span>
+          <span>Owner do financeiro: finance</span>
+        </div>
+        <ul class="simple-list">
+          <li>`platform_core` continua dono de identidade, grants, módulos, limites, auth e auditoria.</li>
+          <li>`finance` fica dono da configuração financeira, da operação mensal e do histórico das planilhas.</li>
+          <li>O schema novo não cria shadow de usuário, tenant ou permissões.</li>
+          <li>A principal fragilidade remanescente é `finance_lines.fixed_account_id`, que segue como soft reference para evitar deadlock em update concorrente.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Tabelas do schema</h2>
+        <div class="table-group">
+          <details class="table-detail" open>
+            <summary><span>finance_configs</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Configuração financeira única por tenant.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK</li>
+                <li>`tenant_id` uuid FK para `platform_core.tenants` com unique</li>
+                <li>`updated_at`</li>
+              </ul>
+              <pre>{
+  "tenant": "acme-core"
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_categories</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Categorias de lançamento do tenant.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `config_id` FK</li>
+                <li>`name`, `kind`, `description`, `position`</li>
+              </ul>
+              <pre>{
+  "name": "Comissões",
+  "kind": "saida",
+  "position": 2
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_fixed_accounts</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Conta fixa configurada por tenant.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `config_id` FK</li>
+                <li>`name`, `kind`, `category_id`, `default_amount`, `notes`, `position`</li>
+              </ul>
+              <pre>{
+  "name": "Comissão mensal loja Jardins",
+  "kind": "saida",
+  "default_amount": 3500.0
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_fixed_account_members</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Composição ou rateio da conta fixa.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `fixed_account_id` FK</li>
+                <li>`name`, `amount`, `position`</li>
+              </ul>
+              <pre>{
+  "fixed_account": "Comissão mensal loja Jardins",
+  "name": "Equipe comercial",
+  "amount": 2400.0
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_recurring_entries</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Recorrências entre tenants ou centros de custo.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `config_id` FK; `source_tenant_id` FK para `platform_core.tenants`</li>
+                <li>`adjustment_amount`, `notes`</li>
+              </ul>
+              <pre>{
+  "source_tenant": "root",
+  "adjustment_amount": 500.0,
+  "notes": "Rateio mensal de ferramenta"
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_sheets</span><span class="status">Atual + compatibilidade</span></summary>
+            <div class="table-body">
+              <p class="table-role">Planilha financeira do período.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `legacy_id` unique via sequence própria do schema</li>
+                <li>`tenant_id` FK; `title`; `period`; `status`; `notes`</li>
+                <li>`created_at`, `updated_at`</li>
+              </ul>
+              <pre>{
+  "tenant": "acme-core",
+  "legacy_id": 14,
+  "title": "Fechamento Abril/2026",
+  "period": "2026-04",
+  "status": "aberta"
+}</pre>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_lines</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Lançamento financeiro da planilha.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `sheet_id` FK</li>
+                <li>`kind`, `description`, `category`, `effective`, `effective_date`, `amount`</li>
+                <li>`fixed_account_id` soft ref sem FK</li>
+                <li>`details`, `position`</li>
+              </ul>
+              <pre>{
+  "sheet": "Fechamento Abril/2026",
+  "kind": "saida",
+  "description": "Comissão equipe loja Jardins",
+  "amount": 4200.0,
+  "effective": true
+}</pre>
+              <p class="table-notes">Este continua sendo o principal ponto de integridade frágil do módulo financeiro.</p>
+            </div>
+          </details>
+
+          <details class="table-detail">
+            <summary><span>finance_line_adjustments</span><span class="status">Atual</span></summary>
+            <div class="table-body">
+              <p class="table-role">Ajuste fino de uma linha financeira.</p>
+              <ul class="field-list">
+                <li>`id` uuid PK; `line_id` FK</li>
+                <li>`amount`, `note`, `date`, `position`</li>
+              </ul>
+              <pre>{
+  "line": "Comissão equipe loja Jardins",
+  "amount": -200.0,
+  "note": "Desconto de adiantamento"
+}</pre>
+            </div>
+          </details>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

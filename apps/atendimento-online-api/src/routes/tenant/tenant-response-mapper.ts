@@ -21,7 +21,6 @@ export interface TenantSummaryInput {
     isActive: boolean;
     userIds?: string[];
   }>;
-  evolutionApiKey?: string | null;
   maxChannels: number;
   maxUsers: number;
   retentionDays: number;
@@ -53,12 +52,11 @@ export function mapTenantResponse(
     canManageAtendimentoLimits: Boolean(tenant.canManageAtendimentoLimits),
     currentChannels,
     currentUsers,
-    hasEvolutionApiKey: Boolean(tenant.evolutionApiKey || env.EVOLUTION_API_KEY),
+    hasEvolutionApiKey: Boolean(env.EVOLUTION_API_KEY),
     webhookUrl: buildWebhookUrl(tenant.slug),
     createdAt: tenant.createdAt,
     updatedAt: tenant.updatedAt,
     canViewSensitive: canReadSensitiveConfig(role),
-    evolutionApiKey:
-      canReadSensitiveConfig(role) && tenant.evolutionApiKey ? tenant.evolutionApiKey : null
+    evolutionApiKey: null
   };
 }

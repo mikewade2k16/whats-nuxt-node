@@ -24,6 +24,7 @@ type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	TenantID string `json:"tenantId,omitempty"`
+	Remember bool   `json:"rememberLogin,omitempty"`
 }
 
 type passwordResetRequestRequest struct {
@@ -89,6 +90,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Email:     request.Email,
 		Password:  request.Password,
 		TenantID:  request.TenantID,
+		Remember:  request.Remember,
 		RemoteIP:  r.RemoteAddr,
 		UserAgent: r.UserAgent(),
 	})

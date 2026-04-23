@@ -1,6 +1,1 @@
-import { defineEventHandler } from 'h3'
-import { forwardFilaAtendimentoOperationMutation } from '~~/server/utils/fila-atendimento-operations'
-
-export default defineEventHandler(async (event) => {
-  return forwardFilaAtendimentoOperationMutation(event, '/v1/operations/queue')
-})
+export { default } from '@fila-atendimento/server/api/admin/modules/fila-atendimento/operations-queue.post'

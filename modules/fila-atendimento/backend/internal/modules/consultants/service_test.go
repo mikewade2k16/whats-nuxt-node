@@ -96,7 +96,7 @@ func TestCreateKeepsConsultantScopedToStoreWithoutProvisioningAccess(t *testing.
 		found:   []Consultant{{ID: "consult-1", StoreID: "store-1", TenantID: "tenant-1", Name: "Maria Silva", Color: "#168aad", Initials: "MS", Active: true}},
 	}
 	storeCatalog := &storeCatalogProviderStub{store: StoreCatalogView{ID: "store-1", TenantID: "tenant-1", Code: "loja"}}
-	service := NewService(repository, storeCatalog, nil, "acesso.omni.local", "Omni@123")
+	service := NewService(repository, storeCatalog)
 
 	result, err := service.Create(context.Background(), AccessContext{Role: RoleOwner, TenantID: "tenant-1"}, CreateInput{
 		StoreID: "store-1",
@@ -108,10 +108,6 @@ func TestCreateKeepsConsultantScopedToStoreWithoutProvisioningAccess(t *testing.
 
 	if repository.createdConsultant.StoreID != "store-1" || repository.createdConsultant.TenantID != "tenant-1" {
 		t.Fatalf("unexpected created consultant: %+v", repository.createdConsultant)
-	}
-
-	if result.Access != nil {
-		t.Fatalf("did not expect access payload after create, got %+v", result.Access)
 	}
 
 	if result.Consultant.Access != nil {
@@ -128,7 +124,7 @@ func TestArchiveDoesNotDependOnLinkedIdentity(t *testing.T) {
 		found: []Consultant{{ID: "consult-1", StoreID: "store-1", TenantID: "tenant-1", UserID: "user-1", Name: "Maria Silva", Color: "#168aad", Initials: "MS", Active: true}},
 	}
 	storeCatalog := &storeCatalogProviderStub{store: StoreCatalogView{ID: "store-1", TenantID: "tenant-1", Code: "loja"}}
-	service := NewService(repository, storeCatalog, nil, "acesso.omni.local", "Omni@123")
+	service := NewService(repository, storeCatalog)
 
 	if err := service.Archive(context.Background(), AccessContext{Role: RoleOwner, TenantID: "tenant-1"}, "consult-1"); err != nil {
 		t.Fatalf("Archive returned error: %v", err)

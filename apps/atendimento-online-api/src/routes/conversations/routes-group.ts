@@ -76,6 +76,7 @@ import {
 import type { GroupParticipantResponse } from "./types.js";
 import { mergeConversationScopeWhere, resolveConversationAccessScope } from "./access.js";
 import { resolveConversationInstanceRouting } from "../../services/whatsapp-instances.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 
 const GROUP_PARTICIPANTS_CACHE_TTL_MS = 45_000;
 const groupParticipantsCache = new Map<string, { cachedAt: number; participants: GroupParticipantResponse[] }>();
@@ -175,24 +176,15 @@ export function registerConversationGroupRoutes(protectedApp: FastifyInstance) {
         }
       }
 
-      const tenant = await prisma.tenant.findUnique({
-        where: {
-          id: request.authUser.tenantId
-        },
-        select: {
-          id: true,
-          evolutionApiKey: true,
-          whatsappInstance: true
-        }
+      const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+        accessToken: request.coreAccessToken
       });
 
-      const evolutionClient = tenant ? createEvolutionClientForTenant(tenant.evolutionApiKey) : null;
-      const routedInstance = tenant
-        ? await resolveConversationInstanceRouting({
-            tenantId: tenant.id,
-            conversation
-          })
-        : null;
+      const evolutionClient = createEvolutionClientForTenant(tenant.evolutionApiKey);
+      const routedInstance = await resolveConversationInstanceRouting({
+        tenantId: tenant.id,
+        conversation
+      });
       const instanceName =
         routedInstance?.instanceName ||
         tenant?.whatsappInstance?.trim() ||

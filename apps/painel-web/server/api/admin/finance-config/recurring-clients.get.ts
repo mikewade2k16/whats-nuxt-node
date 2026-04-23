@@ -1,9 +1,10 @@
 import { getQuery } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 interface CoreAdminClientPayload {
-  id?: number
+  coreTenantId?: string
   name?: string
   status?: string
   monthlyPaymentAmount?: number
@@ -20,12 +21,6 @@ function parseLimit(value: unknown) {
   const parsed = Number.parseInt(String(value ?? '').trim(), 10)
   if (!Number.isFinite(parsed) || parsed <= 0) return 200
   return Math.min(parsed, 500)
-}
-
-function parseClientId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0
-  return parsed
 }
 
 function normalizeStoreId(value: unknown, index: number) {
@@ -77,8 +72,9 @@ function normalizeRecurringClient(client: CoreAdminClientPayload) {
     : Number(client.monthlyPaymentAmount || 0)
 
   return {
-    id: Number(client.id),
-    name: String(client.name || `Cliente #${client.id}`),
+    id: String(client.coreTenantId || '').trim(),
+    coreTenantId: String(client.coreTenantId || '').trim(),
+    name: String(client.name || 'Cliente sem nome').trim(),
     monthlyPaymentAmount,
     paymentDueDay: String(client.paymentDueDay || ''),
     billingMode,
@@ -90,21 +86,25 @@ export default defineEventHandler(async (event) => {
   const access = await requireScopedFeatureAccess(event, '/admin/finance')
   const query = getQuery(event)
 
-  const requestedClientId = parseClientId(query.clientId)
-  const scopedClientId = requestedClientId > 0
-    ? (access.isAdmin ? requestedClientId : access.clientId)
-    : access.clientId
+  const scope = resolveOwnedTenantScope(access, {
+    clientId: query.clientId,
+    coreTenantId: query.coreTenantId
+  })
   const limit = parseLimit(query.limit)
 
-  if (scopedClientId > 0) {
+  if (scope.coreTenantId) {
   try {
-    const client = await coreAdminFetch<CoreAdminClientPayload>(event, `/core/admin/clients/${scopedClientId}`)
+    const client = await coreAdminFetch<CoreAdminClientPayload>(event, `/core/admin/clients/${encodeURIComponent(scope.coreTenantId)}`)
     const normalized = normalizeRecurringClient(client)
 
     return {
     status: 'success' as const,
     data: isActiveClientStatus(client.status) && Number(normalized.monthlyPaymentAmount || 0) > 0
-      ? [normalized]
+      ? [{
+        ...normalized,
+        id: normalized.coreTenantId || scope.coreTenantId,
+        coreTenantId: normalized.coreTenantId || scope.coreTenantId
+      }]
       : []
     }
   } catch (error) {
@@ -128,6 +128,7 @@ export default defineEventHandler(async (event) => {
   return {
     status: 'success' as const,
     data: items
+      .filter(client => String(client.coreTenantId || '').trim())
       .filter(client => isActiveClientStatus(client.status))
       .map(normalizeRecurringClient)
       .filter(client => Number(client.monthlyPaymentAmount || 0) > 0)

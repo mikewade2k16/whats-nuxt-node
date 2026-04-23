@@ -11,6 +11,7 @@ type ConsultantProfile struct {
 	Name           string
 	Role           string
 	Initials       string
+	AvatarURL      string
 	Color          string
 	MonthlyGoal    float64
 	CommissionRate float64
@@ -24,6 +25,7 @@ type QueueEntry struct {
 	Name           string  `json:"name"`
 	Role           string  `json:"role"`
 	Initials       string  `json:"initials"`
+	AvatarURL      string  `json:"avatarUrl,omitempty"`
 	Color          string  `json:"color"`
 	MonthlyGoal    float64 `json:"monthlyGoal,omitempty"`
 	CommissionRate float64 `json:"commissionRate,omitempty"`
@@ -40,6 +42,7 @@ type ActiveService struct {
 	Name                 string          `json:"name"`
 	Role                 string          `json:"role"`
 	Initials             string          `json:"initials"`
+	AvatarURL            string          `json:"avatarUrl,omitempty"`
 	Color                string          `json:"color"`
 	MonthlyGoal          float64         `json:"monthlyGoal,omitempty"`
 	CommissionRate       float64         `json:"commissionRate,omitempty"`
@@ -59,7 +62,7 @@ type PausedEmployee struct {
 	StartedAt int64  `json:"startedAt"`
 }
 
-type ConsultantSession struct {
+type ConsultantSessionView struct {
 	PersonID   string `json:"personId"`
 	Status     string `json:"status"`
 	StartedAt  int64  `json:"startedAt"`
@@ -67,9 +70,22 @@ type ConsultantSession struct {
 	DurationMs int64  `json:"durationMs"`
 }
 
-type ConsultantStatus struct {
+type ConsultantStatusView struct {
 	Status    string `json:"status"`
 	StartedAt int64  `json:"startedAt"`
+}
+
+type ConsultantSession struct {
+	PersonID   string
+	Status     string
+	StartedAt  time.Time
+	EndedAt    time.Time
+	DurationMs int64
+}
+
+type ConsultantStatus struct {
+	Status    string
+	StartedAt time.Time
 }
 
 type ProductEntry struct {
@@ -80,7 +96,7 @@ type ProductEntry struct {
 	IsCustom bool    `json:"isCustom,omitempty"`
 }
 
-type ServiceHistoryEntry struct {
+type ServiceHistoryEntryView struct {
 	ServiceID                  string            `json:"serviceId"`
 	StoreID                    string            `json:"storeId"`
 	StoreName                  string            `json:"storeName"`
@@ -125,6 +141,51 @@ type ServiceHistoryEntry struct {
 	CampaignBonusTotal         float64           `json:"campaignBonusTotal"`
 }
 
+type ServiceHistoryEntry struct {
+	ServiceID                  string
+	StoreID                    string
+	StoreName                  string
+	PersonID                   string
+	PersonName                 string
+	StartedAt                  time.Time
+	FinishedAt                 time.Time
+	DurationMs                 int64
+	FinishOutcome              string
+	StartMode                  string
+	QueuePositionAtStart       int
+	QueueWaitMs                int64
+	SkippedPeople              []SkippedPerson
+	SkippedCount               int
+	IsWindowService            bool
+	IsGift                     bool
+	ProductSeen                string
+	ProductClosed              string
+	ProductDetails             string
+	ProductsSeen               []ProductEntry
+	ProductsClosed             []ProductEntry
+	ProductsSeenNone           bool
+	VisitReasonsNotInformed    bool
+	CustomerSourcesNotInformed bool
+	CustomerName               string
+	CustomerPhone              string
+	CustomerEmail              string
+	IsExistingCustomer         bool
+	VisitReasons               []string
+	VisitReasonDetails         map[string]string
+	CustomerSources            []string
+	CustomerSourceDetails      map[string]string
+	LossReasons                []string
+	LossReasonDetails          map[string]string
+	LossReasonID               string
+	LossReason                 string
+	SaleAmount                 float64
+	CustomerProfession         string
+	QueueJumpReason            string
+	Notes                      string
+	CampaignMatches            []CampaignMatch
+	CampaignBonusTotal         float64
+}
+
 type CampaignMatch struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
@@ -132,13 +193,14 @@ type CampaignMatch struct {
 }
 
 type Snapshot struct {
-	StoreID                    string                      `json:"storeId"`
-	WaitingList                []QueueEntry                `json:"waitingList"`
-	ActiveServices             []ActiveService             `json:"activeServices"`
-	PausedEmployees            []PausedEmployee            `json:"pausedEmployees"`
-	ConsultantActivitySessions []ConsultantSession         `json:"consultantActivitySessions"`
-	ConsultantCurrentStatus    map[string]ConsultantStatus `json:"consultantCurrentStatus"`
-	ServiceHistory             []ServiceHistoryEntry       `json:"serviceHistory"`
+	StoreID                    string                          `json:"storeId"`
+	StoreName                  string                          `json:"storeName"`
+	WaitingList                []QueueEntry                    `json:"waitingList"`
+	ActiveServices             []ActiveService                 `json:"activeServices"`
+	PausedEmployees            []PausedEmployee                `json:"pausedEmployees"`
+	ConsultantActivitySessions []ConsultantSessionView         `json:"consultantActivitySessions"`
+	ConsultantCurrentStatus    map[string]ConsultantStatusView `json:"consultantCurrentStatus"`
+	ServiceHistory             []ServiceHistoryEntryView       `json:"serviceHistory"`
 }
 
 type SnapshotState struct {
@@ -151,16 +213,21 @@ type SnapshotState struct {
 	ServiceHistory             []ServiceHistoryEntry
 }
 
+type SnapshotLoadOptions struct {
+	IncludeHistory          bool
+	IncludeActivitySessions bool
+}
+
 type QueueStateItem struct {
 	ConsultantID  string
-	QueueJoinedAt int64
+	QueueJoinedAt time.Time
 }
 
 type ActiveServiceState struct {
 	ConsultantID         string
 	ServiceID            string
-	ServiceStartedAt     int64
-	QueueJoinedAt        int64
+	ServiceStartedAt     time.Time
+	QueueJoinedAt        time.Time
 	QueueWaitMs          int64
 	QueuePositionAtStart int
 	StartMode            string
@@ -171,7 +238,7 @@ type PausedStateItem struct {
 	ConsultantID string
 	Reason       string
 	Kind         string
-	StartedAt    int64
+	StartedAt    time.Time
 }
 
 type OperationOverviewStore struct {
@@ -193,6 +260,7 @@ type OperationOverviewPerson struct {
 	Name             string  `json:"name"`
 	Role             string  `json:"role"`
 	Initials         string  `json:"initials"`
+	AvatarURL        string  `json:"avatarUrl,omitempty"`
 	Color            string  `json:"color"`
 	MonthlyGoal      float64 `json:"monthlyGoal,omitempty"`
 	CommissionRate   float64 `json:"commissionRate,omitempty"`
@@ -288,7 +356,7 @@ type Repository interface {
 	GetStoreName(ctx context.Context, storeID string) (string, error)
 	GetMaxConcurrentServices(ctx context.Context, storeID string) (int, error)
 	ListRoster(ctx context.Context, storeID string) ([]ConsultantProfile, error)
-	LoadSnapshot(ctx context.Context, storeID string) (SnapshotState, error)
+	LoadSnapshot(ctx context.Context, storeID string, options SnapshotLoadOptions) (SnapshotState, error)
 	Persist(ctx context.Context, input PersistInput) error
 }
 
@@ -299,14 +367,31 @@ type PublishedEvent struct {
 	SavedAt  time.Time
 }
 
+type MutationConsultantStatus struct {
+	PersonID string               `json:"personId"`
+	Status   ConsultantStatusView `json:"status"`
+}
+
+type MutationDelta struct {
+	RemoveWaitingPersonID string                    `json:"removeWaitingPersonId,omitempty"`
+	RemoveActivePersonID  string                    `json:"removeActivePersonId,omitempty"`
+	RemovePausedPersonID  string                    `json:"removePausedPersonId,omitempty"`
+	WaitingEntry          *QueueEntry               `json:"waitingEntry,omitempty"`
+	ActiveService         *ActiveService            `json:"activeService,omitempty"`
+	PausedEmployee        *PausedEmployee           `json:"pausedEmployee,omitempty"`
+	ConsultantStatus      *MutationConsultantStatus `json:"consultantStatus,omitempty"`
+	ServiceHistoryEntry   *ServiceHistoryEntryView  `json:"serviceHistoryEntry,omitempty"`
+}
+
 type EventPublisher interface {
 	PublishOperationEvent(ctx context.Context, event PublishedEvent)
 }
 
 type MutationAck struct {
-	OK       bool      `json:"ok"`
-	StoreID  string    `json:"storeId"`
-	SavedAt  time.Time `json:"savedAt"`
-	Action   string    `json:"action,omitempty"`
-	PersonID string    `json:"personId,omitempty"`
+	OK       bool           `json:"ok"`
+	StoreID  string         `json:"storeId"`
+	SavedAt  time.Time      `json:"savedAt"`
+	Action   string         `json:"action,omitempty"`
+	PersonID string         `json:"personId,omitempty"`
+	Delta    *MutationDelta `json:"delta,omitempty"`
 }

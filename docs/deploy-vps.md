@@ -186,7 +186,7 @@ DOMAIN=seu-dominio.com
 POSTGRES_DB=omnichannel
 POSTGRES_USER=omnichannel
 POSTGRES_PASSWORD=<segredo>
-DATABASE_URL=postgresql://omnichannel:<segredo>@postgres:5432/omnichannel?schema=public
+DATABASE_URL=postgresql://omnichannel:<segredo>@postgres:5432/omnichannel?schema=atendimento_online
 CORE_DATABASE_URL=postgresql://omnichannel:<segredo>@postgres:5432/omnichannel
 CORE_REDIS_URL=redis://redis:6379
 CORE_JWT_SECRET=<segredo>
@@ -198,6 +198,7 @@ CORE_SMTP_PASSWORD=<segredo-smtp>
 CORE_SMTP_FROM_EMAIL=no-reply@seu-dominio.com
 CORE_SMTP_FROM_NAME=Plataforma
 CORE_ALLOWED_ORIGINS=https://app.seu-dominio.com
+CORE_PERSISTENT_JWT_TTL_MINUTES=43200
 NUXT_PUBLIC_API_BASE=https://api.seu-dominio.com
 WEBHOOK_RECEIVER_BASE_URL=https://api.seu-dominio.com
 EVOLUTION_DATABASE_URL=postgresql://omnichannel:<segredo>@postgres:5432/omnichannel?schema=evolution
@@ -216,18 +217,32 @@ Observações:
 - em ambiente local/dev, os emails de recuperação de senha vão para o Mailpit em `http://localhost:8025`
 - antes do go-live na VPS, configurar `CORE_SMTP_*` real no `.env.prod` e validar o reset de senha com envio externo real
 - se `ADMINER_PASSWORD_HASH` ficar ausente, o compose de produção aplica um hash bloqueado apenas para manter o `Caddy` válido; para usar `Adminer` com `--profile ops`, defina seu próprio `ADMINER_PASSWORD_HASH`
-- manter `CORE_AUTO_MIGRATE=true` na produção para aplicar migrations do módulo `indicators`, incluindo o seed do template sistêmico `indicators_default` (`0024`) e correções de consistência como a restauração do tenant `root` (`0025`)
+- manter `CORE_AUTO_MIGRATE=false` na produção. O caminho padrão de deploy não deve alterar schema nem dados do banco automaticamente durante `up -d` ou restart.
+
+Regra operacional de produção:
+
+- deploy normal não roda `prisma:push`, não roda `prisma:seed` e não roda auto-migrate do `plataforma-api`
+- qualquer alteração de schema ou migration deve ser um passo manual, explícito e previamente validado com backup do banco
+- restart de serviço nunca deve ser usado como mecanismo para “corrigir” schema em produção
 
 ## Bootstrap inicial do schema operacional
 
-O `docker-compose.prod.yml` não roda mais `prisma:push` automaticamente no boot do `atendimento-online-api`. Isso evita alteração surpresa de schema durante restart.
+O `docker-compose.prod.yml` não roda mais `prisma:push`, `prisma:seed` nem migrations automáticas no boot dos serviços de produção. Isso evita alteração surpresa de schema ou carga de dados durante restart.
 
-No primeiro deploy, rode o bootstrap explicitamente:
+Se o ambiente for novo e o schema operacional ainda não existir, rode o bootstrap explicitamente e uma única vez:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod run --rm atendimento-online-api \
   sh -c 'if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then npm ci --no-audit --no-fund; fi; npm run prisma:generate && npm run prisma:push'
 ```
+
+Se houver migration nova no `plataforma-api`, aplique manualmente antes do `up -d`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod run --rm plataforma-api plataforma-api-migrate
+```
+
+Depois disso, suba os serviços normalmente. O `up -d` sozinho deve ser sempre não-destrutivo para os dados existentes.
 
 ## Dependências de produção do painel
 

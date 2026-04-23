@@ -119,27 +119,6 @@ type StoreCatalogProvider interface {
 	FindAccessibleStore(ctx context.Context, access AccessContext, storeID string) (StoreCatalogView, error)
 }
 
-type ConsultantIdentityInput struct {
-	ConsultantID       string   `json:"consultantId"`
-	TenantID           string   `json:"tenantId"`
-	DisplayName        string   `json:"displayName"`
-	Email              string   `json:"email"`
-	Role               string   `json:"role"`
-	StoreIDs           []string `json:"storeIds,omitempty"`
-	MustChangePassword bool     `json:"mustChangePassword"`
-}
-
-type ProvisionedIdentity struct {
-	UserID             string `json:"userId"`
-	ExternalSubject    string `json:"externalSubject,omitempty"`
-	MustChangePassword bool   `json:"mustChangePassword"`
-}
-
-type IdentityProvisioner interface {
-	EnsureConsultantIdentity(ctx context.Context, access AccessContext, input ConsultantIdentityInput) (ProvisionedIdentity, error)
-	DeactivateConsultantIdentity(ctx context.Context, access AccessContext, consultantID string) error
-}
-
 type RealtimeSubscriptionScope struct {
 	Channel  string `json:"channel,omitempty"`
 	TenantID string `json:"tenantId,omitempty"`

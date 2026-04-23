@@ -1,4 +1,4 @@
-import { prisma } from "../../db.js";
+import { listTenantDirectoryUsers } from "../../services/core-tenant-directory.js";
 
 export type TenantUserNameCacheEntry = {
   expiresAt: number;
@@ -30,11 +30,7 @@ export async function isTenantUserDisplayName(tenantId: string, candidateName: s
     return cached.names.has(normalizedCandidate);
   }
 
-  const users = await prisma.user.findMany({
-    where: { tenantId },
-    select: { name: true }
-  });
-
+  const users = await listTenantDirectoryUsers(tenantId);
   const names = new Set<string>();
   for (const userEntry of users) {
     const normalizedName = normalizeNameForComparison(userEntry.name);

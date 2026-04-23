@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Service) GetActiveProfile(ctx context.Context, input GetActiveProfileInput) (*ActiveProfileResponse, error) {
-	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Service) GetActiveProfile(ctx context.Context, input GetActiveProfileIn
 }
 
 func (s *Service) ReplaceActiveProfile(ctx context.Context, input ReplaceActiveProfileInput) (*ActiveProfileResponse, error) {
-	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (s *Service) ReplaceActiveProfile(ctx context.Context, input ReplaceActiveP
 }
 
 func (s *Service) GetStoreOverride(ctx context.Context, input GetStoreOverrideInput) (*StoreOverrideView, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +336,7 @@ func (s *Service) GetStoreOverride(ctx context.Context, input GetStoreOverrideIn
 }
 
 func (s *Service) ReplaceStoreOverride(ctx context.Context, input ReplaceStoreOverrideInput) (*StoreOverrideView, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +380,7 @@ func (s *Service) ReplaceStoreOverride(ctx context.Context, input ReplaceStoreOv
 
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM indicators.indicator_profile_store_overrides
-		WHERE profile_id = $1::uuid AND unit_external_id = $2
+		WHERE profile_id = $1::uuid AND store_id = $2::uuid
 	`, profile.RecordID, storeID); err != nil {
 		return nil, err
 	}
@@ -415,16 +415,14 @@ func (s *Service) ReplaceStoreOverride(ctx context.Context, input ReplaceStoreOv
 			INSERT INTO indicators.indicator_profile_store_overrides (
 				profile_id,
 				profile_indicator_id,
-				unit_external_id,
-				unit_code,
-				unit_name,
+				store_id,
 				scope_mode,
 				weight,
 				is_enabled,
 				settings_json,
 				metadata
 			)
-			VALUES ($1::uuid, $2::uuid, $3, '', '', $4, $5, $6, '{}'::jsonb, $7::jsonb)
+			VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, '{}'::jsonb, $7::jsonb)
 		`,
 			profile.RecordID,
 			profileIndicatorID,
@@ -737,7 +735,7 @@ func (s *Service) loadTargetSets(ctx context.Context, profileID string, business
 	}
 
 	itemRows, err := s.pool.Query(ctx, `
-		SELECT id::text, target_set_id::text, profile_indicator_id::text, COALESCE(category_code, ''), COALESCE(unit_external_id, ''), target_value_numeric::float8, COALESCE(target_value_text, ''), target_value_json, comparator, COALESCE(weight::float8, 0), metadata
+		SELECT id::text, target_set_id::text, profile_indicator_id::text, COALESCE(category_code, ''), COALESCE(store_id::text, ''), target_value_numeric::float8, COALESCE(target_value_text, ''), target_value_json, comparator, COALESCE(weight::float8, 0), metadata
 		FROM indicators.indicator_target_items
 		WHERE target_set_id IN (
 			SELECT id FROM indicators.indicator_target_sets WHERE profile_id = $1::uuid
@@ -767,7 +765,7 @@ func (s *Service) loadTargetSets(ctx context.Context, profileID string, business
 			&targetSetID,
 			&profileIndicatorID,
 			&item.CategoryCode,
-			&item.UnitExternalID,
+			&item.StoreID,
 			&item.TargetValueNumeric,
 			&item.TargetValueText,
 			&valueJSONRaw,
@@ -828,7 +826,7 @@ func (s *Service) loadProviderHealth(ctx context.Context, profileID string, indi
 		SELECT
 			COALESCE(source_module, ''),
 			MAX(snapshot_at),
-			COUNT(DISTINCT COALESCE(unit_external_id, 'global'))
+			COUNT(DISTINCT COALESCE(store_id::text, 'global'))
 		FROM indicators.indicator_metric_snapshots
 		WHERE profile_indicator_id IN (
 			SELECT id FROM indicators.indicator_profile_indicator_overrides WHERE profile_id = $1::uuid
@@ -883,10 +881,11 @@ func (s *Service) loadProviderHealth(ctx context.Context, profileID string, indi
 
 func (s *Service) loadTenantStores(ctx context.Context, tenantUUID, profileID string, indicators []ProfileIndicatorConfig) ([]StoreOverrideView, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, store_name, sort_order
-		FROM platform_core.tenant_store_charges
+		SELECT id::text, name, sort_order
+		FROM platform_core.tenant_stores
 		WHERE tenant_id = $1::uuid
-		ORDER BY sort_order, store_name
+		  AND is_active = true
+		ORDER BY sort_order, name
 	`, tenantUUID)
 	if err != nil {
 		return nil, err
@@ -895,40 +894,40 @@ func (s *Service) loadTenantStores(ctx context.Context, tenantUUID, profileID st
 
 	scoreMap := map[string]float64{}
 	scoreRows, err := s.pool.Query(ctx, `
-		SELECT COALESCE(unit_external_id, ''), COALESCE(AVG(COALESCE(overall_score, 0))::float8, 0)
+		SELECT COALESCE(store_id::text, ''), COALESCE(AVG(COALESCE(overall_score, 0))::float8, 0)
 		FROM indicators.indicator_evaluations
 		WHERE tenant_id = $1::uuid AND status = 'completed'
-		GROUP BY COALESCE(unit_external_id, '')
+		GROUP BY COALESCE(store_id::text, '')
 	`, tenantUUID)
 	if err != nil {
 		return nil, err
 	}
 	defer scoreRows.Close()
 	for scoreRows.Next() {
-		var unitExternalID string
+		var storeID string
 		var score float64
-		if err := scoreRows.Scan(&unitExternalID, &score); err != nil {
+		if err := scoreRows.Scan(&storeID, &score); err != nil {
 			return nil, err
 		}
-		scoreMap[unitExternalID] = roundFloat(score, 2)
+		scoreMap[storeID] = roundFloat(score, 2)
 	}
 	if scoreRows.Err() != nil {
 		return nil, scoreRows.Err()
 	}
 
 	type storeRuleRow struct {
-		UnitExternalID string
-		IndicatorCode  string
-		IndicatorName  string
-		IndicatorID    string
-		Enabled        *bool
-		Weight         *float64
-		Metadata       map[string]any
+		StoreID       string
+		IndicatorCode string
+		IndicatorName string
+		IndicatorID   string
+		Enabled       *bool
+		Weight        *float64
+		Metadata      map[string]any
 	}
 
 	ruleRows, err := s.pool.Query(ctx, `
 		SELECT
-			pso.unit_external_id,
+			pso.store_id::text,
 			pio.code,
 			pio.name,
 			pio.metadata,
@@ -946,25 +945,25 @@ func (s *Service) loadTenantStores(ctx context.Context, tenantUUID, profileID st
 
 	rulesByStore := map[string][]storeRuleRow{}
 	for ruleRows.Next() {
-		var unitExternalID string
+		var storeID string
 		var indicatorCode string
 		var indicatorName string
 		var indicatorMetadataRaw []byte
 		var enabled *bool
 		var weight *float64
 		var overrideMetadataRaw []byte
-		if err := ruleRows.Scan(&unitExternalID, &indicatorCode, &indicatorName, &indicatorMetadataRaw, &enabled, &weight, &overrideMetadataRaw); err != nil {
+		if err := ruleRows.Scan(&storeID, &indicatorCode, &indicatorName, &indicatorMetadataRaw, &enabled, &weight, &overrideMetadataRaw); err != nil {
 			return nil, err
 		}
 		indicatorMetadata := decodeJSONMap(indicatorMetadataRaw)
-		rulesByStore[unitExternalID] = append(rulesByStore[unitExternalID], storeRuleRow{
-			UnitExternalID: unitExternalID,
-			IndicatorCode:  indicatorCode,
-			IndicatorName:  indicatorName,
-			IndicatorID:    indicatorBusinessID(indicatorCode, indicatorMetadata),
-			Enabled:        enabled,
-			Weight:         weight,
-			Metadata:       decodeJSONMap(overrideMetadataRaw),
+		rulesByStore[storeID] = append(rulesByStore[storeID], storeRuleRow{
+			StoreID:       storeID,
+			IndicatorCode: indicatorCode,
+			IndicatorName: indicatorName,
+			IndicatorID:   indicatorBusinessID(indicatorCode, indicatorMetadata),
+			Enabled:       enabled,
+			Weight:        weight,
+			Metadata:      decodeJSONMap(overrideMetadataRaw),
 		})
 	}
 	if ruleRows.Err() != nil {

@@ -14,6 +14,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const isPublicPath = isPublicAdminPath(to.path);
   const { isAuthenticated, hasSessionMismatch, hydrate, clearSession, restoreRememberedSession, validateSession } = useAdminSession();
 
+  if (import.meta.dev && import.meta.client) {
+    console.info("[admin-auth-debug] enter", {
+      path: to.fullPath,
+      isPublicPath,
+      isAuthenticated: isAuthenticated.value
+    });
+  }
+
   hydrate();
   if (hasSessionMismatch.value) {
     clearSession();
@@ -25,6 +33,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (isPublicPath) {
     if (isAuthenticated.value) {
+      if (import.meta.dev && import.meta.client) {
+        console.info("[admin-auth-debug] public->home", {
+          path: to.fullPath
+        });
+      }
       return navigateTo(homePath, { replace: true });
     }
     return;
@@ -38,6 +51,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (!isAuthenticated.value) {
+    if (import.meta.dev && import.meta.client) {
+      console.info("[admin-auth-debug] redirect-login", {
+        path: to.fullPath
+      });
+    }
     return navigateTo({
       path: loginPath,
       query: isSafeAdminRedirectPath(to.fullPath)

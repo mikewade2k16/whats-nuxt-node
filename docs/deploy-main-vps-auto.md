@@ -276,6 +276,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channe
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod ps
 ```
 
+Importante: esse fluxo padrão de deploy deve manter o banco intacto. Não usar `up -d` como gatilho de migration, seed ou bootstrap. Se houver mudança de schema, executar a etapa manual correspondente antes do `up -d`.
+
 ### 7. Habilitar o workflow automatico
 
 Depois que a VPS estiver pronta e o repo clonado:
@@ -356,6 +358,19 @@ git checkout main
 git reset --hard <commit-anterior-bom>
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod build plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d --force-recreate plataforma-api atendimento-online-api atendimento-online-worker atendimento-online-retencao-worker painel-web caddy
+```
+
+Se o release incluir migration do `plataforma-api`, rodar antes:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod run --rm plataforma-api plataforma-api-migrate
+```
+
+Se o release exigir bootstrap inicial do schema Prisma do `atendimento-online-api`, rodar manualmente antes e só em ambiente novo, nunca como parte implícita do restart:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod run --rm atendimento-online-api \
+  sh -c 'if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then npm ci --no-audit --no-fund; fi; npm run prisma:generate && npm run prisma:push'
 ```
 
 Melhor pratica depois disso:

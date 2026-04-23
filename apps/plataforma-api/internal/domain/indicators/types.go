@@ -121,7 +121,7 @@ type TargetItemView struct {
 	RecordID           string         `json:"recordId,omitempty"`
 	IndicatorID        string         `json:"indicatorId,omitempty"`
 	CategoryCode       string         `json:"categoryCode,omitempty"`
-	UnitExternalID     string         `json:"unitExternalId,omitempty"`
+	StoreID            string         `json:"storeId,omitempty"`
 	TargetValueNumeric *float64       `json:"targetValueNumeric,omitempty"`
 	TargetValueText    string         `json:"targetValueText,omitempty"`
 	TargetValueJSON    map[string]any `json:"targetValueJson,omitempty"`
@@ -251,7 +251,7 @@ type TemplateDetail struct {
 type EvaluationListItem struct {
 	ID              string    `json:"id"`
 	EvaluatorName   string    `json:"evaluatorName"`
-	UnitExternalID  string    `json:"unitExternalId,omitempty"`
+	StoreID         string    `json:"storeId,omitempty"`
 	UnitCode        string    `json:"unitCode,omitempty"`
 	UnitName        string    `json:"unitName,omitempty"`
 	ScopeMode       string    `json:"scopeMode"`
@@ -314,17 +314,17 @@ type EvaluationIndicatorView struct {
 }
 
 type MetricSnapshotView struct {
-	RecordID       string         `json:"recordId"`
-	ProviderName   string         `json:"providerName"`
-	SourceModule   string         `json:"sourceModule,omitempty"`
-	MetricKey      string         `json:"metricKey"`
-	ScopeMode      string         `json:"scopeMode"`
-	UnitExternalID string         `json:"unitExternalId,omitempty"`
-	SnapshotAt     time.Time      `json:"snapshotAt"`
-	ValueNumeric   *float64       `json:"valueNumeric,omitempty"`
-	ValueText      string         `json:"valueText,omitempty"`
-	ValueJSON      map[string]any `json:"valueJson,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	RecordID     string         `json:"recordId"`
+	ProviderName string         `json:"providerName"`
+	SourceModule string         `json:"sourceModule,omitempty"`
+	MetricKey    string         `json:"metricKey"`
+	ScopeMode    string         `json:"scopeMode"`
+	StoreID      string         `json:"storeId,omitempty"`
+	SnapshotAt   time.Time      `json:"snapshotAt"`
+	ValueNumeric *float64       `json:"valueNumeric,omitempty"`
+	ValueText    string         `json:"valueText,omitempty"`
+	ValueJSON    map[string]any `json:"valueJson,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 type AssetView struct {
@@ -345,7 +345,7 @@ type EvaluationDetail struct {
 	ProfileID      string                    `json:"profileId"`
 	TargetSetID    string                    `json:"targetSetId,omitempty"`
 	EvaluatorName  string                    `json:"evaluatorName"`
-	UnitExternalID string                    `json:"unitExternalId,omitempty"`
+	StoreID        string                    `json:"storeId,omitempty"`
 	UnitCode       string                    `json:"unitCode,omitempty"`
 	UnitName       string                    `json:"unitName,omitempty"`
 	ScopeMode      string                    `json:"scopeMode"`
@@ -375,7 +375,7 @@ type DashboardIndicatorScore struct {
 }
 
 type DashboardStore struct {
-	UnitExternalID   string                    `json:"unitExternalId"`
+	StoreID          string                    `json:"storeId"`
 	UnitCode         string                    `json:"unitCode,omitempty"`
 	UnitName         string                    `json:"unitName"`
 	AccentColor      string                    `json:"accentColor"`
@@ -561,6 +561,7 @@ type GetActiveProfileInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 }
 
 type ProfileItemInput struct {
@@ -607,6 +608,7 @@ type ReplaceActiveProfileInput struct {
 	TenantID              string
 	IsPlatformAdmin       bool
 	ClientID              int
+	CoreTenantID          string
 	Name                  string                  `json:"name"`
 	Description           string                  `json:"description,omitempty"`
 	Status                string                  `json:"status,omitempty"`
@@ -622,6 +624,7 @@ type GetStoreOverrideInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	StoreID         string
 }
 
@@ -638,6 +641,7 @@ type ReplaceStoreOverrideInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	StoreID         string
 	ScopeMode       string           `json:"scopeMode,omitempty"`
 	Status          string           `json:"status,omitempty"`
@@ -651,7 +655,8 @@ type ListEvaluationsInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
-	UnitExternalID  string
+	CoreTenantID    string
+	StoreID         string
 	Status          string
 	StartDate       string
 	EndDate         string
@@ -664,6 +669,7 @@ type GetEvaluationInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	EvaluationID    string
 }
 
@@ -718,7 +724,7 @@ type MetricSnapshotInput struct {
 	ProfileIndicatorID string         `json:"profileIndicatorId,omitempty"`
 	MetricKey          string         `json:"metricKey"`
 	ScopeMode          string         `json:"scopeMode,omitempty"`
-	UnitExternalID     string         `json:"unitExternalId,omitempty"`
+	StoreID            string         `json:"storeId,omitempty"`
 	SnapshotAt         string         `json:"snapshotAt,omitempty"`
 	ValueNumeric       *float64       `json:"valueNumeric,omitempty"`
 	ValueText          string         `json:"valueText,omitempty"`
@@ -731,10 +737,11 @@ type CreateEvaluationInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	ProfileID       string                     `json:"profileId,omitempty"`
 	TargetSetID     string                     `json:"targetSetId,omitempty"`
 	EvaluatorName   string                     `json:"evaluatorName,omitempty"`
-	UnitExternalID  string                     `json:"unitExternalId,omitempty"`
+	StoreID         string                     `json:"storeId,omitempty"`
 	UnitCode        string                     `json:"unitCode,omitempty"`
 	UnitName        string                     `json:"unitName,omitempty"`
 	ScopeMode       string                     `json:"scopeMode,omitempty"`
@@ -755,6 +762,7 @@ type DeleteEvaluationInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	EvaluationID    string
 }
 
@@ -763,9 +771,10 @@ type GetDashboardInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	StartDate       string
 	EndDate         string
-	UnitExternalID  string
+	StoreID         string
 }
 
 type ReplaceTargetsInput struct {
@@ -773,6 +782,7 @@ type ReplaceTargetsInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	TargetSets      []TargetSetView `json:"targetSets"`
 }
 
@@ -781,6 +791,7 @@ type IngestProviderSnapshotsInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	ClientID        int
+	CoreTenantID    string
 	ProviderName    string                `json:"providerName"`
 	SourceModule    string                `json:"sourceModule,omitempty"`
 	Snapshots       []MetricSnapshotInput `json:"snapshots"`
@@ -791,6 +802,7 @@ type CreateAssetUploadIntentInput struct {
 	TenantID              string
 	IsPlatformAdmin       bool
 	ClientID              int
+	CoreTenantID          string
 	EvaluationID          string         `json:"evaluationId,omitempty"`
 	EvaluationIndicatorID string         `json:"evaluationIndicatorId,omitempty"`
 	EvaluationItemID      string         `json:"evaluationItemId,omitempty"`

@@ -10,15 +10,15 @@ export function normalizeEvolutionApiKey(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function createEvolutionClientOrThrow(tenantApiKey: string | null) {
+export function createEvolutionClientOrThrow(_tenantApiKey?: string | null) {
   if (!env.EVOLUTION_BASE_URL) {
     throw new EvolutionApiError("EVOLUTION_BASE_URL nao configurada no ambiente", 400);
   }
 
-  const apiKey = tenantApiKey ?? env.EVOLUTION_API_KEY;
+  const apiKey = env.EVOLUTION_API_KEY;
   if (!apiKey) {
     throw new EvolutionApiError(
-      "Nenhuma API key da Evolution configurada (tenant ou ambiente)",
+      "Nenhuma API key global da Evolution configurada no ambiente",
       400
     );
   }

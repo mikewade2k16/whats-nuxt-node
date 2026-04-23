@@ -1,23 +1,29 @@
 import {
   ChannelType,
   ConversationStatus,
-  Prisma,
-  UserRole,
-  WhatsAppInstanceUserScopePolicy
+  Prisma
 } from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { env } from "../config.js";
 import { prisma } from "../db.js";
+import { UserRole } from "../domain/access.js";
+import { mapTenantDirectoryUsersById } from "./core-tenant-directory.js";
+import { resolveTenantRuntimeContextById, type TenantRuntimeContext } from "./tenant-runtime.js";
 
-type TenantLegacyInstanceSource = {
-  id: string;
-  slug: string;
-  name: string;
-  whatsappInstance: string | null;
-  evolutionApiKey: string | null;
+type TenantInstanceSource = Pick<
+  TenantRuntimeContext,
+  "id" | "slug" | "name" | "whatsappInstance"
+>;
+
+type RegistryInstanceRow = Awaited<ReturnType<typeof prisma.whatsAppInstance.findMany>>[number];
+
+export type RegistryInstance = RegistryInstanceRow & {
+  responsibleUser: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
 };
-
-type RegistryInstance = Awaited<ReturnType<typeof prisma.whatsAppInstance.findMany>>[number];
 
 type RegistryConversationCandidate = {
   id: string;
@@ -191,8 +197,45 @@ function mergeConversationShape(
   };
 }
 
+async function attachResponsibleUserProfiles(
+  tenantId: string,
+  instances: RegistryInstanceRow[]
+) {
+  const directory = await mapTenantDirectoryUsersById(tenantId);
+
+  return instances.map((instance) => ({
+    ...instance,
+    responsibleUser: instance.responsibleUserId
+      ? (() => {
+          const matched = directory.get(instance.responsibleUserId);
+          return matched
+            ? {
+                id: matched.id,
+                name: matched.name,
+                email: matched.email
+              }
+            : null;
+        })()
+      : null
+  })) satisfies RegistryInstance[];
+}
+
+async function loadRegistryInstances(tenantId: string) {
+  const instances = await prisma.whatsAppInstance.findMany({
+    where: {
+      tenantId
+    },
+    orderBy: [
+      { isDefault: "desc" },
+      { createdAt: "asc" }
+    ]
+  });
+
+  return attachResponsibleUserProfiles(tenantId, instances);
+}
+
 async function ensureFallbackRegistryInstance(
-  tenant: TenantLegacyInstanceSource,
+  tenant: TenantInstanceSource,
   instances: RegistryInstance[]
 ) {
   if (instances.length > 0) {
@@ -200,33 +243,21 @@ async function ensureFallbackRegistryInstance(
   }
 
   const fallbackInstanceName = buildFallbackInstanceScopeKey(tenant);
-  const created = await prisma.whatsAppInstance.create({
+  await prisma.whatsAppInstance.create({
     data: {
       tenantId: tenant.id,
       instanceName: fallbackInstanceName,
       displayName: tenant.name,
-      evolutionApiKey: tenant.evolutionApiKey,
       isDefault: true,
       isActive: true
     }
   });
 
-  if (!normalizeWhatsAppInstanceName(tenant.whatsappInstance)) {
-    await prisma.tenant.update({
-      where: {
-        id: tenant.id
-      },
-      data: {
-        whatsappInstance: created.instanceName
-      }
-    });
-  }
-
-  return [created];
+  return loadRegistryInstances(tenant.id);
 }
 
 async function ensureRegistryInstancesFromObservedScopes(
-  tenant: TenantLegacyInstanceSource,
+  tenant: TenantInstanceSource,
   instances: RegistryInstance[]
 ) {
   const knownScopeKeys = new Set(
@@ -279,22 +310,13 @@ async function ensureRegistryInstancesFromObservedScopes(
       displayName: instanceName === normalizeWhatsAppInstanceName(tenant.whatsappInstance)
         ? tenant.name
         : instanceName,
-      evolutionApiKey: tenant.evolutionApiKey,
       isDefault: false,
       isActive: true
     })),
     skipDuplicates: true
   });
 
-  return prisma.whatsAppInstance.findMany({
-    where: {
-      tenantId: tenant.id
-    },
-    orderBy: [
-      { isDefault: "desc" },
-      { createdAt: "asc" }
-    ]
-  });
+  return loadRegistryInstances(tenant.id);
 }
 
 async function reconcileTenantLegacyConversationScopes(params: {
@@ -502,19 +524,10 @@ async function reconcileTenantLegacyConversationScopes(params: {
 }
 
 export async function ensureTenantWhatsAppRegistry(
-  tenantInput: string | TenantLegacyInstanceSource
+  tenantInput: string | TenantInstanceSource
 ) {
   const tenant = typeof tenantInput === "string"
-    ? await prisma.tenant.findUnique({
-        where: { id: tenantInput },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          whatsappInstance: true,
-          evolutionApiKey: true
-        }
-      })
+    ? await resolveTenantRuntimeContextById(tenantInput)
     : tenantInput;
 
   if (!tenant) {
@@ -522,40 +535,25 @@ export async function ensureTenantWhatsAppRegistry(
   }
 
   const legacyInstanceName = normalizeWhatsAppInstanceName(tenant.whatsappInstance);
-  const existingInstances = await prisma.whatsAppInstance.findMany({
-    where: {
-      tenantId: tenant.id
-    },
-    orderBy: [
-      { isDefault: "desc" },
-      { createdAt: "asc" }
-    ]
-  });
-
-  let instances = existingInstances;
+  let instances = await loadRegistryInstances(tenant.id);
 
   if (legacyInstanceName) {
-    const matchingLegacy = existingInstances.find((entry) => entry.instanceName === legacyInstanceName);
+    const matchingLegacy = instances.find((entry) => entry.instanceName === legacyInstanceName);
     if (!matchingLegacy) {
-      const created = await prisma.whatsAppInstance.create({
+      await prisma.whatsAppInstance.create({
         data: {
           tenantId: tenant.id,
           instanceName: legacyInstanceName,
           displayName: tenant.name,
-          evolutionApiKey: tenant.evolutionApiKey,
           isDefault: true,
           isActive: true
         }
       });
-      instances = [created, ...existingInstances.map((entry) => ({
-        ...entry,
-        isDefault: false
-      }))];
       await prisma.whatsAppInstance.updateMany({
         where: {
           tenantId: tenant.id,
-          id: {
-            not: created.id
+          instanceName: {
+            not: legacyInstanceName
           },
           isDefault: true
         },
@@ -563,6 +561,7 @@ export async function ensureTenantWhatsAppRegistry(
           isDefault: false
         }
       });
+      instances = await loadRegistryInstances(tenant.id);
     } else if (!matchingLegacy.isDefault) {
       await prisma.$transaction([
         prisma.whatsAppInstance.updateMany({
@@ -583,20 +582,11 @@ export async function ensureTenantWhatsAppRegistry(
           },
           data: {
             isDefault: true,
-            isActive: true,
-            evolutionApiKey: matchingLegacy.evolutionApiKey ?? tenant.evolutionApiKey
+            isActive: true
           }
         })
       ]);
-      instances = await prisma.whatsAppInstance.findMany({
-        where: {
-          tenantId: tenant.id
-        },
-        orderBy: [
-          { isDefault: "desc" },
-          { createdAt: "asc" }
-        ]
-      });
+      instances = await loadRegistryInstances(tenant.id);
     }
   }
 
@@ -623,29 +613,7 @@ export async function ensureTenantWhatsAppRegistry(
     `);
   }
 
-  return prisma.whatsAppInstance.findMany({
-    where: {
-      tenantId: tenant.id
-    },
-    include: {
-      responsibleUser: {
-        select: {
-          id: true,
-          name: true,
-          email: true
-        }
-      },
-      userAccesses: {
-        select: {
-          userId: true
-        }
-      }
-    },
-    orderBy: [
-      { isDefault: "desc" },
-      { createdAt: "asc" }
-    ]
-  });
+  return loadRegistryInstances(tenant.id);
 }
 
 export async function resolveTenantInstanceById(params: {
@@ -712,9 +680,7 @@ export async function resolveAccessibleWhatsAppInstances(params: {
 
   const accessibleInstances = isTenantAdmin || activeInstances.length <= 1
     ? activeInstances
-    : activeInstances.filter((entry) =>
-        entry.userAccesses.some((access) => access.userId === params.userId)
-      );
+    : activeInstances;
 
   const scopeKeys = accessibleInstances.map((entry) => entry.instanceName);
   const fallbackScope = activeInstances.length < 1 ? ["default"] : [];
@@ -727,132 +693,6 @@ export async function resolveAccessibleWhatsAppInstances(params: {
     accessibleScopeKeys: scopeKeys.length > 0 ? scopeKeys : fallbackScope,
     hasMultipleActiveInstances: activeInstances.length > 1
   };
-}
-
-export async function assignUsersToWhatsAppInstance(params: {
-  tenantId: string;
-  instanceId: string;
-  userIds: string[];
-}) {
-  const normalizedUserIds = [...new Set(
-    params.userIds
-      .map((entry) => String(entry ?? "").trim())
-      .filter((entry) => entry.length > 0)
-  )];
-
-  const targetInstance = await prisma.whatsAppInstance.findFirst({
-    where: {
-      tenantId: params.tenantId,
-      id: params.instanceId
-    },
-    select: {
-      id: true,
-      responsibleUserId: true,
-      userScopePolicy: true
-    }
-  });
-
-  if (!targetInstance) {
-    return null;
-  }
-
-  const nextUserIds = new Set(normalizedUserIds);
-  if (targetInstance.responsibleUserId) {
-    nextUserIds.add(targetInstance.responsibleUserId);
-  }
-
-  const finalUserIds = [...nextUserIds];
-  if (finalUserIds.length > 0) {
-    const conflictingAssignments = await prisma.whatsAppInstanceUserAccess.findMany({
-      where: {
-        tenantId: params.tenantId,
-        userId: {
-          in: finalUserIds
-        },
-        instanceId: {
-          not: params.instanceId
-        }
-      },
-      select: {
-        userId: true,
-        instance: {
-          select: {
-            id: true,
-            instanceName: true,
-            displayName: true,
-            userScopePolicy: true
-          }
-        }
-      }
-    });
-
-    const conflicts = conflictingAssignments
-      .filter((entry) => {
-        return (
-          targetInstance.userScopePolicy === WhatsAppInstanceUserScopePolicy.SINGLE_INSTANCE ||
-          entry.instance.userScopePolicy === WhatsAppInstanceUserScopePolicy.SINGLE_INSTANCE
-        );
-      })
-      .map((entry) => ({
-        userId: entry.userId,
-        instanceId: entry.instance.id,
-        instanceName: entry.instance.instanceName,
-        instanceDisplayName: entry.instance.displayName ?? null,
-        policy: entry.instance.userScopePolicy
-      }));
-
-    if (conflicts.length > 0) {
-      const error = new Error("Usuarios em conflito com politica de instancia exclusiva.");
-      (error as Error & { code?: string; details?: unknown }).code = "WHATSAPP_INSTANCE_USER_SCOPE_CONFLICT";
-      (error as Error & { code?: string; details?: unknown }).details = {
-        targetInstanceId: targetInstance.id,
-        targetPolicy: targetInstance.userScopePolicy,
-        conflicts
-      };
-      throw error;
-    }
-  }
-
-  await prisma.$transaction([
-    prisma.whatsAppInstanceUserAccess.deleteMany({
-      where: {
-        tenantId: params.tenantId,
-        instanceId: params.instanceId
-      }
-    }),
-    ...(finalUserIds.length > 0
-      ? [
-          prisma.whatsAppInstanceUserAccess.createMany({
-            data: finalUserIds.map((userId) => ({
-              tenantId: params.tenantId,
-              instanceId: params.instanceId,
-              userId
-            })),
-            skipDuplicates: true
-          })
-        ]
-      : [])
-  ]);
-
-  return prisma.whatsAppInstance.findUnique({
-    where: {
-      id: params.instanceId
-    },
-    include: {
-      responsibleUser: {
-        select: {
-          id: true,
-          name: true,
-          email: true
-        }
-      },
-      userAccesses: {
-        select: {
-          userId: true
-        }
-      }
-    }
-  });
 }
 
 export function buildConversationInstanceScopeWhere(params: {

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schema fila_atendimento</title>
+  <link rel="stylesheet" href="schema-pages.css" />
+</head>
+<body class="theme-fila">
+  <main class="shell">
+    <nav class="topbar">
+      <a class="back-link" href="index.html">Voltar ao hub do banco</a>
+      <div class="schema-nav">
+        <a href="platform-core.html">platform_core</a>
+        <a href="finance.html">finance</a>
+        <a href="public-atendimento-online.html">atendimento_online</a>
+        <a href="indicators.html">indicators</a>
+        <a class="active" href="fila-atendimento.html">fila_atendimento</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">Operação Física de Loja</div>
+      <h1>`fila_atendimento` ficou restrito ao domínio operacional e agora usa tempo padronizado</h1>
+      <p class="lead">As migrations `0018_core_directory_convergence.sql`, `0019_drop_shadow_directory_tables.sql` e `0020_operational_timestamps_timestamptz.sql` fecharam a convergência estrutural do módulo. Usuário, tenant, nível e loja global são consumidos do `platform_core`; o schema local guarda apenas roster operacional, configuração da unidade, estado vivo e histórico append-only com `timestamptz`.</p>
+      <div class="chip-row">
+        <span class="chip">13 tabelas ativas</span>
+        <span class="chip">12 tabelas de domínio</span>
+        <span class="chip">0 estruturas shadow ativas</span>
+        <span class="chip">0 timestamps híbridos</span>
+        <span class="chip">3 entidades globais consumidas do core</span>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <article class="panel">
+        <p class="metric-value">0</p>
+        <div class="metric-label">estruturas locais que ainda duplicam identidade, tenant, papel ou senha do shell</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">4</p>
+        <div class="metric-label">blocos canônicos do módulo: roster, perfil da loja, estado corrente e histórico</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">9</p>
+        <div class="metric-label">colunas operacionais convertidas de `bigint` para `timestamptz`</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">3</p>
+        <div class="metric-label">migrations que consolidaram a convergência estrutural e temporal do schema</div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Mapa Atual</h2>
+        <p class="subhead">A leitura correta agora é separar o diretório global da plataforma do domínio operacional que continua pertencendo ao módulo.</p>
+        <div class="cluster-grid">
+          <section class="cluster">
+            <div class="cluster-kicker">Core global</div>
+            <h3>Identidade, tenant e loja</h3>
+            <p class="copy">O módulo lê identidade e escopo a partir do core. Não existe mais cópia local autoritativa para autenticação ou autorização.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">platform_core.users</span>
+              <span class="entity-pill">platform_core.tenants</span>
+              <span class="entity-pill">platform_core.tenant_users</span>
+              <span class="entity-pill">platform_core.tenant_stores</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Domínio do módulo</div>
+            <h3>Roster e configuração operacional</h3>
+            <p class="copy">O schema local guarda apenas o que é próprio da fila física da loja e do acompanhamento comercial presencial.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">consultants</span>
+              <span class="entity-pill">store_profiles</span>
+              <span class="entity-pill">store_operation_settings</span>
+              <span class="entity-pill">store_setting_options</span>
+              <span class="entity-pill">store_catalog_products</span>
+              <span class="entity-pill">store_campaigns</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Runtime</div>
+            <h3>Estado corrente e trilha</h3>
+            <p class="copy">O desenho operacional continua saudável: fotografia atual separada da trilha append-only, agora com instantes padronizados em `timestamptz`.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">operation_queue_entries</span>
+              <span class="entity-pill">operation_active_services</span>
+              <span class="entity-pill">operation_paused_consultants</span>
+              <span class="entity-pill">operation_current_status</span>
+              <span class="entity-pill">operation_status_sessions</span>
+              <span class="entity-pill">operation_service_history</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Infra local mínima</div>
+            <h3>O que sobra no schema</h3>
+            <p class="copy">Além do domínio, o schema local mantém apenas `schema_migrations` e FKs apontando para o core.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">schema_migrations</span>
+              <span class="entity-pill">FK para users</span>
+              <span class="entity-pill">FK para tenants</span>
+              <span class="entity-pill">FK para tenant_stores</span>
+            </div>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Fluxo Atual</h2>
+        <div class="flowline">
+          <article class="flow-step">
+            <div class="step-index">1</div>
+            <h3>Contexto global</h3>
+            <p>O shell resolve usuário, tenant, nível e lojas acessíveis em `platform_core`.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">2</div>
+            <h3>Entrada hospedada</h3>
+            <p>O módulo recebe o bridge do shell, troca por sessão própria e preserva o escopo vindo do core.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">3</div>
+            <h3>Roster e configuração</h3>
+            <p>`consultants`, `store_profiles`, settings, catálogo e campanhas regulam a operação física da unidade.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">4</div>
+            <h3>Fila corrente</h3>
+            <p>`operation_queue_entries`, `operation_active_services` e `operation_current_status` representam o estado vivo da operação.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">5</div>
+            <h3>Histórico</h3>
+            <p>`operation_status_sessions` e `operation_service_history` fecham a trilha operacional com tempo padronizado e sem shadow local de identidade.</p>
+          </article>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid decision-grid">
+      <article class="decision">
+        <div class="decision-kicker">Canônico no core</div>
+        <h3>O que saiu do schema local</h3>
+        <ul class="simple-list">
+          <li>`platform_core.users` virou a fonte de verdade para identidade e senha.</li>
+          <li>`platform_core.tenants` virou a fonte de verdade para cliente e escopo.</li>
+          <li>`platform_core.tenant_stores` virou a loja global da plataforma.</li>
+          <li>`platform_core.tenant_users` virou o vínculo canônico entre pessoa, tenant, papel e loja.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Canônico no módulo</div>
+        <h3>O que continua aqui</h3>
+        <ul class="simple-list">
+          <li>`consultants` como roster operacional por loja.</li>
+          <li>`store_profiles`, `store_operation_settings`, `store_setting_options`, `store_catalog_products` e `store_campaigns`.</li>
+          <li>Todo o bloco `operation_*` como estado corrente e histórico da fila.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Padronização temporal</div>
+        <h3>O que mudou no estado operacional</h3>
+        <ul class="simple-list">
+          <li>Instantes de fila, pausa, atendimento e histórico agora usam `timestamptz`.</li>
+          <li>Durações continuam em milissegundos (`queue_wait_ms` e `duration_ms`), porque isso segue sendo métrica e não instante.</li>
+          <li>O backend do módulo passou a trabalhar com `time.Time` e converte para milissegundos apenas na borda HTTP.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid risk-grid">
+      <article class="risk">
+        <div class="risk-kicker">Fechado</div>
+        <h3>Identidade agora é global</h3>
+        <p class="copy">O módulo não decide mais autenticação, senha, tenant nem papel usando tabela própria. Esse atrito saiu do schema e do runtime hospedado.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Fechado</div>
+        <h3>Loja agora é global</h3>
+        <p class="copy">A loja canônica está em `platform_core.tenant_stores`; o módulo guarda apenas o perfil operacional complementar em `store_profiles`.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Fechado</div>
+        <h3>Tempo agora é padronizado</h3>
+        <p class="copy">Os instantes operacionais saíram de `bigint` e passaram para `timestamptz`, eliminando o último shadow temporal relevante dentro do schema.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Tabelas Atuais</h2>
+        <p class="subhead">O schema `fila_atendimento` hoje possui 13 tabelas, sendo 12 de domínio e `schema_migrations`.</p>
+        <div class="entity-pills">
+          <span class="entity-pill">consultants</span>
+          <span class="entity-pill">store_profiles</span>
+          <span class="entity-pill">store_operation_settings</span>
+          <span class="entity-pill">store_setting_options</span>
+          <span class="entity-pill">store_catalog_products</span>
+          <span class="entity-pill">store_campaigns</span>
+          <span class="entity-pill">operation_queue_entries</span>
+          <span class="entity-pill">operation_active_services</span>
+          <span class="entity-pill">operation_paused_consultants</span>
+          <span class="entity-pill">operation_current_status</span>
+          <span class="entity-pill">operation_status_sessions</span>
+          <span class="entity-pill">operation_service_history</span>
+          <span class="entity-pill">schema_migrations</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Referência Histórica</h2>
+        <p class="subhead">As estruturas abaixo aparecem em documentos e migrations antigas, mas não existem mais no banco atual do módulo.</p>
+        <ul class="simple-list">
+          <li>`users`</li>
+          <li>`tenants`</li>
+          <li>`stores`</li>
+          <li>`user_platform_roles`</li>
+          <li>`user_tenant_roles`</li>
+          <li>`user_store_roles`</li>
+          <li>`user_external_identities`</li>
+          <li>`user_invitations`</li>
+          <li>`store_settings`</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

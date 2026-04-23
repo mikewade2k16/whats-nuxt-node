@@ -289,6 +289,10 @@ export function useClientsManager() {
     savingMap.value = next
   }
 
+  function getClientRouteId(id: number) {
+    return String(clients.value.find(client => client.id === id)?.coreTenantId ?? '').trim()
+  }
+
   function rowIsSaving(id: number) {
     const prefix = `${id}:`
     return Object.keys(savingMap.value).some(key => key.startsWith(prefix))
@@ -333,7 +337,7 @@ export function useClientsManager() {
       return
     }
 
-    if (!sessionSimulation.modulesHydrated || !sessionSimulation.lastClientOptionsSyncAt) {
+    if (!sessionSimulation.clientOptionsSynced) {
       await sessionSimulation.refreshClientOptions()
     }
   }
@@ -380,7 +384,12 @@ export function useClientsManager() {
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${id}`, {
+    const routeId = getClientRouteId(id)
+    if (!routeId) {
+      throw new Error('Cliente sem coreTenantId para atualizacao.')
+    }
+
+    const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${encodeURIComponent(routeId)}`, {
         method: 'PATCH',
         body: {
           field,
@@ -550,7 +559,12 @@ export function useClientsManager() {
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${id}/webhook/rotate`, {
+    const routeId = getClientRouteId(id)
+    if (!routeId) {
+      throw new Error('Cliente sem coreTenantId para webhook.')
+    }
+
+    const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${encodeURIComponent(routeId)}/webhook/rotate`, {
         method: 'POST'
       })
 
@@ -581,7 +595,12 @@ export function useClientsManager() {
     errorMessage.value = ''
 
     try {
-      const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${id}/stores`, {
+    const routeId = getClientRouteId(id)
+    if (!routeId) {
+      throw new Error('Cliente sem coreTenantId para lojas.')
+    }
+
+    const response = await bffFetch<ClientMutationResponse>(`/api/admin/clients/${encodeURIComponent(routeId)}/stores`, {
         method: 'PUT',
         body: {
           stores: normalizedStores
@@ -632,7 +651,12 @@ export function useClientsManager() {
     errorMessage.value = ''
 
     try {
-      await bffFetch<{ status: 'success' }>(`/api/admin/clients/${id}`, {
+    const routeId = getClientRouteId(id)
+    if (!routeId) {
+      throw new Error('Cliente sem coreTenantId para exclusao.')
+    }
+
+    await bffFetch<{ status: 'success' }>(`/api/admin/clients/${encodeURIComponent(routeId)}`, {
         method: 'DELETE'
       })
 

@@ -1,0 +1,43 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying 127.0.0.1:3005...
+* Connected to 127.0.0.1 (127.0.0.1) port 3005
+* using HTTP/1.x
+> GET /admin HTTP/1.1
+> Host: 127.0.0.1:3005
+> User-Agent: curl/8.12.1
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/1.1 500 Server Error
+< content-type: application/json
+< x-content-type-options: nosniff
+< x-frame-options: DENY
+< referrer-policy: no-referrer
+< content-security-policy: script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self';
+< cache-control: no-cache
+< Date: Wed, 22 Apr 2026 21:41:59 GMT
+< Connection: keep-alive
+< Keep-Alive: timeout=5
+< Content-Length: 1105
+< 
+{ [1105 bytes data]
+100  1105  100  1105    0     0  58234      0 --:--:-- --:--:-- --:--:-- 61388{
+  "error": true,
+  "url": "http://127.0.0.1:3005/admin",
+  "statusCode": 500,
+  "statusMessage": "Server Error",
+  "message": "Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'c:'",
+  "stack": [
+    "Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'c:'",
+    "at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:195:11)",
+    "at defaultLoadSync (node:internal/modules/esm/load:142:3)",
+    "at ModuleLoader.load (node:internal/modules/esm/loader:821:12)",
+    "at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:591:31)",
+    "at #createModuleJob (node:internal/modules/esm/loader:623:36)",
+    "at #getJobFromResolveResult (node:internal/modules/esm/loader:329:34)",
+    "at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:294:41)",
+    "at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+  ]
+}
+* Connection #0 to host 127.0.0.1 left intact

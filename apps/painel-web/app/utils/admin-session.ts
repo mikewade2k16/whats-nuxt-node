@@ -5,6 +5,14 @@ function normalizeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function hasAtendimentoOperationalAccess(coreUser: CoreAuthUser | null | undefined) {
+  const moduleCodes = Array.isArray(coreUser?.moduleCodes)
+    ? coreUser.moduleCodes.map((entry) => normalizeText(entry).toLowerCase()).filter(Boolean)
+    : [];
+
+  return Boolean(coreUser?.atendimentoAccess) && moduleCodes.includes("atendimento");
+}
+
 export function mapCoreUserToSessionRole(coreUser: CoreAuthUser | null | undefined): UserRole {
   if (coreUser?.isPlatformAdmin) {
     return "ADMIN";
@@ -18,10 +26,7 @@ export function mapCoreUserToSessionRole(coreUser: CoreAuthUser | null | undefin
     return "SUPERVISOR";
   }
 
-  const moduleCodes = Array.isArray(coreUser?.moduleCodes)
-    ? coreUser.moduleCodes.map((entry) => normalizeText(entry).toLowerCase()).filter(Boolean)
-    : [];
-  if (Boolean(coreUser?.atendimentoAccess) || moduleCodes.includes("atendimento")) {
+  if (hasAtendimentoOperationalAccess(coreUser)) {
     return "AGENT";
   }
 

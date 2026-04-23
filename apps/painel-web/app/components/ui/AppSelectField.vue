@@ -190,14 +190,12 @@ onBeforeUnmount(() => {
       @click="toggleDropdown"
     >
       <span class="app-select-field__trigger-main">
-        <span v-if="showLeadingIcon" class="material-icons-round app-select-field__trigger-icon">
-          {{ selectedOption ? 'check_small' : 'add' }}
-        </span>
+        <AppMaterialIcon v-if="showLeadingIcon" class="app-select-field__trigger-icon" :name="selectedOption ? 'check_small' : 'add'" />
         <span class="app-select-field__trigger-text">
           {{ selectedOption?.label || placeholder }}
         </span>
       </span>
-      <span class="material-icons-round app-select-field__trigger-arrow">expand_more</span>
+      <AppMaterialIcon class="app-select-field__trigger-arrow" name="expand_more" />
     </button>
 
     <Teleport to="body">
@@ -212,7 +210,7 @@ onBeforeUnmount(() => {
 
         <div class="product-pick__dropdown is-open app-select-field__dropdown" :style="dropdownStyle">
           <label v-if="shouldShowSearch" class="catalog-picker__search">
-            <span class="material-icons-round">search</span>
+            <AppMaterialIcon name="search" />
             <input
               ref="searchInputRef"
               v-model="searchTerm"
@@ -233,12 +231,11 @@ onBeforeUnmount(() => {
             >
               <span class="app-select-field__option-row">
                 <span class="product-pick__option-name">{{ option.label }}</span>
-                <span
+                <AppMaterialIcon
                   v-if="option.value === selectedValue"
                   class="material-icons-round app-select-field__option-check"
-                >
-                  check
-                </span>
+                  name="check"
+                />
               </span>
               <span v-if="option.meta" class="product-pick__option-meta">{{ option.meta }}</span>
             </button>

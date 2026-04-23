@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
 
   const id = String(getRouterParam(event, 'id') ?? '').trim()
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'Client id invalido.' })
+    throw createError({ statusCode: 400, statusMessage: 'Cliente invalido.' })
   }
 
   const updated = await coreAdminFetch(event, `/core/admin/clients/${id}/webhook/rotate`, {

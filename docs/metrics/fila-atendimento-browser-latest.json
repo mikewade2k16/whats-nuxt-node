@@ -1,0 +1,1133 @@
+{
+  "collectedAt": "2026-04-18T11:07:00.856Z",
+  "baseUrl": "http://127.0.0.1:3001",
+  "loginEmail": "days.matos@gmail.com",
+  "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "headless": true,
+  "page": {
+    "navigationMs": 544,
+    "boardReady": {
+      "boardReadyAtMs": 535,
+      "waitingCount": 2,
+      "serviceCount": 3,
+      "consultantCount": 4,
+      "text": "Tasks\nTracking\nTools\nTeam\nSite\nFila\nManage\n\nDayanne Barbosa de Souza Matos\n\nmanager / Pérola\n\nDB\n\nFILA\n\nOperação\n\nFila ativa, atendimento em curso e visão integrada das lojas hospedados no painel admin.\n\nGarcia\nProprietario\nRealtime conectado\nAbrir diagnóstico\nVer métricas\npending_actions\nOperacao\nperson\nConsultor\nleaderboard\nRanking\nbar_chart\nDados\npsychology\nInteligencia\ndescription\nRelatorios\nquery_stats\nMétricas\ncampaign\nCampanhas\nstore\nMulti-loja\ntune\nConfig\nVisao da operacao\nAcompanhamento"
+    },
+    "perf": {
+      "url": "http://127.0.0.1:3001/admin/fila-atendimento",
+      "navigation": {
+        "startTime": 0,
+        "domContentLoadedMs": 160,
+        "loadEventEndMs": 178,
+        "responseEndMs": 8,
+        "transferSize": 2465,
+        "encodedBodySize": 2165,
+        "decodedBodySize": 2165
+      },
+      "boardReadyAtMs": 535,
+      "browserPerf": {
+        "startedAt": 1776510417379,
+        "paints": [
+          {
+            "name": "first-paint",
+            "startTime": 180,
+            "duration": 0
+          },
+          {
+            "name": "first-contentful-paint",
+            "startTime": 280,
+            "duration": 0
+          }
+        ],
+        "lcp": {
+          "startTime": 280,
+          "size": 12000,
+          "element": "P"
+        },
+        "cls": 0.4376341211628882,
+        "longTasks": []
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "startTime": 180
+        },
+        {
+          "name": "first-contentful-paint",
+          "startTime": 280
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/entry.BFE0aCYS.css",
+          "initiatorType": "link",
+          "startTime": 17,
+          "duration": 8,
+          "transferSize": 21771,
+          "encodedBodySize": 21471,
+          "decodedBodySize": 169884
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DLnHZ7Oe.js",
+          "initiatorType": "other",
+          "startTime": 17,
+          "duration": 14,
+          "transferSize": 117959,
+          "encodedBodySize": 117659,
+          "decodedBodySize": 403085
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CoYK2p39.js",
+          "initiatorType": "script",
+          "startTime": 157,
+          "duration": 12,
+          "transferSize": 18254,
+          "encodedBodySize": 17954,
+          "decodedBodySize": 75613
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BeYloPaW.js",
+          "initiatorType": "script",
+          "startTime": 158,
+          "duration": 12,
+          "transferSize": 1015,
+          "encodedBodySize": 715,
+          "decodedBodySize": 1781
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BIbPs53x.js",
+          "initiatorType": "script",
+          "startTime": 158,
+          "duration": 11,
+          "transferSize": 2764,
+          "encodedBodySize": 2464,
+          "decodedBodySize": 9047
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/ZO-8kCBw.js",
+          "initiatorType": "script",
+          "startTime": 158,
+          "duration": 11,
+          "transferSize": 11338,
+          "encodedBodySize": 11038,
+          "decodedBodySize": 45643
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CMeSFDWM.js",
+          "initiatorType": "script",
+          "startTime": 158,
+          "duration": 12,
+          "transferSize": 996,
+          "encodedBodySize": 696,
+          "decodedBodySize": 1681
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CboxUc-3.js",
+          "initiatorType": "script",
+          "startTime": 158,
+          "duration": 20,
+          "transferSize": 906,
+          "encodedBodySize": 606,
+          "decodedBodySize": 606
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/operations.DpGYpIdw.css",
+          "initiatorType": "link",
+          "startTime": 159,
+          "duration": 13,
+          "transferSize": 455,
+          "encodedBodySize": 155,
+          "decodedBodySize": 155
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BexMWbpl.js",
+          "initiatorType": "script",
+          "startTime": 159,
+          "duration": 18,
+          "transferSize": 1908,
+          "encodedBodySize": 1608,
+          "decodedBodySize": 4423
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/AppSelectField.Dxj2U9aP.css",
+          "initiatorType": "link",
+          "startTime": 159,
+          "duration": 17,
+          "transferSize": 704,
+          "encodedBodySize": 404,
+          "decodedBodySize": 1457
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/x3Cz9Fp0.js",
+          "initiatorType": "script",
+          "startTime": 159,
+          "duration": 19,
+          "transferSize": 1809,
+          "encodedBodySize": 1509,
+          "decodedBodySize": 6075
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BFTojpou.js",
+          "initiatorType": "script",
+          "startTime": 160,
+          "duration": 19,
+          "transferSize": 1667,
+          "encodedBodySize": 1367,
+          "decodedBodySize": 5597
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/index.Bd344K62.css",
+          "initiatorType": "link",
+          "startTime": 160,
+          "duration": 17,
+          "transferSize": 956,
+          "encodedBodySize": 656,
+          "decodedBodySize": 2560
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/core-bff/core/admin/clients/0d519ae3-c440-4237-bc46-625285c41d65",
+          "initiatorType": "fetch",
+          "startTime": 229,
+          "duration": 9,
+          "transferSize": 1220,
+          "encodedBodySize": 920,
+          "decodedBodySize": 920
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DpZF_O_k.js",
+          "initiatorType": "script",
+          "startTime": 246,
+          "duration": 5,
+          "transferSize": 3835,
+          "encodedBodySize": 3535,
+          "decodedBodySize": 10763
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/De5vn2X5.js",
+          "initiatorType": "script",
+          "startTime": 247,
+          "duration": 5,
+          "transferSize": 841,
+          "encodedBodySize": 541,
+          "decodedBodySize": 541
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BiOjgW7c.js",
+          "initiatorType": "script",
+          "startTime": 247,
+          "duration": 5,
+          "transferSize": 991,
+          "encodedBodySize": 691,
+          "decodedBodySize": 1392
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DBp8FA7j.js",
+          "initiatorType": "script",
+          "startTime": 248,
+          "duration": 5,
+          "transferSize": 1576,
+          "encodedBodySize": 1276,
+          "decodedBodySize": 3260
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/admin.CufvHc7V.css",
+          "initiatorType": "link",
+          "startTime": 248,
+          "duration": 5,
+          "transferSize": 732,
+          "encodedBodySize": 432,
+          "decodedBodySize": 1604
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BtOPBonW.js",
+          "initiatorType": "script",
+          "startTime": 263,
+          "duration": 12,
+          "transferSize": 4033,
+          "encodedBodySize": 3733,
+          "decodedBodySize": 13741
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/D9uJFl3y.js",
+          "initiatorType": "script",
+          "startTime": 263,
+          "duration": 9,
+          "transferSize": 3827,
+          "encodedBodySize": 3527,
+          "decodedBodySize": 15340
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BuMu6lSv.js",
+          "initiatorType": "script",
+          "startTime": 263,
+          "duration": 15,
+          "transferSize": 9513,
+          "encodedBodySize": 9213,
+          "decodedBodySize": 52005
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BNtrGbBu.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 12,
+          "transferSize": 2851,
+          "encodedBodySize": 2551,
+          "decodedBodySize": 6188
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/C5n13Kji.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 15,
+          "transferSize": 12905,
+          "encodedBodySize": 12605,
+          "decodedBodySize": 37446
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/tcoWIYO1.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 14,
+          "transferSize": 1423,
+          "encodedBodySize": 1123,
+          "decodedBodySize": 3969
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/B549ccFa.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 18,
+          "transferSize": 2015,
+          "encodedBodySize": 1715,
+          "decodedBodySize": 5996
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DEAup_3e.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 17,
+          "transferSize": 2136,
+          "encodedBodySize": 1836,
+          "decodedBodySize": 7662
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/C9u82kvq.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 25,
+          "transferSize": 399,
+          "encodedBodySize": 99,
+          "decodedBodySize": 99
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/C9-lbqFt.js",
+          "initiatorType": "script",
+          "startTime": 264,
+          "duration": 28,
+          "transferSize": 9316,
+          "encodedBodySize": 9016,
+          "decodedBodySize": 35647
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/AdminHeader.Hsu7TqvI.css",
+          "initiatorType": "link",
+          "startTime": 264,
+          "duration": 16,
+          "transferSize": 689,
+          "encodedBodySize": 389,
+          "decodedBodySize": 2014
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/session",
+          "initiatorType": "fetch",
+          "startTime": 265,
+          "duration": 81,
+          "transferSize": 742,
+          "encodedBodySize": 442,
+          "decodedBodySize": 442
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BYEIO6uH.js",
+          "initiatorType": "script",
+          "startTime": 289,
+          "duration": 16,
+          "transferSize": 8841,
+          "encodedBodySize": 8541,
+          "decodedBodySize": 36695
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BSeuPZdI.js",
+          "initiatorType": "script",
+          "startTime": 290,
+          "duration": 12,
+          "transferSize": 838,
+          "encodedBodySize": 538,
+          "decodedBodySize": 1327
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DlhOrA8k.js",
+          "initiatorType": "script",
+          "startTime": 291,
+          "duration": 15,
+          "transferSize": 364,
+          "encodedBodySize": 64,
+          "decodedBodySize": 64
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/diagnostico.Ev35vj_A.css",
+          "initiatorType": "link",
+          "startTime": 291,
+          "duration": 14,
+          "transferSize": 1957,
+          "encodedBodySize": 1657,
+          "decodedBodySize": 9659
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/bVyLnoKc.js",
+          "initiatorType": "script",
+          "startTime": 292,
+          "duration": 22,
+          "transferSize": 3133,
+          "encodedBodySize": 2833,
+          "decodedBodySize": 8758
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/ByBW6vVg.js",
+          "initiatorType": "script",
+          "startTime": 292,
+          "duration": 22,
+          "transferSize": 1852,
+          "encodedBodySize": 1552,
+          "decodedBodySize": 4033
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/metricas.BaayBaz_.css",
+          "initiatorType": "link",
+          "startTime": 292,
+          "duration": 20,
+          "transferSize": 1024,
+          "encodedBodySize": 724,
+          "decodedBodySize": 3826
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/h-a3L_8K.js",
+          "initiatorType": "script",
+          "startTime": 293,
+          "duration": 23,
+          "transferSize": 3178,
+          "encodedBodySize": 2878,
+          "decodedBodySize": 12345
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/B8ti_Y5i.js",
+          "initiatorType": "script",
+          "startTime": 293,
+          "duration": 23,
+          "transferSize": 929,
+          "encodedBodySize": 629,
+          "decodedBodySize": 1497
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/Be58s5gb.js",
+          "initiatorType": "script",
+          "startTime": 293,
+          "duration": 24,
+          "transferSize": 1891,
+          "encodedBodySize": 1591,
+          "decodedBodySize": 4159
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BAIX13Dp.js",
+          "initiatorType": "script",
+          "startTime": 293,
+          "duration": 27,
+          "transferSize": 891,
+          "encodedBodySize": 591,
+          "decodedBodySize": 1706
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/logo.lzCMVdTg.png",
+          "initiatorType": "img",
+          "startTime": 328,
+          "duration": 6,
+          "transferSize": 52185,
+          "encodedBodySize": 51885,
+          "decodedBodySize": 51885
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/core-bff/core/admin/clients/0d519ae3-c440-4237-bc46-625285c41d65",
+          "initiatorType": "fetch",
+          "startTime": 336,
+          "duration": 15,
+          "transferSize": 1220,
+          "encodedBodySize": 920,
+          "decodedBodySize": 920
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/context",
+          "initiatorType": "fetch",
+          "startTime": 347,
+          "duration": 29,
+          "transferSize": 2306,
+          "encodedBodySize": 2006,
+          "decodedBodySize": 2006
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/nGLCZPyJ.js",
+          "initiatorType": "script",
+          "startTime": 356,
+          "duration": 12,
+          "transferSize": 9236,
+          "encodedBodySize": 8936,
+          "decodedBodySize": 37763
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BzYQyeHb.js",
+          "initiatorType": "script",
+          "startTime": 356,
+          "duration": 10,
+          "transferSize": 2433,
+          "encodedBodySize": 2133,
+          "decodedBodySize": 8088
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DRMu76_r.js",
+          "initiatorType": "script",
+          "startTime": 356,
+          "duration": 12,
+          "transferSize": 3121,
+          "encodedBodySize": 2821,
+          "decodedBodySize": 10144
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DxZo8Q7X.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 11,
+          "transferSize": 741,
+          "encodedBodySize": 441,
+          "decodedBodySize": 441
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BvUAZBOs.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 11,
+          "transferSize": 2582,
+          "encodedBodySize": 2282,
+          "decodedBodySize": 8649
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DLGw2uCC.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 19,
+          "transferSize": 3782,
+          "encodedBodySize": 3482,
+          "decodedBodySize": 11413
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CD1VWyfG.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 19,
+          "transferSize": 3459,
+          "encodedBodySize": 3159,
+          "decodedBodySize": 10362
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BPEHw50g.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 19,
+          "transferSize": 2085,
+          "encodedBodySize": 1785,
+          "decodedBodySize": 5593
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CtROAlPD.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 19,
+          "transferSize": 1323,
+          "encodedBodySize": 1023,
+          "decodedBodySize": 2480
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/03yBQQcz.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 20,
+          "transferSize": 11137,
+          "encodedBodySize": 10837,
+          "decodedBodySize": 44072
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/D86qyay0.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 29,
+          "transferSize": 17227,
+          "encodedBodySize": 16927,
+          "decodedBodySize": 65939
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/nbli1vqQ.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 25,
+          "transferSize": 1210,
+          "encodedBodySize": 910,
+          "decodedBodySize": 2084
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/mKzNrmqQ.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 26,
+          "transferSize": 764,
+          "encodedBodySize": 464,
+          "decodedBodySize": 1118
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/ClMyQfXf.js",
+          "initiatorType": "script",
+          "startTime": 357,
+          "duration": 25,
+          "transferSize": 3888,
+          "encodedBodySize": 3588,
+          "decodedBodySize": 11837
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/tasks.BAVTufyE.css",
+          "initiatorType": "link",
+          "startTime": 357,
+          "duration": 13,
+          "transferSize": 889,
+          "encodedBodySize": 589,
+          "decodedBodySize": 589
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CodkLMWT.js",
+          "initiatorType": "script",
+          "startTime": 358,
+          "duration": 29,
+          "transferSize": 1084,
+          "encodedBodySize": 784,
+          "decodedBodySize": 784
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/sB-Qg5xG.js",
+          "initiatorType": "script",
+          "startTime": 358,
+          "duration": 29,
+          "transferSize": 510,
+          "encodedBodySize": 210,
+          "decodedBodySize": 210
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 378,
+          "duration": 43,
+          "transferSize": 859,
+          "encodedBodySize": 559,
+          "decodedBodySize": 559
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-snapshot?storeId=33000000-0000-4000-8000-000000000011&includeHistory=false&includeActivitySessions=false",
+          "initiatorType": "fetch",
+          "startTime": 379,
+          "duration": 59,
+          "transferSize": 1624,
+          "encodedBodySize": 1324,
+          "decodedBodySize": 1324
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/consultants?storeId=33000000-0000-4000-8000-000000000011",
+          "initiatorType": "fetch",
+          "startTime": 379,
+          "duration": 70,
+          "transferSize": 1474,
+          "encodedBodySize": 1174,
+          "decodedBodySize": 1174
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/settings?storeId=33000000-0000-4000-8000-000000000011",
+          "initiatorType": "fetch",
+          "startTime": 379,
+          "duration": 56,
+          "transferSize": 9185,
+          "encodedBodySize": 8885,
+          "decodedBodySize": 8885
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/realtime-ticket",
+          "initiatorType": "fetch",
+          "startTime": 379,
+          "duration": 58,
+          "transferSize": 742,
+          "encodedBodySize": 442,
+          "decodedBodySize": 442
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CbaND8Iw.js",
+          "initiatorType": "script",
+          "startTime": 405,
+          "duration": 5,
+          "transferSize": 7092,
+          "encodedBodySize": 6792,
+          "decodedBodySize": 35886
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/BikYffSg.js",
+          "initiatorType": "script",
+          "startTime": 406,
+          "duration": 11,
+          "transferSize": 7128,
+          "encodedBodySize": 6828,
+          "decodedBodySize": 30030
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/bu3GvhWP.js",
+          "initiatorType": "script",
+          "startTime": 406,
+          "duration": 15,
+          "transferSize": 4648,
+          "encodedBodySize": 4348,
+          "decodedBodySize": 20162
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/DsO0Hj3v.js",
+          "initiatorType": "script",
+          "startTime": 406,
+          "duration": 21,
+          "transferSize": 3334,
+          "encodedBodySize": 3034,
+          "decodedBodySize": 10585
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/CfYwLHtv.js",
+          "initiatorType": "script",
+          "startTime": 406,
+          "duration": 21,
+          "transferSize": 1910,
+          "encodedBodySize": 1610,
+          "decodedBodySize": 4600
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/jLAxVLM5.js",
+          "initiatorType": "script",
+          "startTime": 429,
+          "duration": 10,
+          "transferSize": 1644,
+          "encodedBodySize": 1344,
+          "decodedBodySize": 3875
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 436,
+          "duration": 37,
+          "transferSize": 1000,
+          "encodedBodySize": 700,
+          "decodedBodySize": 700
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 439,
+          "duration": 36,
+          "transferSize": 893,
+          "encodedBodySize": 593,
+          "decodedBodySize": 593
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 440,
+          "duration": 48,
+          "transferSize": 1048,
+          "encodedBodySize": 748,
+          "decodedBodySize": 748
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 450,
+          "duration": 41,
+          "transferSize": 995,
+          "encodedBodySize": 695,
+          "decodedBodySize": 695
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 453,
+          "duration": 45,
+          "transferSize": 1048,
+          "encodedBodySize": 748,
+          "decodedBodySize": 748
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-pause",
+          "initiatorType": "fetch",
+          "startTime": 547,
+          "duration": 53,
+          "transferSize": 818,
+          "encodedBodySize": 518,
+          "decodedBodySize": 518
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-snapshot?storeId=33000000-0000-4000-8000-000000000011&includeHistory=false&includeActivitySessions=false",
+          "initiatorType": "fetch",
+          "startTime": 601,
+          "duration": 32,
+          "transferSize": 1596,
+          "encodedBodySize": 1296,
+          "decodedBodySize": 1296
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 602,
+          "duration": 31,
+          "transferSize": 1036,
+          "encodedBodySize": 736,
+          "decodedBodySize": 736
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 634,
+          "duration": 29,
+          "transferSize": 1064,
+          "encodedBodySize": 764,
+          "decodedBodySize": 764
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-resume",
+          "initiatorType": "fetch",
+          "startTime": 707,
+          "duration": 39,
+          "transferSize": 843,
+          "encodedBodySize": 543,
+          "decodedBodySize": 543
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 748,
+          "duration": 29,
+          "transferSize": 1039,
+          "encodedBodySize": 739,
+          "decodedBodySize": 739
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-start",
+          "initiatorType": "fetch",
+          "startTime": 879,
+          "duration": 40,
+          "transferSize": 1035,
+          "encodedBodySize": 735,
+          "decodedBodySize": 735
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 920,
+          "duration": 34,
+          "transferSize": 1039,
+          "encodedBodySize": 739,
+          "decodedBodySize": 739
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 1049,
+          "duration": 32,
+          "transferSize": 976,
+          "encodedBodySize": 676,
+          "decodedBodySize": 676
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-finish",
+          "initiatorType": "fetch",
+          "startTime": 1093,
+          "duration": 51,
+          "transferSize": 2430,
+          "encodedBodySize": 2130,
+          "decodedBodySize": 2130
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 1146,
+          "duration": 34,
+          "transferSize": 1042,
+          "encodedBodySize": 742,
+          "decodedBodySize": 742
+        },
+        {
+          "name": "http://127.0.0.1:3001/_nuxt/builds/meta/8a142817-204f-4bfb-9999-c8e8d1c12632.json",
+          "initiatorType": "fetch",
+          "startTime": 1280,
+          "duration": 11,
+          "transferSize": 388,
+          "encodedBodySize": 88,
+          "decodedBodySize": 88
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/context",
+          "initiatorType": "fetch",
+          "startTime": 3057,
+          "duration": 26,
+          "transferSize": 2306,
+          "encodedBodySize": 2006,
+          "decodedBodySize": 2006
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-pause",
+          "initiatorType": "fetch",
+          "startTime": 3085,
+          "duration": 28,
+          "transferSize": 814,
+          "encodedBodySize": 514,
+          "decodedBodySize": 514
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-snapshot?storeId=33000000-0000-4000-8000-000000000011&includeHistory=false&includeActivitySessions=false",
+          "initiatorType": "fetch",
+          "startTime": 3114,
+          "duration": 23,
+          "transferSize": 1587,
+          "encodedBodySize": 1287,
+          "decodedBodySize": 1287
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 3139,
+          "duration": 27,
+          "transferSize": 1064,
+          "encodedBodySize": 764,
+          "decodedBodySize": 764
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-resume",
+          "initiatorType": "fetch",
+          "startTime": 3274,
+          "duration": 60,
+          "transferSize": 847,
+          "encodedBodySize": 547,
+          "decodedBodySize": 547
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-snapshot?storeId=33000000-0000-4000-8000-000000000011&includeHistory=false&includeActivitySessions=false",
+          "initiatorType": "fetch",
+          "startTime": 3335,
+          "duration": 34,
+          "transferSize": 1621,
+          "encodedBodySize": 1321,
+          "decodedBodySize": 1321
+        },
+        {
+          "name": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+          "initiatorType": "fetch",
+          "startTime": 3370,
+          "duration": 43,
+          "transferSize": 1064,
+          "encodedBodySize": 764,
+          "decodedBodySize": 764
+        }
+      ],
+      "documentText": "Tasks\nTracking\nTools\nTeam\nSite\nFila\nManage\n\nDayanne Barbosa de Souza Matos\n\nmanager / Pérola\n\nDB\n\nFILA\n\nOperação\n\nFila ativa, atendimento em curso e visão integrada das lojas hospedados no painel admin.\n\nGarcia\nProprietario\nRealtime conectado\nAbrir diagnóstico\nVer métricas\npending_actions\nOperacao\nperson\nConsultor\nleaderboard\nRanking\nbar_chart\nDados\npsychology\nInteligencia\ndescription\nRelatorios\nquery_stats\nMétricas\ncampaign\nCampanhas\nstore\nMulti-loja\ntune\nConfig\nVisao da operacao\nAcompanhamento da loja selecionada.\nLOJA\ncheck_small\nGarcia\nexpand_more\nMODO\ncheck_small\nLoja ativa\nexpand_more\nLista da vez\nAtender primeiro da fila\n1\nRD\nRoseli de Andrade Paixão\nConsultor\nAguardando\nNA VEZ\nEm atendimento\nIniciado as 08:04\n00:02:41\nDN\nDiana Nicory Gomes\nConsultor\nNa vez\nEncerrar atendimento\nIniciado as 08:06\n00:00:03\nCA\nCaroline Aragão Silva\nConsultor\nNa vez\nEncerrar atendimento\nConsultores\nEntrar na fila, pausar e retomar ficam por aqui\nCA\nCaroline Aragão Silva\nEM ATENDIMENTO\nDN\nDiana Nicor"
+    }
+  },
+  "network": {
+    "total": 112,
+    "completed": 112,
+    "failed": 0,
+    "encodedBytes": 639521,
+    "byKind": {
+      "document": {
+        "count": 4,
+        "encodedBytes": 9358
+      },
+      "asset": {
+        "count": 66,
+        "encodedBytes": 411313
+      },
+      "other": {
+        "count": 7,
+        "encodedBytes": 174153
+      },
+      "shell-bff": {
+        "count": 5,
+        "encodedBytes": 4219
+      },
+      "fila-bff": {
+        "count": 30,
+        "encodedBytes": 40478
+      }
+    },
+    "slowest": [
+      {
+        "url": "https://fonts.googleapis.com/icon?family=Material+Icons+Round",
+        "status": 200,
+        "type": "Stylesheet",
+        "kind": "other",
+        "durationMs": 132,
+        "encodedDataLength": 481
+      },
+      {
+        "url": "https://fonts.gstatic.com/s/materialiconsround/v109/LDItaoyNOAY6Uewc665JcIzCKsKc_M9flwmP.woff2",
+        "status": 200,
+        "type": "Font",
+        "kind": "other",
+        "durationMs": 104,
+        "encodedDataLength": 173672
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/session",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 81,
+        "encodedDataLength": 1250
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/consultants?storeId=33000000-0000-4000-8000-000000000011",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 70,
+        "encodedDataLength": 1331
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/profile",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "shell-bff",
+        "durationMs": 63,
+        "encodedDataLength": 689
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-resume",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 60,
+        "encodedDataLength": 703
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-snapshot?storeId=33000000-0000-4000-8000-000000000011&includeHistory=false&includeActivitySessions=false",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 59,
+        "encodedDataLength": 1481
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/realtime-ticket",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 58,
+        "encodedDataLength": 598
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/settings?storeId=33000000-0000-4000-8000-000000000011",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 56,
+        "encodedDataLength": 9042
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-pause",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 53,
+        "encodedDataLength": 674
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/operations-finish",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 51,
+        "encodedDataLength": 2287
+      },
+      {
+        "url": "http://127.0.0.1:3001/api/admin/modules/fila-atendimento/metrics-events",
+        "status": 200,
+        "type": "Fetch",
+        "kind": "fila-bff",
+        "durationMs": 48,
+        "encodedDataLength": 904
+      }
+    ]
+  },
+  "actions": [
+    {
+      "label": "login",
+      "ok": true,
+      "durationMs": 3229,
+      "mode": "bff-fallback",
+      "beforeFallback": {
+        "path": "/admin/fila-atendimento",
+        "error": "",
+        "loading": ""
+      },
+      "status": 200,
+      "userEmail": "days.matos@gmail.com",
+      "expiresAt": "2026-04-18T12:06:56.282630258Z",
+      "path": "/admin/fila-atendimento"
+    },
+    {
+      "label": "ui.pause",
+      "ok": true,
+      "durationMs": 168,
+      "personId": "1d39d18b-9d0e-477e-86c5-5cf00b70dbe7"
+    },
+    {
+      "label": "ui.resume",
+      "ok": true,
+      "durationMs": 169,
+      "personId": "1d39d18b-9d0e-477e-86c5-5cf00b70dbe7"
+    },
+    {
+      "label": "ui.start_first_existing",
+      "ok": true,
+      "durationMs": 6,
+      "personId": "a8004135-8044-451a-bd9d-c1fa23e3e5f8"
+    },
+    {
+      "label": "ui.finish",
+      "ok": true,
+      "durationMs": 367,
+      "personId": "a8004135-8044-451a-bd9d-c1fa23e3e5f8"
+    },
+    {
+      "label": "realtime.external_pause",
+      "ok": true,
+      "durationMs": 188,
+      "status": 200,
+      "personId": "a8004135-8044-451a-bd9d-c1fa23e3e5f8",
+      "storeId": "33000000-0000-4000-8000-000000000011",
+      "uiUpdated": true
+    },
+    {
+      "label": "realtime.external_resume",
+      "ok": true,
+      "durationMs": 219,
+      "status": 200,
+      "personId": "a8004135-8044-451a-bd9d-c1fa23e3e5f8",
+      "storeId": "33000000-0000-4000-8000-000000000011",
+      "uiUpdated": true
+    }
+  ],
+  "consoleMessages": []
+}

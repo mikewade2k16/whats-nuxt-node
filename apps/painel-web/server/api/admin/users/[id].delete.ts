@@ -8,10 +8,10 @@ export default defineEventHandler(async (event) => {
 
   const id = String(getRouterParam(event, 'id') ?? '').trim()
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'User id invalido.' })
+    throw createError({ statusCode: 400, statusMessage: 'Usuario invalido.' })
   }
 
-  await assertUserWithinManagedScope(event, access, Number.parseInt(id, 10))
+  await assertUserWithinManagedScope(event, access, id)
 
   await coreAdminFetch(event, `/core/admin/users/${id}`, { method: 'DELETE' })
 

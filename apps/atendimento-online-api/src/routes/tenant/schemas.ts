@@ -1,7 +1,8 @@
 ﻿import { AuditEventType } from "@prisma/client";
 import { z } from "zod";
+import { whatsappInstanceUserScopePolicyValues } from "../../domain/access.js";
 
-const whatsappInstanceUserScopePolicySchema = z.enum(["MULTI_INSTANCE", "SINGLE_INSTANCE"]);
+const whatsappInstanceUserScopePolicySchema = z.enum(whatsappInstanceUserScopePolicyValues);
 
 const booleanQueryParamSchema = z.preprocess((value) => {
   if (value === undefined || value === null || value === "") {

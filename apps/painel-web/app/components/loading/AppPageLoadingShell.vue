@@ -4,7 +4,7 @@ withDefaults(defineProps<{
   description?: string;
 }>(), {
   title: "Carregando painel",
-  description: "Preparando modulos, sessoes e contexto visual."
+  description: "Preparando módulos, sessões e contexto visual."
 });
 </script>
 

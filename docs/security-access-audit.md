@@ -320,14 +320,24 @@ node scripts/security-access-audit.mjs
 
 Variaveis opcionais:
 
-- `SECURITY_AUDIT_UI_BASE_URL` (default `http://localhost:3000`)
-- `SECURITY_AUDIT_API_BASE_URL` (default `http://localhost:4000`)
+- `SECURITY_AUDIT_UI_BASE_URL` (default `http://127.0.0.1:3000`)
+- `SECURITY_AUDIT_API_BASE_URL` (default `http://127.0.0.1:4000`)
+- `SECURITY_AUDIT_CORE_BASE_URL` (default `http://127.0.0.1:4100`)
 - `SECURITY_AUDIT_ROOT_EMAIL` (default `root@core.local`)
 - `SECURITY_AUDIT_ROOT_PASSWORD` (default `123456`)
-- `SECURITY_AUDIT_ADMIN_EMAIL` (default `admin@demo.local`)
+- `SECURITY_AUDIT_ROOT_TOKEN` (opcional; reutiliza token ja emitido e pula o login root no shell)
+- `SECURITY_AUDIT_ADMIN_EMAIL` (default `admin@demo-core.local`)
 - `SECURITY_AUDIT_ADMIN_PASSWORD` (default `123456`)
+- `SECURITY_AUDIT_ADMIN_TOKEN` (opcional; reutiliza token ja emitido e pula o login tenant admin no shell)
+- `SECURITY_AUDIT_TIMEOUT_MS` (default `8000`; timeout por request do audit)
 - `SECURITY_AUDIT_WEBHOOK_TENANT` (default `demo`)
 - `SECURITY_AUDIT_OUTPUT_FILE` (default `docs/metrics/security-access-audit-latest.json`)
+
+Comportamento de auth:
+
+- o script tenta primeiro o login via shell (`/api/core-bff/core/auth/login`)
+- quando o proxy do shell nao estiver disponivel, faz fallback para `POST /core/auth/login` no `plataforma-api`
+- quando `SECURITY_AUDIT_ROOT_TOKEN` ou `SECURITY_AUDIT_ADMIN_TOKEN` forem informados, o script reutiliza esses tokens e nao depende do fluxo de login para iniciar a auditoria
 
 Saida gerada:
 - `docs/metrics/security-access-audit-latest.json`

@@ -1,7 +1,8 @@
-﻿import type { FastifyInstance } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { MessageStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../db.js";
 import { requireAdminOrSupervisor } from "../../lib/guards.js";
+import { mapTenantDirectoryUsersById } from "../../services/core-tenant-directory.js";
 import { getHttpEndpointMetricsSnapshot } from "../../services/http-metrics.js";
 import { toUtcDayKey } from "./helpers.js";
 import {
@@ -48,40 +49,54 @@ export function registerTenantAuditRoutes(protectedApp: FastifyInstance) {
       where.actorUserId = query.data.actorUserId;
     }
 
-    const rows = await prisma.auditEvent.findMany({
-      where,
-      take: query.data.limit + 1,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: {
-        actorUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true
-          }
-        },
-        conversation: {
-          select: {
-            id: true,
-            channel: true,
-            externalId: true,
-            contactName: true
-          }
-        },
-        message: {
-          select: {
-            id: true,
-            direction: true,
-            messageType: true,
-            status: true
+    const [rows, actorUsers] = await Promise.all([
+      prisma.auditEvent.findMany({
+        where,
+        take: query.data.limit + 1,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        include: {
+          conversation: {
+            select: {
+              id: true,
+              channel: true,
+              externalId: true,
+              contactName: true
+            }
+          },
+          message: {
+            select: {
+              id: true,
+              direction: true,
+              messageType: true,
+              status: true
+            }
           }
         }
-      }
-    });
+      }),
+      mapTenantDirectoryUsersById(request.authUser.tenantId, {
+        accessToken: request.coreAccessToken
+      })
+    ]);
 
-    const hasMore = rows.length > query.data.limit;
-    const events = hasMore ? rows.slice(0, query.data.limit) : rows;
+    const normalizedRows = rows.map((row) => ({
+      ...row,
+      actorUser: row.actorUserId
+        ? (() => {
+            const matched = actorUsers.get(row.actorUserId);
+            return matched
+              ? {
+                  id: matched.id,
+                  name: matched.name,
+                  email: matched.email,
+                  role: matched.role
+                }
+              : null;
+          })()
+        : null
+    }));
+
+    const hasMore = normalizedRows.length > query.data.limit;
+    const events = hasMore ? normalizedRows.slice(0, query.data.limit) : normalizedRows;
     const nextBefore =
       hasMore && events.length > 0 ? events[events.length - 1]?.createdAt.toISOString() : null;
 

@@ -259,11 +259,11 @@ func (service *Service) loadEntries(
 
 	filtered := filterHistory(history, normalized)
 	sort.SliceStable(filtered, func(i, j int) bool {
-		if filtered[i].FinishedAt == filtered[j].FinishedAt {
+		if filtered[i].FinishedAt.Equal(filtered[j].FinishedAt) {
 			return filtered[i].ServiceID > filtered[j].ServiceID
 		}
 
-		return filtered[i].FinishedAt > filtered[j].FinishedAt
+		return filtered[i].FinishedAt.After(filtered[j].FinishedAt)
 	})
 
 	return store, normalized, filtered, nil
@@ -303,7 +303,7 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 	var repositoryInput repositoryFilters
 
 	if normalized.DateFrom != "" {
-		startAt, err := dayStartMillis(normalized.DateFrom)
+		startAt, err := dayStartTime(normalized.DateFrom)
 		if err != nil {
 			return Filters{}, repositoryFilters{}, ErrValidation
 		}
@@ -312,7 +312,7 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 	}
 
 	if normalized.DateTo != "" {
-		endAt, err := dayEndMillis(normalized.DateTo)
+		endAt, err := dayEndTime(normalized.DateTo)
 		if err != nil {
 			return Filters{}, repositoryFilters{}, ErrValidation
 		}
@@ -320,7 +320,7 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 		repositoryInput.FinishedAtTo = &endAt
 	}
 
-	if repositoryInput.FinishedAtFrom != nil && repositoryInput.FinishedAtTo != nil && *repositoryInput.FinishedAtTo < *repositoryInput.FinishedAtFrom {
+	if repositoryInput.FinishedAtFrom != nil && repositoryInput.FinishedAtTo != nil && repositoryInput.FinishedAtTo.Before(*repositoryInput.FinishedAtFrom) {
 		return Filters{}, repositoryFilters{}, ErrValidation
 	}
 
@@ -675,7 +675,7 @@ func buildChartData(entries []operations.ServiceHistoryEntry) ChartData {
 			outcomes.NaoCompra++
 		}
 
-		hour := time.UnixMilli(entry.FinishedAt).UTC().Format("15")
+		hour := entry.FinishedAt.UTC().Format("15")
 		hourBucket := hourlyMap[hour]
 		hourBucket.Hour = hour
 		hourBucket.Attendances++
@@ -749,8 +749,8 @@ func buildResultRows(entries []operations.ServiceHistoryEntry) []ResultRow {
 			StoreName:          strings.TrimSpace(entry.StoreName),
 			ConsultantID:       strings.TrimSpace(entry.PersonID),
 			ConsultantName:     strings.TrimSpace(entry.PersonName),
-			StartedAt:          entry.StartedAt,
-			FinishedAt:         entry.FinishedAt,
+			StartedAt:          entry.StartedAt.UTC().UnixMilli(),
+			FinishedAt:         entry.FinishedAt.UTC().UnixMilli(),
 			DurationMs:         maxInt64(entry.DurationMs, 0),
 			QueueWaitMs:        maxInt64(entry.QueueWaitMs, 0),
 			Outcome:            strings.TrimSpace(entry.FinishOutcome),
@@ -1004,7 +1004,7 @@ func normalizeAllowedList(values []string, allowed map[string]struct{}) []string
 	return result
 }
 
-func dayStartMillis(dateValue string) (int64, error) {
+func dayStartTime(dateValue string) (time.Time, error) {
 	location, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		location = time.UTC
@@ -1012,13 +1012,13 @@ func dayStartMillis(dateValue string) (int64, error) {
 
 	value, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateValue), location)
 	if err != nil {
-		return 0, err
+		return time.Time{}, err
 	}
 
-	return value.UnixMilli(), nil
+	return value.UTC(), nil
 }
 
-func dayEndMillis(dateValue string) (int64, error) {
+func dayEndTime(dateValue string) (time.Time, error) {
 	location, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		location = time.UTC
@@ -1026,10 +1026,10 @@ func dayEndMillis(dateValue string) (int64, error) {
 
 	value, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateValue), location)
 	if err != nil {
-		return 0, err
+		return time.Time{}, err
 	}
 
-	return value.Add((24 * time.Hour) - time.Millisecond).UnixMilli(), nil
+	return value.Add((24 * time.Hour) - time.Millisecond).UTC(), nil
 }
 
 func intersectsAny(values []string, required []string) bool {

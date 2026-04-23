@@ -10,7 +10,6 @@ import {
 } from '~/utils/finance-ids'
 
 interface FinanceConfigState {
-  clientId: number
   categories: FinanceCategoryConfig[]
   fixedAccounts: FinanceFixedAccountConfig[]
   recurringEntries: FinanceRecurringEntryConfig[]
@@ -30,20 +29,26 @@ function normalizeAmount(value: unknown) {
 }
 
 export function useFinancesConfigManager() {
+  const sessionSimulation = useSessionSimulationStore()
   const { bffFetch } = useBffFetch()
   const loading = ref(false)
   const saving = ref(false)
   const errorMessage = ref('')
   const config = ref<FinanceConfigState | null>(null)
 
-  async function fetchConfig(clientId?: number) {
+  function resolveScopedCoreTenantId(coreTenantId?: string) {
+    return normalizeText(coreTenantId, 90) || normalizeText(sessionSimulation.activeClientCoreTenantId, 90)
+  }
+
+  async function fetchConfig(coreTenantId?: string) {
     loading.value = true
     errorMessage.value = ''
 
     try {
+      const resolvedCoreTenantId = resolveScopedCoreTenantId(coreTenantId)
       const response = await bffFetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
         query: {
-          clientId: Number.isFinite(Number(clientId)) ? Number(clientId) : undefined
+          coreTenantId: resolvedCoreTenantId || undefined
         }
       })
       config.value = response.data
@@ -57,7 +62,7 @@ export function useFinancesConfigManager() {
   }
 
   async function saveConfig(payload: {
-    clientId?: number
+    coreTenantId?: string
     categories?: FinanceCategoryConfig[]
     fixedAccounts?: FinanceFixedAccountConfig[]
     recurringEntries?: FinanceRecurringEntryConfig[]
@@ -79,11 +84,12 @@ export function useFinancesConfigManager() {
         })
         : undefined
       const categoryIdMap = new Map((normalizedCategories || []).map(category => [category.rawId, category.id] as const))
+      const coreTenantId = resolveScopedCoreTenantId(payload.coreTenantId)
 
       const response = await bffFetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
         method: 'PUT',
         body: {
-          clientId: payload.clientId,
+          coreTenantId: coreTenantId || undefined,
           categories: normalizedCategories
             ? normalizedCategories.map((category) => ({
               id: category.id,
@@ -116,7 +122,7 @@ export function useFinancesConfigManager() {
             : undefined,
           recurringEntries: Array.isArray(payload.recurringEntries)
             ? payload.recurringEntries.map((entry) => ({
-              sourceClientId: Number(entry.sourceClientId || 0),
+              sourceCoreTenantId: normalizeText(entry.sourceCoreTenantId, 90) || undefined,
               adjustmentAmount: normalizeAmount(entry.adjustmentAmount),
               notes: normalizeText(entry.notes, 240)
             }))

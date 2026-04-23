@@ -1,0 +1,9 @@
+drop table if exists user_external_identities;
+drop table if exists user_store_roles;
+drop table if exists user_tenant_roles;
+drop table if exists user_platform_roles;
+drop table if exists user_invitations;
+drop table if exists users;
+drop table if exists store_settings;
+drop table if exists stores;
+drop table if exists tenants;

@@ -1,15 +1,10 @@
-import { UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../db.js";
+import { UserRole } from "../domain/access.js";
 import { requireAdmin, requireAtendimentoModuleAccess } from "../lib/guards.js";
-import { CoreApiError, type CoreTenant, platformCoreClient } from "../services/core-client.js";
-import {
-  listCoreTenantUsersWithLegacyRoles,
-  mapLegacyRoleToCoreRoleCodes,
-  syncLocalUsersFromCoreTenant
-} from "../services/core-identity.js";
-import { findBestCoreTenantMatch } from "../services/core-tenant-mapping.js";
+import { CoreApiError, platformCoreClient } from "../services/core-client.js";
+import { listTenantDirectoryUsers } from "../services/core-tenant-directory.js";
+import { mapLegacyRoleToCoreRoleCodes } from "../services/core-identity.js";
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -25,50 +20,6 @@ function toCoreErrorPayload(error: CoreApiError, fallbackMessage: string) {
   };
 }
 
-async function resolveCurrentCoreTenant(
-  tenantSlug: string,
-  localTenantId: string,
-  accessToken?: string | null
-) {
-  const localTenant = await prisma.tenant.findUnique({
-    where: {
-      id: localTenantId
-    },
-    select: {
-      coreTenantId: true,
-      slug: true,
-      name: true
-    }
-  });
-
-  const normalizedCoreTenantId = String(localTenant?.coreTenantId ?? "").trim();
-  if (normalizedCoreTenantId) {
-    const coreById = await platformCoreClient.findTenantById(normalizedCoreTenantId, {
-      accessToken
-    });
-    if (coreById) {
-      return coreById;
-    }
-  }
-
-  const coreBySlug = await platformCoreClient.findTenantBySlug(tenantSlug, {
-    accessToken
-  });
-  if (coreBySlug) {
-    return coreBySlug;
-  }
-
-  const coreTenants = await platformCoreClient.listTenants({
-    accessToken
-  });
-
-  return findBestCoreTenantMatch({
-    localSlug: localTenant?.slug ?? tenantSlug,
-    localName: localTenant?.name,
-    coreTenants
-  }) as CoreTenant | null;
-}
-
 export async function userRoutes(app: FastifyInstance) {
   app.register(async (protectedApp) => {
     protectedApp.addHook("preHandler", protectedApp.authenticate);
@@ -81,30 +32,16 @@ export async function userRoutes(app: FastifyInstance) {
 
     protectedApp.get("/users", async (request, reply) => {
       try {
-        const tenantSlug = request.authUser.tenantSlug.trim().toLowerCase();
-        const coreTenant = await resolveCurrentCoreTenant(
-          tenantSlug,
-          request.authUser.tenantId,
-          request.coreAccessToken
-        );
-
-        if (!coreTenant) {
-          return reply.code(404).send({
-            message: `Tenant ${tenantSlug} nao encontrado no plataforma-api`
-          });
-        }
-
-        const coreUsers = await listCoreTenantUsersWithLegacyRoles(coreTenant.id, {
+        const users = await listTenantDirectoryUsers(request.authUser.tenantId, {
           accessToken: request.coreAccessToken
         });
-        const syncedUsers = await syncLocalUsersFromCoreTenant(request.authUser.tenantId, coreUsers);
-        return syncedUsers;
+        return users.map(({ coreTenantUserId: _coreTenantUserId, atendimentoAccess: _atendimentoAccess, ...entry }) => entry);
       } catch (error) {
         if (error instanceof CoreApiError) {
           return reply.code(error.statusCode).send(toCoreErrorPayload(error, "Falha ao listar usuarios no plataforma-api"));
         }
 
-        request.log.error({ error }, "Falha ao sincronizar usuarios do plataforma-api");
+        request.log.error({ error }, "Falha ao listar usuarios do tenant via plataforma-api");
         return reply.code(500).send({
           message: "Falha ao listar usuarios no plataforma-api"
         });
@@ -125,21 +62,8 @@ export async function userRoutes(app: FastifyInstance) {
       }
 
       try {
-        const tenantSlug = request.authUser.tenantSlug.trim().toLowerCase();
-        const coreTenant = await resolveCurrentCoreTenant(
-          tenantSlug,
-          request.authUser.tenantId,
-          request.coreAccessToken
-        );
-
-        if (!coreTenant) {
-          return reply.code(404).send({
-            message: `Tenant ${tenantSlug} nao encontrado no plataforma-api`
-          });
-        }
-
         const roleCodes = mapLegacyRoleToCoreRoleCodes(parsed.data.role);
-        const invited = await platformCoreClient.inviteTenantUser(coreTenant.id, {
+        await platformCoreClient.inviteTenantUser(request.authUser.tenantId, {
           email: parsed.data.email.trim().toLowerCase(),
           name: parsed.data.name.trim(),
           password: parsed.data.password,
@@ -149,22 +73,21 @@ export async function userRoutes(app: FastifyInstance) {
           accessToken: request.coreAccessToken
         });
 
-        const coreUsers = await listCoreTenantUsersWithLegacyRoles(coreTenant.id, {
+        const users = await listTenantDirectoryUsers(request.authUser.tenantId, {
           accessToken: request.coreAccessToken
         });
-        const syncedUsers = await syncLocalUsersFromCoreTenant(request.authUser.tenantId, coreUsers);
-
-        const created = syncedUsers.find(
+        const created = users.find(
           (entry) => entry.email.trim().toLowerCase() === parsed.data.email.trim().toLowerCase()
         );
 
         if (!created) {
           return reply.code(500).send({
-            message: "Usuario criado no plataforma-api, mas nao foi possivel sincronizar no modulo."
+            message: "Usuario criado no plataforma-api, mas nao foi possivel montar a resposta do modulo."
           });
         }
 
-        return reply.code(201).send(created);
+        const { coreTenantUserId: _coreTenantUserId, atendimentoAccess: _atendimentoAccess, ...payload } = created;
+        return reply.code(201).send(payload);
       } catch (error) {
         if (error instanceof CoreApiError) {
           return reply.code(error.statusCode).send(toCoreErrorPayload(error, "Falha ao criar usuario no plataforma-api"));

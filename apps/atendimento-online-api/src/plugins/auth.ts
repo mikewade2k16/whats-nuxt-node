@@ -1,6 +1,6 @@
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "../domain/access.js";
 import {
   AuthContextError,
   extractRequestedClientId,

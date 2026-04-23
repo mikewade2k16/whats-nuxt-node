@@ -57,7 +57,7 @@ type GetAdminClientInput struct {
 	UserID          string
 	TenantID        string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 }
 
 type CreateAdminClientInput struct {
@@ -74,7 +74,7 @@ type UpdateAdminClientFieldInput struct {
 	UserID          string
 	TenantID        string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 	Field           string
 	Value           any
 }
@@ -83,7 +83,7 @@ type ReplaceAdminClientStoresInput struct {
 	UserID          string
 	TenantID        string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 	Stores          []AdminClientStoreInput
 }
 
@@ -91,21 +91,21 @@ type RotateAdminClientWebhookInput struct {
 	UserID          string
 	TenantID        string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 }
 
 type DeleteAdminClientInput struct {
 	UserID          string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 }
 
 type AdminUser struct {
-	ID                 int      `json:"id"`
+	ID                 string   `json:"id"`
 	CoreUserID         string   `json:"coreUserId"`
+	CoreTenantID       *string  `json:"coreTenantId,omitempty"`
 	IsPlatformAdmin    bool     `json:"isPlatformAdmin"`
 	Level              string   `json:"level"`
-	ClientID           *int     `json:"clientId"`
 	ClientName         string   `json:"clientName"`
 	Name               string   `json:"name"`
 	Nick               string   `json:"nick"`
@@ -131,7 +131,7 @@ type ListAdminUsersInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	Query           string
-	ClientID        *int
+	CoreTenantID    *string
 	Page            int
 	Limit           int
 }
@@ -146,7 +146,7 @@ type CreateAdminUserInput struct {
 	Email                 string
 	Password              string
 	Phone                 string
-	ClientID              *int
+	CoreTenantID          *string
 	Level                 string
 	UserType              string
 	BusinessRole          string
@@ -155,26 +155,26 @@ type CreateAdminUserInput struct {
 }
 
 type UpdateAdminUserFieldInput struct {
-	UserID          string
-	TenantID        string
-	IsPlatformAdmin bool
-	UserIDLegacy    int
-	Field           string
-	Value           any
+	UserID           string
+	TenantID         string
+	IsPlatformAdmin  bool
+	TargetCoreUserID string
+	Field            string
+	Value            any
 }
 
 type ApproveAdminUserInput struct {
-	UserID          string
-	TenantID        string
-	IsPlatformAdmin bool
-	UserIDLegacy    int
+	UserID           string
+	TenantID         string
+	IsPlatformAdmin  bool
+	TargetCoreUserID string
 }
 
 type DeleteAdminUserInput struct {
-	UserID          string
-	TenantID        string
-	IsPlatformAdmin bool
-	UserIDLegacy    int
+	UserID           string
+	TenantID         string
+	IsPlatformAdmin  bool
+	TargetCoreUserID string
 }
 
 type UpdateOwnProfileFieldInput struct {

@@ -7,10 +7,10 @@ import {
   createFinanceUuid,
   financeRecurringRowId,
   financeRecurringStoreRowId,
+  isFinanceRecurringRowId,
   isFinanceRecurringStoreRowId,
   normalizeFinanceEntityId,
-  normalizeFinanceLinkedUuid,
-  parseFinanceRecurringClientId
+  normalizeFinanceLinkedUuid
 } from '~/utils/finance-ids'
 import type {
   FinanceCategoryConfig,
@@ -27,7 +27,6 @@ definePageMeta({
   layout: 'admin'
 })
 
-const DEFAULT_ADMIN_CLIENT_ID = 106
 const STATUS_OPTIONS = [
   { label: 'Aberta', value: 'aberta' },
   { label: 'Conferencia', value: 'conferencia' },
@@ -114,7 +113,7 @@ const fixedEditDraft = reactive<{
   kind: 'saida',
   categoryId: ''
 })
-const targetClientId = computed(() => Number(sessionSimulation.effectiveClientId || DEFAULT_ADMIN_CLIENT_ID))
+const targetCoreTenantId = computed(() => String(sessionSimulation.activeClientCoreTenantId || '').trim())
 const clientRecurringEntries = ref<FinanceRecurringClientEntry[]>([])
 
 interface FinanceRecurringGroupStoreLine {
@@ -127,7 +126,7 @@ interface FinanceRecurringGroupStoreLine {
 
 interface FinanceRecurringGroupView {
   key: string
-  entryId: number
+  entryId: string
   title: string
   category: string
   baseAmount: number
@@ -156,7 +155,6 @@ const draft = reactive<{
   period: string
   status: string
   notes: string
-  clientId: number
   entradas: FinanceLineItem[]
   saidas: FinanceLineItem[]
 }>({
@@ -164,7 +162,6 @@ const draft = reactive<{
   period: '',
   status: 'aberta',
   notes: '',
-  clientId: DEFAULT_ADMIN_CLIENT_ID,
   entradas: [],
   saidas: []
 })
@@ -339,20 +336,22 @@ function fixedAccountsByKind(kind: 'entrada' | 'saida') {
   return configDraft.fixedAccounts.filter(account => account.kind === 'ambas' || account.kind === kind)
 }
 
-function recurringRowId(clientId: number) {
-  return financeRecurringRowId(clientId)
+function recurringRowId(sourceCoreTenantId: string) {
+  return financeRecurringRowId(sourceCoreTenantId)
 }
 
-function recurringStoreRowId(clientId: number, storeName: string) {
-  return financeRecurringStoreRowId(clientId, storeName)
+function recurringStoreRowId(sourceCoreTenantId: string, storeName: string) {
+  return financeRecurringStoreRowId(sourceCoreTenantId, storeName)
 }
 
 function isRecurringRowId(value: string) {
-  return parseFinanceRecurringClientId(value) > 0 || isFinanceRecurringStoreRowId(value)
+  return isFinanceRecurringRowId(value) || isFinanceRecurringStoreRowId(value)
 }
 
-function recurringEntryForClient(clientId: number) {
-  return configDraft.recurringEntries.find(item => Number(item.sourceClientId) === Number(clientId))
+function recurringEntryForTenant(sourceCoreTenantId: string) {
+  const normalized = String(sourceCoreTenantId || '').trim().toLowerCase()
+  if (!normalized) return undefined
+  return configDraft.recurringEntries.find(item => String(item.sourceCoreTenantId || '').trim().toLowerCase() === normalized)
 }
 
 function buildRecurringDetails(entry: FinanceRecurringClientEntry, options: { storeName?: string; storeBreakdown?: string; notes?: string }) {
@@ -365,14 +364,14 @@ function buildRecurringDetails(entry: FinanceRecurringClientEntry, options: { st
 }
 
 function buildRecurringRows(entry: FinanceRecurringClientEntry, defaultCategory: string) {
-  const recurringConfig = recurringEntryForClient(entry.id)
+  const recurringConfig = recurringEntryForTenant(entry.coreTenantId)
   const adjustment = Number(recurringConfig?.adjustmentAmount || 0)
   const notes = recurringConfig?.notes || ''
   const storeBreakdown = formatRecurringStoreBreakdown(entry)
 
   if (entry.billingMode === 'per_store' && entry.stores.length > 0) {
     return entry.stores.map((store, index) => ({
-      id: recurringStoreRowId(entry.id, store.name),
+      id: recurringStoreRowId(entry.coreTenantId, store.name),
       description: `Mensalidade ${entry.name} - ${store.name}`,
       amount: Number((Number(store.amount || 0) + (index === 0 ? adjustment : 0)).toFixed(2)),
       category: defaultCategory,
@@ -385,7 +384,7 @@ function buildRecurringRows(entry: FinanceRecurringClientEntry, defaultCategory:
   }
 
   return [{
-    id: recurringRowId(entry.id),
+    id: recurringRowId(entry.coreTenantId),
     description: `Mensalidade ${entry.name}`,
     amount: Number((entry.amount + adjustment).toFixed(2)),
     category: defaultCategory,
@@ -403,7 +402,7 @@ function buildRecurringGroup(entry: FinanceRecurringClientEntry): FinanceRecurri
 
   const rows = entry.stores
     .map((store) => {
-      const rowId = recurringStoreRowId(entry.id, store.name)
+      const rowId = recurringStoreRowId(entry.coreTenantId, store.name)
       const row = draft.entradas.find(item => item.id === rowId)
       if (!row) return null
 
@@ -626,7 +625,6 @@ function hydrate(sheet: FinanceSheetItem | null) {
     draft.period = currentPeriod()
     draft.status = 'aberta'
     draft.notes = ''
-    draft.clientId = targetClientId.value
     draft.entradas = [makeLine('entrada')]
     draft.saidas = [makeLine('saida')]
     return
@@ -635,7 +633,6 @@ function hydrate(sheet: FinanceSheetItem | null) {
   draft.period = sheet.period || currentPeriod()
   draft.status = sheet.status || 'aberta'
   draft.notes = sheet.notes || ''
-  draft.clientId = sheet.clientId || targetClientId.value
   draft.entradas = (sheet.entradas || []).map(row => ({
     ...row,
     adjustments: Array.isArray(row.adjustments)
@@ -1055,7 +1052,7 @@ function buildSheetPersistPayload() {
     period: draft.period,
     status: draft.status,
     notes: draft.notes,
-    clientId: Number(targetClientId.value || draft.clientId || DEFAULT_ADMIN_CLIENT_ID),
+    coreTenantId: targetCoreTenantId.value || activeSheet.value?.coreTenantId,
     entradas: draft.entradas.map(snapshotLine),
     saidas: draft.saidas.map(snapshotLine)
   }
@@ -1063,7 +1060,7 @@ function buildSheetPersistPayload() {
 
 function buildConfigPersistPayload() {
   return {
-    clientId: targetClientId.value,
+    coreTenantId: targetCoreTenantId.value || undefined,
     categories: configDraft.categories.map(category => ({ ...category })),
     fixedAccounts: configDraft.fixedAccounts.map(account => ({
       ...account,
@@ -1326,12 +1323,16 @@ function updateFixedAmountFromMembers(
   syncAllFixedRows(true)
 }
 
-function setRecurringAdjustment(clientId: number, rawValue: number) {
+function setRecurringAdjustment(sourceCoreTenantId: string, rawValue: number) {
+  const normalizedTenantId = String(sourceCoreTenantId || '').trim()
+  if (!normalizedTenantId) return
   const nextValue = Number(rawValue || 0)
-  const index = configDraft.recurringEntries.findIndex(item => Number(item.sourceClientId) === Number(clientId))
+  const index = configDraft.recurringEntries.findIndex(
+    item => String(item.sourceCoreTenantId || '').trim().toLowerCase() === normalizedTenantId.toLowerCase()
+  )
   if (index < 0) {
     configDraft.recurringEntries.push({
-      sourceClientId: clientId,
+      sourceCoreTenantId: normalizedTenantId,
       adjustmentAmount: nextValue,
       notes: ''
     })
@@ -1342,12 +1343,16 @@ function setRecurringAdjustment(clientId: number, rawValue: number) {
   syncAllFixedRows(true)
 }
 
-function setRecurringNotes(clientId: number, notes: string) {
+function setRecurringNotes(sourceCoreTenantId: string, notes: string) {
+  const normalizedTenantId = String(sourceCoreTenantId || '').trim()
+  if (!normalizedTenantId) return
   const normalized = normalizeText(notes, 240)
-  const index = configDraft.recurringEntries.findIndex(item => Number(item.sourceClientId) === Number(clientId))
+  const index = configDraft.recurringEntries.findIndex(
+    item => String(item.sourceCoreTenantId || '').trim().toLowerCase() === normalizedTenantId.toLowerCase()
+  )
   if (index < 0) {
     configDraft.recurringEntries.push({
-      sourceClientId: clientId,
+      sourceCoreTenantId: normalizedTenantId,
       adjustmentAmount: 0,
       notes: normalized
     })
@@ -1363,7 +1368,8 @@ async function fetchClientRecurringEntries() {
     const response = await bffFetch<{
       status: 'success'
       data: Array<{
-        id: number
+        id: string
+        coreTenantId: string
         name: string
         monthlyPaymentAmount: number
         paymentDueDay: string
@@ -1377,7 +1383,7 @@ async function fetchClientRecurringEntries() {
     }>('/api/admin/finance-config/recurring-clients', {
       query: {
         limit: 300,
-        clientId: targetClientId.value
+        coreTenantId: targetCoreTenantId.value || undefined
       }
     })
 
@@ -1395,8 +1401,9 @@ async function fetchClientRecurringEntries() {
         const billingMode = client.billingMode === 'per_store' ? 'per_store' : 'single'
 
         return {
-          id: Number(client.id),
-          name: String(client.name || `Cliente #${client.id}`),
+          id: String(client.id || '').trim(),
+          coreTenantId: String(client.coreTenantId || client.id || '').trim(),
+          name: String(client.name || 'Cliente sem nome').trim(),
           amount: billingMode === 'per_store'
             ? Number(stores.reduce((sum, store) => sum + Number(store.amount || 0), 0).toFixed(2))
             : Number(client.monthlyPaymentAmount || 0),
@@ -1413,7 +1420,7 @@ async function fetchClientRecurringEntries() {
 
 async function openConfigPanel() {
   await Promise.all([
-    fetchConfig(targetClientId.value),
+    fetchConfig(targetCoreTenantId.value),
     fetchClientRecurringEntries()
   ])
   syncConfigDraft()
@@ -1425,7 +1432,7 @@ async function onCreateSheet() {
     title: `Finance ${currentPeriod()}`,
     period: currentPeriod(),
     status: 'aberta',
-    clientId: targetClientId.value
+    coreTenantId: targetCoreTenantId.value
   })
   if (!created) return
   selectedSheetId.value = created.id
@@ -1451,7 +1458,7 @@ function removeRow(kind: 'entrada' | 'saida', index: number) {
 
 async function refreshRecurringRealtimeState() {
   await Promise.all([
-    fetchConfig(targetClientId.value),
+    fetchConfig(targetCoreTenantId.value),
     fetchClientRecurringEntries()
   ])
 }
@@ -1534,8 +1541,8 @@ watch(
 )
 
 watch(() => sessionSimulation.requestContextHash, () => {
-  void fetchSheets({ clientId: targetClientId.value })
-  void fetchConfig(targetClientId.value)
+  void fetchSheets({ coreTenantId: targetCoreTenantId.value })
+  void fetchConfig(targetCoreTenantId.value)
   void fetchClientRecurringEntries()
 })
 
@@ -1550,8 +1557,8 @@ onBeforeUnmount(() => {
 onMounted(async () => {
   sessionSimulation.initialize()
   await Promise.all([
-    fetchSheets({ clientId: targetClientId.value }),
-    fetchConfig(targetClientId.value),
+    fetchSheets({ coreTenantId: targetCoreTenantId.value }),
+    fetchConfig(targetCoreTenantId.value),
     fetchClientRecurringEntries()
   ])
   syncConfigDraft()
@@ -1811,7 +1818,7 @@ onMounted(async () => {
                     <div class="flex items-center justify-between gap-2">
                       <p class="truncate text-sm font-medium">{{ entry.name }}</p>
                       <UBadge class="finances-config__item-total-badge" color="success" variant="soft">
-                        {{ formatMoney(entry.amount + Number(recurringEntryForClient(entry.id)?.adjustmentAmount || 0)) }}
+                        {{ formatMoney(entry.amount + Number(recurringEntryForTenant(entry.id)?.adjustmentAmount || 0)) }}
                       </UBadge>
                     </div>
                     <p class="text-xs text-[rgb(var(--muted))]">Base: {{ formatMoney(entry.amount) }} | Vencimento: {{ entry.dueDay || '--' }}</p>
@@ -1821,14 +1828,14 @@ onMounted(async () => {
                     <div class="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
                       <UInput
                         class="finances-config__input finances-config__input--recurring-adjustment"
-                        :model-value="Number(recurringEntryForClient(entry.id)?.adjustmentAmount || 0)"
+                        :model-value="Number(recurringEntryForTenant(entry.id)?.adjustmentAmount || 0)"
                         type="number"
                         step="0.01"
                         placeholder="+500 ou -1000"
                         @update:model-value="setRecurringAdjustment(entry.id, Number($event || 0))" />
                       <UInput
                         class="finances-config__input finances-config__input--recurring-notes"
-                        :model-value="recurringEntryForClient(entry.id)?.notes || ''"
+                        :model-value="recurringEntryForTenant(entry.id)?.notes || ''"
                         placeholder="Motivo do ajuste do mes"
                         @update:model-value="setRecurringNotes(entry.id, String($event || ''))" />
                     </div>

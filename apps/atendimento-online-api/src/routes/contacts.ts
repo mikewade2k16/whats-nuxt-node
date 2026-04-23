@@ -6,6 +6,7 @@ import { prisma } from "../db.js";
 import { publishEvent } from "../event-bus.js";
 import { requireAtendimentoModuleAccess, requireConversationWrite } from "../lib/guards.js";
 import { EvolutionApiError } from "../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../services/tenant-runtime.js";
 import {
   createEvolutionClientForTenant,
   parseFindContactsResponse as parseEvolutionFindContactsResponse
@@ -612,18 +613,9 @@ export async function contactsRoutes(app: FastifyInstance) {
         });
       }
 
-      const tenant = await prisma.tenant.findUnique({
-        where: { id: request.authUser.tenantId },
-        select: {
-          id: true,
-          whatsappInstance: true,
-          evolutionApiKey: true
-        }
+      const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+        accessToken: request.coreAccessToken
       });
-
-      if (!tenant) {
-        return reply.code(404).send({ message: "Tenant nao encontrado" });
-      }
 
       const instanceName =
         tenant.whatsappInstance?.trim() || env.EVOLUTION_DEFAULT_INSTANCE?.trim() || "";

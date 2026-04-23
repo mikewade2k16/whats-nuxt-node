@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspeção do Banco</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --paper: rgba(255, 252, 246, 0.9);
+      --ink: #1f1a17;
+      --muted: #6d6259;
+      --line: rgba(79, 59, 45, 0.18);
+      --accent: #a43820;
+      --accent-soft: #efd5ca;
+      --teal: #295a57;
+      --gold: #b07c23;
+      --shadow: 0 18px 48px rgba(68, 40, 24, 0.12);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(164, 56, 32, 0.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(41, 90, 87, 0.12), transparent 28%),
+        linear-gradient(180deg, #faf5ee 0%, var(--bg) 100%);
+    }
+
+    .shell {
+      max-width: 90%;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      background: linear-gradient(135deg, rgba(255, 252, 246, 0.96), rgba(249, 240, 230, 0.9));
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -100px auto;
+      width: 260px;
+      height: 260px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(176, 124, 35, 0.18), transparent 70%);
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 6vw, 64px);
+      line-height: 0.96;
+      max-width: 880px;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 840px;
+      font-size: 18px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .metric-value {
+      font-size: 36px;
+      line-height: 1;
+      margin: 0 0 8px;
+    }
+
+    .metric-label,
+    .card-copy,
+    .list li,
+    .notes li {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+
+    .link-grid {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card-link {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 180ms ease, border-color 180ms ease;
+    }
+
+    .card-link:hover {
+      transform: translateY(-2px);
+      border-color: rgba(164, 56, 32, 0.4);
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .schemas {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .schema-card h3 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .schema-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .schema-meta span {
+      font-size: 12px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: rgba(41, 90, 87, 0.1);
+      color: var(--teal);
+    }
+
+    .tables {
+      margin: 14px 0 0;
+      padding-left: 18px;
+      columns: 2;
+      column-gap: 20px;
+    }
+
+    .tables li {
+      break-inside: avoid;
+      margin-bottom: 6px;
+    }
+
+    .issues {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .issue-kicker {
+      color: var(--gold);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      background: rgba(255, 249, 243, 0.86);
+      border-radius: 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 840px) {
+      .tables {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Mapeamento Estrutural do Banco</div>
+      <h1>Inspeção completa para revisar tabelas, fluxos e convergência real</h1>
+      <p class="lead">Este hub organiza a leitura do banco atual da plataforma em cinco schemas documentados, separando estrutura canônica, módulos extraídos, integrações ativas, overlays operacionais e limpezas já concluídas. O financeiro agora vive em schema próprio, o `fila_atendimento` já convergiu para o shell, e o `atendimento_online` da `atendimento-online-api` fica documentado aqui como runtime operacional já integrado ao `platform_core` para tenant, user, grants autoritativos, vocabulário de acesso e limites.</p>
+      <div class="chip-row">
+        <span class="chip">73 tabelas mapeadas</span>
+        <span class="chip">5 schemas documentados</span>
+        <span class="chip">Catálogo + fluxos + diagramas</span>
+        <span class="chip">0 órfãos críticos medidos no runtime local</span>
+      </div>
+    </section>
+
+    <section class="grid metrics">
+      <article class="panel">
+        <p class="metric-value">24</p>
+        <div class="metric-label">Tabelas em <strong>platform_core</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">8</p>
+        <div class="metric-label">Tabelas no schema dedicado de <strong>finance</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">8</p>
+        <div class="metric-label">Tabelas no runtime operacional hoje hospedado em <strong>atendimento_online</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">20</p>
+        <div class="metric-label">Tabelas em <strong>indicators</strong></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">13</p>
+        <div class="metric-label">Tabelas em <strong>fila_atendimento</strong></div>
+      </article>
+    </section>
+
+    <section class="grid link-grid">
+      <a class="panel card-link" href="README.md">
+        <h2 class="section-title">Leitura inicial</h2>
+        <p class="card-copy">Resumo executivo, legenda de classificação e principais pontos ruins ou mal integrados.</p>
+      </a>
+      <a class="panel card-link" href="platform-core.html">
+        <h2 class="section-title">Catálogo do shell</h2>
+        <p class="card-copy">Página visual do `platform_core` com mapa do shell, fluxo, canônico x compatibilidade e tabelas detalhadas sem o módulo financeiro.</p>
+      </a>
+      <a class="panel card-link" href="finance.html">
+        <h2 class="section-title">Catálogo financeiro</h2>
+        <p class="card-copy">Página visual do schema `finance`, agora extraído do core, com configuração estrutural, planilhas e histórico mensal.</p>
+      </a>
+      <a class="panel card-link" href="public-atendimento-online.html">
+        <h2 class="section-title">Catálogo do runtime</h2>
+        <p class="card-copy">Página visual do runtime operacional do atendimento-online, hoje hospedado em `atendimento_online`, já sem shadow local de tenant, user, whitelist local de acesso e segredo persistido.</p>
+      </a>
+      <a class="panel card-link" href="indicators.html">
+        <h2 class="section-title">Catálogo de indicadores</h2>
+        <p class="card-copy">Página visual do schema `indicators` com taxonomia, perfil, metas, avaliação, evidência e governança.</p>
+      </a>
+      <a class="panel card-link" href="fila-atendimento.html">
+        <h2 class="section-title">Catálogo da fila</h2>
+        <p class="card-copy">Página visual do `fila_atendimento` já sem shadow autoritativo, com roster local, perfil operacional e histórico temporal padronizado.</p>
+      </a>
+      <a class="panel card-link" href="05-fluxos-de-negocio.md">
+        <h2 class="section-title">Fluxos de negócio</h2>
+        <p class="card-copy">Leitura operacional do banco atual, com gargalos, convergências e implicações arquiteturais.</p>
+      </a>
+      <a class="panel card-link" href="06-diagramas-er.md">
+        <h2 class="section-title">Diagramas ER</h2>
+        <p class="card-copy">Visão macro, ER por schema e diagrama dos principais problemas de integração.</p>
+      </a>
+      <a class="panel card-link" href="plano-finalizacao-banco.html">
+        <h2 class="section-title">Plano de finalização</h2>
+        <p class="card-copy">Página executiva com baseline do banco real, frentes prioritárias, fases de migration e ordem recomendada para fechar o banco antes do ajuste final no backend.</p>
+      </a>
+    </section>
+
+    <section class="grid schemas">
+      <article class="panel schema-card">
+        <h3>platform_core</h3>
+        <div class="schema-meta">
+          <span>Shell canônico</span>
+          <span>24 tabelas</span>
+        </div>
+        <p class="card-copy">Identidade global, tenants, lojas globais, RBAC, módulos, planos, cobrança, sessão e auditoria. O financeiro deixou de morar aqui.</p>
+        <p><a href="platform-core.html">Abrir página visual detalhada</a></p>
+        <ol class="tables">
+          <li>audit_logs</li>
+          <li>auth_password_resets</li>
+          <li>auth_session_settings</li>
+          <li>core_schema_migrations</li>
+          <li>modules</li>
+          <li>permissions</li>
+          <li>plan_module_limits</li>
+          <li>plan_modules</li>
+          <li>plans</li>
+          <li>presence_connections</li>
+          <li>role_permissions</li>
+          <li>roles</li>
+          <li>tenant_module_limits</li>
+          <li>tenant_module_pricing</li>
+          <li>tenant_modules</li>
+          <li>tenant_store_charges</li>
+          <li>tenant_stores</li>
+          <li>tenant_subscriptions</li>
+          <li>tenant_user_modules</li>
+          <li>tenant_user_roles</li>
+          <li>tenant_users</li>
+          <li>tenants</li>
+          <li>user_sessions</li>
+          <li>users</li>
+        </ol>
+      </article>
+
+      <article class="panel schema-card">
+        <h3>finance</h3>
+        <div class="schema-meta">
+          <span>Módulo financeiro extraído</span>
+          <span>8 tabelas</span>
+        </div>
+        <p class="card-copy">Configuração financeira por tenant, contas fixas, recorrências, planilhas por período, linhas e ajustes. Continua compartilhando apenas o tenant canônico do shell.</p>
+        <p><a href="finance.html">Abrir página visual detalhada</a></p>
+        <ol class="tables">
+          <li>finance_categories</li>
+          <li>finance_configs</li>
+          <li>finance_fixed_account_members</li>
+          <li>finance_fixed_accounts</li>
+          <li>finance_line_adjustments</li>
+          <li>finance_lines</li>
+          <li>finance_recurring_entries</li>
+          <li>finance_sheets</li>
+        </ol>
+      </article>
+
+      <article class="panel schema-card">
+        <h3>atendimento_online</h3>
+        <div class="schema-meta">
+          <span>Runtime operacional atual</span>
+          <span>8 tabelas</span>
+        </div>
+        <p class="card-copy">Operação omnichannel de conversas, mensagens, contatos, instâncias WhatsApp e trilha operacional. Tenant, user, grants autoritativos, elegibilidade de acesso, vocabulário de acesso e limites já vêm do `platform_core`; o schema local guarda apenas runtime.</p>
+        <p><a href="public-atendimento-online.html">Abrir página visual detalhada</a></p>
+        <ol class="tables">
+          <li>AtendimentoTenantConfig</li>
+          <li>WhatsAppInstance</li>
+          <li>SavedSticker</li>
+          <li>Contact</li>
+          <li>Conversation</li>
+          <li>Message</li>
+          <li>AuditEvent</li>
+          <li>HiddenMessageForUser</li>
+        </ol>
+      </article>
+
+      <article class="panel schema-card">
+        <h3>indicators</h3>
+        <div class="schema-meta">
+          <span>Módulo analítico</span>
+          <span>20 tabelas</span>
+        </div>
+        <p class="card-copy">Templates versionados, perfis de tenant, metas, avaliações, snapshots e governança.</p>
+        <p><a href="indicators.html">Abrir página visual detalhada</a></p>
+        <ol class="tables">
+          <li>indicator_templates</li>
+          <li>indicator_template_versions</li>
+          <li>indicator_template_categories</li>
+          <li>indicator_template_indicators</li>
+          <li>indicator_template_indicator_items</li>
+          <li>indicator_profiles</li>
+          <li>indicator_profile_indicator_overrides</li>
+          <li>indicator_profile_indicator_items</li>
+          <li>indicator_profile_store_overrides</li>
+          <li>indicator_provider_bindings</li>
+          <li>indicator_target_sets</li>
+          <li>indicator_target_items</li>
+          <li>indicator_evaluations</li>
+          <li>indicator_evaluation_categories</li>
+          <li>indicator_evaluation_indicators</li>
+          <li>indicator_evaluation_items</li>
+          <li>indicator_metric_snapshots</li>
+          <li>indicator_assets</li>
+          <li>indicator_governance_policies</li>
+          <li>indicator_governance_roadmap_items</li>
+        </ol>
+      </article>
+
+      <article class="panel schema-card">
+        <h3>fila_atendimento</h3>
+        <div class="schema-meta">
+          <span>Módulo convergido ao shell</span>
+          <span>13 tabelas</span>
+        </div>
+        <p class="card-copy">Roster, perfil operacional de loja, fila, atendimento ativo, campanhas e histórico append-only sem shadow autoritativo.</p>
+        <p><a href="fila-atendimento.html">Abrir página visual detalhada</a></p>
+        <ol class="tables">
+          <li>consultants</li>
+          <li>operation_active_services</li>
+          <li>operation_current_status</li>
+          <li>operation_paused_consultants</li>
+          <li>operation_queue_entries</li>
+          <li>operation_service_history</li>
+          <li>operation_status_sessions</li>
+          <li>schema_migrations</li>
+          <li>store_campaigns</li>
+          <li>store_catalog_products</li>
+          <li>store_operation_settings</li>
+          <li>store_profiles</li>
+          <li>store_setting_options</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="grid issues">
+      <article class="panel">
+        <div class="issue-kicker">Estado atual</div>
+        <h2 class="section-title">Convergência do atendimento-online concluída</h2>
+        <p class="card-copy">O runtime do atendimento-online já está fisicamente em `atendimento_online`, sem shadow local de tenant ou user, sem whitelist local de instância, sem vocabulário local de acesso persistido e sem segredo operacional persistido.</p>
+      </article>
+      <article class="panel">
+        <div class="issue-kicker">Estado atual</div>
+        <h2 class="section-title">Acesso do módulo centralizado no shell</h2>
+        <p class="card-copy">Quem pode acessar o atendimento agora vem do `platform_core`; o banco do módulo não persiste mais regra local de elegibilidade por instância.</p>
+      </article>
+      <article class="panel">
+        <div class="issue-kicker">Leitura do banco real</div>
+        <h2 class="section-title">Não há órfãos críticos nas frentes medidas</h2>
+        <p class="card-copy">A auditoria local não encontrou órfãos em `finance.finance_lines.fixed_account_id` nem nas referências lógicas críticas de tenant e usuário em `indicators`. O fechamento restante é de modelo, não de corrupção evidente.</p>
+      </article>
+      <article class="panel">
+        <div class="issue-kicker">Problema estrutural</div>
+        <h2 class="section-title">Compatibilidade antiga ainda dita partes do runtime</h2>
+        <p class="card-copy">`legacy_id` continua preenchido em `tenants` e `users` e ainda participa de fluxos de auth, admin e finance. Isso não quebra o runtime, mas impede considerar o banco realmente fechado.</p>
+      </article>
+      <article class="panel">
+        <div class="issue-kicker">Transição controlada</div>
+        <h2 class="section-title">A Fase 1 das lojas já foi fechada no banco</h2>
+        <p class="card-copy">`tenant_stores` segue como diretório canônico e `tenant_store_charges` agora está preso a ele por `store_id` obrigatório, FK composta por tenant e sincronização automática dos campos-espelho. O restante dessa frente ficou concentrado em cleanup de backend e da semântica residual.</p>
+      </article>
+      <article class="panel">
+        <div class="issue-kicker">Próximo passo</div>
+        <h2 class="section-title">O fechamento agora é banco primeiro, backend depois</h2>
+        <h2 class="section-title">O fechamento remanescente ficou concentrado em `legacy_id`</h2>
+        <p class="card-copy">As Fases 1 e 2 já fecharam a loja canônica no shell e em `indicators`. A trilha recomendada agora é congelar regressões e retirar `legacy_id` do runtime antes da limpeza final das exceções conscientes.</p>
+      </article>
+    </section>
+
+    <p class="footer-note">Leitura recomendada: comece pelos catálogos por schema para entender o desenho atual, siga para os fluxos de negócio para ver como o sistema realmente opera e feche nos diagramas para discutir refatoração com visão transversal.</p>
+  </main>
+</body>
+</html>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -90,7 +91,7 @@ func (repository *PostgresRepository) listHistoryQuery(
 			h.campaign_matches_json,
 			h.campaign_bonus_total
 		from operation_service_history h
-		join stores s
+		join platform_core.tenant_stores s
 		  on s.id = h.store_id
 		where h.store_id::text = any($1)
 	`)
@@ -215,6 +216,8 @@ func (repository *PostgresRepository) listHistoryQuery(
 			return nil, err
 		}
 
+		entry.StartedAt = normalizeMoment(entry.StartedAt)
+		entry.FinishedAt = normalizeMoment(entry.FinishedAt)
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
@@ -229,6 +232,14 @@ func (repository *PostgresRepository) listHistoryQuery(
 	}
 
 	return items, rows.Err()
+}
+
+func normalizeMoment(moment time.Time) time.Time {
+	if moment.IsZero() {
+		return time.Time{}
+	}
+
+	return moment.UTC()
 }
 
 func (repository *PostgresRepository) ListLiveCounts(

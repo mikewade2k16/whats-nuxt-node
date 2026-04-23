@@ -5,35 +5,35 @@ import "time"
 // ---- List response (lightweight — no lines/adjustments) ----
 
 type SheetListItem struct {
-	ID         string       `json:"id"`
-	Title      string       `json:"title"`
-	Period     string       `json:"period"`
-	Status     string       `json:"status"`
-	Notes      string       `json:"notes"`
-	ClientID   int          `json:"clientId"`
-	ClientName string       `json:"clientName"`
-	Summary    SheetSummary `json:"summary"`
-	Preview    string       `json:"preview"`
-	CreatedAt  time.Time    `json:"createdAt"`
-	UpdatedAt  time.Time    `json:"updatedAt"`
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Period       string       `json:"period"`
+	Status       string       `json:"status"`
+	Notes        string       `json:"notes"`
+	CoreTenantID string       `json:"coreTenantId,omitempty"`
+	ClientName   string       `json:"clientName"`
+	Summary      SheetSummary `json:"summary"`
+	Preview      string       `json:"preview"`
+	CreatedAt    time.Time    `json:"createdAt"`
+	UpdatedAt    time.Time    `json:"updatedAt"`
 }
 
 // ---- Detail response (full — with lines and adjustments) ----
 
 type SheetDetail struct {
-	ID         string       `json:"id"`
-	Title      string       `json:"title"`
-	Period     string       `json:"period"`
-	Status     string       `json:"status"`
-	Notes      string       `json:"notes"`
-	ClientID   int          `json:"clientId"`
-	ClientName string       `json:"clientName"`
-	Entradas   []Line       `json:"entradas"`
-	Saidas     []Line       `json:"saidas"`
-	Summary    SheetSummary `json:"summary"`
-	Preview    string       `json:"preview"`
-	CreatedAt  time.Time    `json:"createdAt"`
-	UpdatedAt  time.Time    `json:"updatedAt"`
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Period       string       `json:"period"`
+	Status       string       `json:"status"`
+	Notes        string       `json:"notes"`
+	CoreTenantID string       `json:"coreTenantId,omitempty"`
+	ClientName   string       `json:"clientName"`
+	Entradas     []Line       `json:"entradas"`
+	Saidas       []Line       `json:"saidas"`
+	Summary      SheetSummary `json:"summary"`
+	Preview      string       `json:"preview"`
+	CreatedAt    time.Time    `json:"createdAt"`
+	UpdatedAt    time.Time    `json:"updatedAt"`
 }
 
 type SheetSummary struct {
@@ -101,13 +101,13 @@ type FixedAccount struct {
 }
 
 type RecurringEntry struct {
-	SourceClientID   int     `json:"sourceClientId"`
-	AdjustmentAmount float64 `json:"adjustmentAmount"`
-	Notes            string  `json:"notes"`
+	SourceCoreTenantID string  `json:"sourceCoreTenantId,omitempty"`
+	AdjustmentAmount   float64 `json:"adjustmentAmount"`
+	Notes              string  `json:"notes"`
 }
 
 type Config struct {
-	ClientID         int              `json:"clientId"`
+	CoreTenantID     string           `json:"coreTenantId,omitempty"`
 	Categories       []Category       `json:"categories"`
 	FixedAccounts    []FixedAccount   `json:"fixedAccounts"`
 	RecurringEntries []RecurringEntry `json:"recurringEntries"`
@@ -141,7 +141,7 @@ type ListSheetsInput struct {
 	TenantID        string
 	IsPlatformAdmin bool
 	Query           string
-	ClientID        int
+	CoreTenantID    string
 	Period          string
 	Page            int
 	Limit           int
@@ -162,7 +162,7 @@ type CreateSheetInput struct {
 	Period          string
 	Status          string
 	Notes           string
-	ClientID        int
+	CoreTenantID    string
 	Entradas        []LineInput
 	Saidas          []LineInput
 }
@@ -176,7 +176,7 @@ type ReplaceSheetInput struct {
 	Period          string
 	Status          string
 	Notes           string
-	ClientID        int
+	CoreTenantID    string
 	Entradas        []LineInput
 	Saidas          []LineInput
 }
@@ -202,7 +202,7 @@ type GetConfigInput struct {
 	UserID          string
 	TenantID        string
 	IsPlatformAdmin bool
-	ClientID        int
+	CoreTenantID    string
 }
 
 type CategoryInput struct {
@@ -229,16 +229,16 @@ type FixedAccountInput struct {
 }
 
 type RecurringEntryInput struct {
-	SourceClientID   int     `json:"sourceClientId"`
-	AdjustmentAmount float64 `json:"adjustmentAmount"`
-	Notes            string  `json:"notes"`
+	SourceCoreTenantID string  `json:"sourceCoreTenantId,omitempty"`
+	AdjustmentAmount   float64 `json:"adjustmentAmount"`
+	Notes              string  `json:"notes"`
 }
 
 type ReplaceConfigInput struct {
 	UserID           string
 	TenantID         string
 	IsPlatformAdmin  bool
-	ClientID         int
+	CoreTenantID     string
 	Categories       []CategoryInput
 	FixedAccounts    []FixedAccountInput
 	RecurringEntries []RecurringEntryInput

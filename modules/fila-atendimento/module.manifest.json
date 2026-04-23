@@ -22,7 +22,6 @@
       "Clock"
     ],
     "optional": [
-      "IdentityProvisioner",
       "RealtimeContextResolver",
       "DomainEventBus",
       "AuditSink",

@@ -118,21 +118,7 @@ function buildUpstreamBody(
   body: Awaited<ReturnType<typeof readRawBody>>,
   rawBodyText: string
 ) {
-  if (body === undefined || method !== "POST" || targetPath !== "core/auth/login") {
-    return body;
-  }
-
-  if (!rawBodyText.trim()) {
-    return body;
-  }
-
-  try {
-    const parsed = JSON.parse(rawBodyText) as Record<string, unknown>;
-    delete parsed.rememberLogin;
-    return JSON.stringify(parsed);
-  } catch {
-    return body;
-  }
+  return body;
 }
 
 function sanitizeLoginProxyHeaders(headers: Headers) {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -53,24 +54,24 @@ func TestApplyDefaultLimitUsesAtendimentoDefaults(t *testing.T) {
 }
 
 func TestShouldCreateAdminUserTenantMembership(t *testing.T) {
-	assignedClientID := 12
+	assignedCoreTenantID := "11111111-1111-1111-1111-111111111111"
 
 	tests := []struct {
 		name                  string
 		actorIsPlatformAdmin  bool
 		targetIsPlatformAdmin bool
-		clientID              *int
+		coreTenantID          *string
 		want                  bool
 	}{
-		{name: "tenant admin always creates membership", actorIsPlatformAdmin: false, targetIsPlatformAdmin: false, clientID: nil, want: true},
-		{name: "root creating platform admin creates membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: true, clientID: nil, want: true},
-		{name: "root creating client scoped user with client creates membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: false, clientID: &assignedClientID, want: true},
-		{name: "root creating user without client keeps pending without membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: false, clientID: nil, want: false},
+		{name: "tenant admin always creates membership", actorIsPlatformAdmin: false, targetIsPlatformAdmin: false, coreTenantID: nil, want: true},
+		{name: "root creating platform admin creates membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: true, coreTenantID: nil, want: true},
+		{name: "root creating client scoped user with client creates membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: false, coreTenantID: &assignedCoreTenantID, want: true},
+		{name: "root creating user without client keeps pending without membership", actorIsPlatformAdmin: true, targetIsPlatformAdmin: false, coreTenantID: nil, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldCreateAdminUserTenantMembership(tt.actorIsPlatformAdmin, tt.targetIsPlatformAdmin, tt.clientID)
+			got := shouldCreateAdminUserTenantMembership(tt.actorIsPlatformAdmin, tt.targetIsPlatformAdmin, tt.coreTenantID)
 			if got != tt.want {
 				t.Fatalf("expected %v, got %v", tt.want, got)
 			}
@@ -79,17 +80,17 @@ func TestShouldCreateAdminUserTenantMembership(t *testing.T) {
 }
 
 func TestCanActivateManagedAdminUser(t *testing.T) {
-	assignedClientID := 7
+	assignedCoreTenantID := "tenant-1"
 
 	if !canActivateManagedAdminUser(AdminUser{IsPlatformAdmin: true}, "") {
 		t.Fatalf("platform admin should always be activatable")
 	}
 
-	if canActivateManagedAdminUser(AdminUser{ClientID: nil, IsPlatformAdmin: false}, "") {
+	if canActivateManagedAdminUser(AdminUser{CoreTenantID: nil, IsPlatformAdmin: false}, "") {
 		t.Fatalf("user without client assignment should not be activatable")
 	}
 
-	if !canActivateManagedAdminUser(AdminUser{ClientID: &assignedClientID, IsPlatformAdmin: false}, "tenant-1") {
+	if !canActivateManagedAdminUser(AdminUser{CoreTenantID: &assignedCoreTenantID, IsPlatformAdmin: false}, "tenant-1") {
 		t.Fatalf("user with tenant scope and client assignment should be activatable")
 	}
 }
@@ -117,6 +118,82 @@ func TestResolveAdminUserBusinessRole(t *testing.T) {
 				t.Fatalf("expected %s, got %s", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestResolveAccessLevelForBusinessRole(t *testing.T) {
+	tests := []struct {
+		name            string
+		role            string
+		fallbackLevel   string
+		isPlatformAdmin bool
+		want            string
+	}{
+		{name: "platform admin always resolves to admin", role: "system_admin", fallbackLevel: "marketing", isPlatformAdmin: true, want: "admin"},
+		{name: "consultant maps to consultant level", role: "consultant", fallbackLevel: "marketing", want: "consultant"},
+		{name: "store manager maps to manager level", role: "store_manager", fallbackLevel: "marketing", want: "manager"},
+		{name: "general manager maps to manager level", role: "general_manager", fallbackLevel: "marketing", want: "manager"},
+		{name: "owner maps to admin level", role: "owner", fallbackLevel: "marketing", want: "admin"},
+		{name: "unknown role keeps normalized fallback", role: "", fallbackLevel: "finance", want: "finance"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveAccessLevelForBusinessRole(tt.role, tt.fallbackLevel, tt.isPlatformAdmin)
+			if got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestResolveAdminUserMembershipState(t *testing.T) {
+	tests := []struct {
+		name            string
+		rawRole         string
+		level           string
+		isPlatformAdmin bool
+		wantRole        string
+		wantLevel       string
+		wantUserType    string
+		wantIsOwner     bool
+	}{
+		{name: "admin level defaults to owner membership", rawRole: "", level: "admin", wantRole: "owner", wantLevel: "admin", wantUserType: "admin", wantIsOwner: true},
+		{name: "explicit owner stays owner", rawRole: "owner", level: "marketing", wantRole: "owner", wantLevel: "admin", wantUserType: "admin", wantIsOwner: true},
+		{name: "manager level resolves to general manager", rawRole: "", level: "manager", wantRole: "general_manager", wantLevel: "manager", wantUserType: "client", wantIsOwner: false},
+		{name: "platform admin resolves to system admin", rawRole: "marketing", level: "marketing", isPlatformAdmin: true, wantRole: "system_admin", wantLevel: "admin", wantUserType: "admin", wantIsOwner: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveAdminUserMembershipState(tt.rawRole, tt.level, tt.isPlatformAdmin)
+			if got.BusinessRole != tt.wantRole {
+				t.Fatalf("expected role %s, got %s", tt.wantRole, got.BusinessRole)
+			}
+			if got.AccessLevel != tt.wantLevel {
+				t.Fatalf("expected level %s, got %s", tt.wantLevel, got.AccessLevel)
+			}
+			if got.UserType != tt.wantUserType {
+				t.Fatalf("expected user type %s, got %s", tt.wantUserType, got.UserType)
+			}
+			if got.IsOwner != tt.wantIsOwner {
+				t.Fatalf("expected isOwner %v, got %v", tt.wantIsOwner, got.IsOwner)
+			}
+		})
+	}
+}
+
+func TestValidateExplicitBusinessRole(t *testing.T) {
+	if err := validateExplicitBusinessRole("owner", false); err != nil {
+		t.Fatalf("expected owner role to be accepted, got %v", err)
+	}
+
+	if !errors.Is(validateExplicitBusinessRole("system_admin", false), ErrForbidden) {
+		t.Fatalf("expected system_admin to be forbidden for tenant user")
+	}
+
+	if !errors.Is(validateExplicitBusinessRole("nao-existe", false), ErrInvalidInput) {
+		t.Fatalf("expected invalid role to be rejected")
 	}
 }
 
@@ -220,6 +297,14 @@ func TestValidateAdminUserDirectoryRequirements(t *testing.T) {
 				t.Fatalf("expected %v, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestSanitizeAdminUserDirectoryStateRejectsInvalidRole(t *testing.T) {
+	svc := NewService(nil, 3)
+	_, err := svc.sanitizeAdminUserDirectoryState(context.Background(), "", adminUserDirectoryState{BusinessRole: "invalido"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
 

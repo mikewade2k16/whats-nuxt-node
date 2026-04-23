@@ -3,26 +3,18 @@ package consultants
 import (
 	"context"
 	"errors"
-	"fmt"
-	"regexp"
 	"strings"
 )
 
 type Service struct {
-	repository            Repository
-	storeCatalogProvider  StoreCatalogProvider
-	identityProvisioner   IdentityProvisioner
-	accessEmailDomain     string
-	defaultAccessPassword string
+	repository           Repository
+	storeCatalogProvider StoreCatalogProvider
 }
 
-func NewService(repository Repository, storeCatalogProvider StoreCatalogProvider, identityProvisioner IdentityProvisioner, accessEmailDomain string, defaultAccessPassword string) *Service {
+func NewService(repository Repository, storeCatalogProvider StoreCatalogProvider) *Service {
 	return &Service{
-		repository:            repository,
-		storeCatalogProvider:  storeCatalogProvider,
-		identityProvisioner:   identityProvisioner,
-		accessEmailDomain:     normalizeAccessEmailDomain(accessEmailDomain),
-		defaultAccessPassword: resolveDefaultAccessPassword(defaultAccessPassword),
+		repository:           repository,
+		storeCatalogProvider: storeCatalogProvider,
 	}
 }
 
@@ -253,100 +245,6 @@ func clampFloat(value float64, minimum float64, maximum float64) float64 {
 	}
 
 	return value
-}
-
-func (service *Service) ensureConsultantIdentity(ctx context.Context, access AccessContext, consultant Consultant, store StoreCatalogView) (*ProvisionedAccess, error) {
-	if service.identityProvisioner == nil {
-		return nil, ErrAccessProvisioning
-	}
-
-	creatingIdentity := strings.TrimSpace(consultant.UserID) == ""
-	emailCandidates := consultantIdentityEmails(consultant, store.Code, service.accessEmailDomain)
-	for _, email := range emailCandidates {
-		identity, err := service.identityProvisioner.EnsureConsultantIdentity(ctx, access, ConsultantIdentityInput{
-			ConsultantID:       consultant.ID,
-			TenantID:           store.TenantID,
-			DisplayName:        consultant.Name,
-			Email:              email,
-			Role:               RoleConsultant,
-			StoreIDs:           []string{store.ID},
-			MustChangePassword: creatingIdentity,
-		})
-		if err == nil {
-			if strings.TrimSpace(identity.UserID) == "" {
-				return nil, ErrAccessProvisioning
-			}
-
-			if creatingIdentity {
-				return &ProvisionedAccess{
-					Email:           email,
-					InitialPassword: service.defaultAccessPassword,
-				}, nil
-			}
-
-			return nil, nil
-		}
-
-		if errors.Is(err, ErrAccessConflict) && creatingIdentity {
-			continue
-		}
-
-		return nil, err
-	}
-
-	return nil, ErrAccessProvisioning
-}
-
-var accessEmailSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
-
-func buildConsultantAccessEmail(name string, storeCode string, domain string, attempt int) string {
-	baseName := strings.Trim(accessEmailSanitizer.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "."), ".")
-	if baseName == "" {
-		baseName = "consultor"
-	}
-
-	baseStoreCode := strings.Trim(accessEmailSanitizer.ReplaceAllString(strings.ToLower(strings.TrimSpace(storeCode)), ""), ".")
-	if baseStoreCode == "" {
-		baseStoreCode = "loja"
-	}
-
-	localPart := fmt.Sprintf("%s.%s", baseName, baseStoreCode)
-	if attempt > 0 {
-		localPart = fmt.Sprintf("%s.%d", localPart, attempt+1)
-	}
-
-	return fmt.Sprintf("%s@%s", localPart, domain)
-}
-
-func normalizeAccessEmailDomain(value string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(value))
-	if trimmed == "" {
-		return "acesso.omni.local"
-	}
-
-	return strings.TrimPrefix(trimmed, "@")
-}
-
-func resolveDefaultAccessPassword(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "Omni@123"
-	}
-
-	return trimmed
-}
-
-func consultantIdentityEmails(consultant Consultant, storeCode string, domain string) []string {
-	if existingEmail := strings.ToLower(strings.TrimSpace(consultant.AccessEmail)); existingEmail != "" {
-		return []string{existingEmail}
-	}
-
-	result := make([]string, 0, 20)
-	for attempt := 0; attempt < 20; attempt++ {
-		result = append(result, buildConsultantAccessEmail(consultant.Name, storeCode, domain, attempt))
-	}
-
-	return result
 }
 
 func canWriteConsultants(role string) bool {

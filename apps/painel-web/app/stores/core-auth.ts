@@ -31,6 +31,14 @@ function loadUserFromStorage(rawUser: string | null) {
   }
 }
 
+function debugCoreAuth(message: string, details?: Record<string, unknown>) {
+  if (!import.meta.dev || !import.meta.client) {
+    return;
+  }
+
+  console.info("[core-auth-debug]", message, details ?? {});
+}
+
 export const useCoreAuthStore = defineStore("core-auth", () => {
   const token = ref<string | null>(null);
   const user = ref<CoreAuthUser | null>(null);
@@ -53,6 +61,11 @@ export const useCoreAuthStore = defineStore("core-auth", () => {
     user.value = loadUserFromStorage(snapshot.userRaw);
     sessionExpiresAt.value = resolveSessionExpiresAt(snapshot.expiresAt, token.value);
     hydrated.value = true;
+    debugCoreAuth("hydrate", {
+      hasToken: Boolean(token.value),
+      hasUser: Boolean(user.value),
+      expiresAt: sessionExpiresAt.value
+    });
 
     if ((token.value && !sessionExpiresAt.value) || isSessionExpired.value) {
       clearSession();
@@ -89,6 +102,12 @@ export const useCoreAuthStore = defineStore("core-auth", () => {
         ? "session"
         : persistenceMode.value;
     hydrated.value = true;
+    debugCoreAuth("setSession", {
+      hasToken: Boolean(nextToken),
+      userId: nextUser.id,
+      expiresAt: sessionExpiresAt.value,
+      mode: persistenceMode.value
+    });
 
     if (!sessionExpiresAt.value || isSessionExpired.value) {
       clearSession();
@@ -99,6 +118,11 @@ export const useCoreAuthStore = defineStore("core-auth", () => {
   }
 
   function clearSession() {
+    debugCoreAuth("clearSession", {
+      hasToken: Boolean(token.value),
+      hasUser: Boolean(user.value),
+      expiresAt: sessionExpiresAt.value
+    });
     token.value = null;
     user.value = null;
     sessionExpiresAt.value = null;

@@ -1,16 +1,8 @@
-import { prisma } from "../../db.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import type { EvolutionApiError } from "../../services/evolution-client.js";
 
 export async function getTenantOrFail(tenantId: string) {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId }
-  });
-
-  if (!tenant) {
-    throw new Error("Tenant nao encontrado");
-  }
-
-  return tenant;
+  return getTenantRuntimeOrFail(tenantId);
 }
 
 export function resolveInstanceName(

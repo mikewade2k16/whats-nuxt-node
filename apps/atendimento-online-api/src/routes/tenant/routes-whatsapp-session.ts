@@ -8,9 +8,7 @@ import {
   createEvolutionClientOrThrow,
   getTenantOrFail,
   isInstanceAlreadyInUseError,
-  normalizeConnectionState,
-  normalizeEvolutionApiKey,
-  resolveConfiguredChannelCount
+  normalizeConnectionState
 } from "./helpers.js";
 import { bootstrapWhatsAppSchema, connectWhatsAppSchema } from "./schemas.js";
 import {
@@ -21,8 +19,7 @@ import {
 import { deleteLatestQrCode } from "../../services/whatsapp-qr-cache.js";
 import {
   resolveAdminClientByCoreTenantId,
-  resolveAtendimentoSnapshot,
-  resolveCurrentCoreTenant
+  resolveAtendimentoSnapshot
 } from "./atendimento-snapshot.js";
 
 const CONNECT_REQUEST_COOLDOWN_MS = 30_000;
@@ -252,30 +249,17 @@ export function registerTenantWhatsAppSessionRoutes(protectedApp: FastifyInstanc
 
     const tenant = await getTenantOrFail(request.authUser.tenantId);
     const existingInstances = await ensureTenantWhatsAppRegistry(tenant);
-    const coreTenant = await resolveCurrentCoreTenant({
-      coreTenantId: tenant.coreTenantId,
-      slug: tenant.slug,
-      name: tenant.name
-    }, {
+    const adminClient = await resolveAdminClientByCoreTenantId(tenant.coreTenantId, {
       accessToken: request.coreAccessToken
     });
-    const adminClient = coreTenant
-      ? await resolveAdminClientByCoreTenantId(coreTenant.id, {
-          accessToken: request.coreAccessToken
-        })
-      : null;
-    const atendimentoSnapshot = coreTenant
-      ? await resolveAtendimentoSnapshot({
-          coreTenantId: coreTenant.id,
-          adminClient,
-          fallbackMaxUsers: tenant.maxUsers,
-          fallbackMaxChannels: tenant.maxChannels,
-          fallbackCurrentUsers: 0,
-          accessToken: request.coreAccessToken
-        })
-      : {
-          maxChannels: tenant.maxChannels
-        };
+    const atendimentoSnapshot = await resolveAtendimentoSnapshot({
+      coreTenantId: tenant.coreTenantId,
+      adminClient,
+      fallbackMaxUsers: 3,
+      fallbackMaxChannels: 1,
+      fallbackCurrentUsers: 0,
+      accessToken: request.coreAccessToken
+    });
     const selectedInstance = parsed.data.instanceId
       ? await resolveTenantInstanceById({
           tenantId: tenant.id,
@@ -341,23 +325,12 @@ export function registerTenantWhatsAppSessionRoutes(protectedApp: FastifyInstanc
       });
     }
 
-    const tenantApiKey = normalizeEvolutionApiKey(parsed.data.evolutionApiKey);
-
-    const updatedTenant = await prisma.tenant.update({
-      where: { id: tenant.id },
-      data: {
-        whatsappInstance: instanceName,
-        evolutionApiKey: tenantApiKey !== undefined ? tenantApiKey : undefined
-      }
-    });
-
     if (!selectedInstance) {
       await prisma.whatsAppInstance.create({
         data: {
           tenantId: tenant.id,
           instanceName,
           displayName: parsed.data.displayName?.trim() || tenant.name,
-          evolutionApiKey: tenantApiKey ?? tenant.evolutionApiKey,
           isDefault: existingInstances.length < 1,
           isActive: true,
           createdByUserId: request.authUser.sub
@@ -371,12 +344,12 @@ export function registerTenantWhatsAppSessionRoutes(protectedApp: FastifyInstanc
           displayName: parsed.data.displayName === undefined
             ? undefined
             : parsed.data.displayName.trim() || null,
-          evolutionApiKey: tenantApiKey !== undefined ? tenantApiKey : undefined,
           isActive: true
         }
       });
     }
 
+    const updatedTenant = await getTenantOrFail(tenant.id);
     const resolvedInstance = await resolveTenantInstanceById({
       tenantId: tenant.id,
       instanceName,

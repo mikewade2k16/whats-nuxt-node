@@ -19,12 +19,12 @@ export function sanitizeDirectConversationName(value: string | null | undefined)
   return normalized;
 }
 
-export function createEvolutionClient(tenantApiKey: string | null) {
+export function createEvolutionClient(_tenantApiKey?: string | null) {
   if (!env.EVOLUTION_BASE_URL) {
     return null;
   }
 
-  const apiKey = tenantApiKey ?? env.EVOLUTION_API_KEY;
+  const apiKey = env.EVOLUTION_API_KEY;
   if (!apiKey) {
     return null;
   }

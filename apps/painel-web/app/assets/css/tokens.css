@@ -224,8 +224,10 @@ body {
 .admin-header__brand-logo {
   display: block;
   width: 108px;
+  aspect-ratio: 1080 / 402;
   height: auto;
   max-width: 100%;
+  flex: 0 0 auto;
   object-fit: contain;
 }
 
@@ -317,6 +319,12 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease !important;
 }
 
+.admin-header__profile-btn {
+  min-height: 48px !important;
+  min-width: 0;
+  padding-inline: 0.375rem !important;
+}
+
 .admin-header__menu-btn {
   position: relative !important;
   overflow: hidden !important;
@@ -396,10 +404,13 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .admin-header__profile-text {
   display: none;
+  min-width: 0;
+  flex: 1 1 auto;
   text-align: left;
   line-height: 1.2;
 }
@@ -409,15 +420,24 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   color: rgb(var(--text));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-header__profile-role {
   margin: 0;
   font-size: 0.75rem;
   color: var(--admin-header-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-header__avatar {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: 0 0 2.25rem;
   box-shadow: var(--shadow-glow);
   border: 2px solid rgb(var(--primary));
 }
@@ -541,6 +561,10 @@ body {
 
   .admin-header__profile-text {
     display: block;
+  }
+
+  .admin-header__profile-btn {
+    min-inline-size: 11rem;
   }
 }
 

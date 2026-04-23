@@ -1,0 +1,1 @@
+export { default } from '@fila-atendimento/server/api/admin/modules/fila-atendimento/metrics-events.post'

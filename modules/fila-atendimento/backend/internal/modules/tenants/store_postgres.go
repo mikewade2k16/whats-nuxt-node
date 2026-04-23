@@ -2,6 +2,7 @@ package tenants
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,45 +51,43 @@ func buildListAccessibleQuery(principal auth.Principal) (string, []any) {
 				t.id::text,
 				t.slug,
 				t.name,
-				t.is_active,
+				(t.status = 'active') as is_active,
 				t.created_at,
 				t.updated_at
-			from tenants t
-			where t.is_active = true
+			from platform_core.tenants t
+			where t.deleted_at is null
+			  and t.status = 'active'
 			order by t.name asc;
 		`, nil
-	case auth.RoleOwner, auth.RoleMarketing:
-		return `
-			select distinct
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			join user_tenant_roles utr on utr.tenant_id = t.id
-			where utr.user_id = $1::uuid
-				and t.is_active = true
-			order by t.name asc;
-		`, []any{principal.UserID}
 	default:
+		if strings.TrimSpace(principal.TenantID) == "" {
+			return `
+				select
+					t.id::text,
+					t.slug,
+					t.name,
+					(t.status = 'active') as is_active,
+					t.created_at,
+					t.updated_at
+				from platform_core.tenants t
+				where 1 = 0;
+			`, nil
+		}
+
 		return `
-			select distinct
+			select
 				t.id::text,
 				t.slug,
 				t.name,
-				t.is_active,
+				(t.status = 'active') as is_active,
 				t.created_at,
 				t.updated_at
-			from tenants t
-			join stores s on s.tenant_id = t.id
-			join user_store_roles usr on usr.store_id = s.id
-			where usr.user_id = $1::uuid
-				and s.is_active = true
-				and t.is_active = true
+			from platform_core.tenants t
+			where t.id = $1::uuid
+			  and t.deleted_at is null
+			  and t.status = 'active'
 			order by t.name asc;
-		`, []any{principal.UserID}
+		`, []any{principal.TenantID}
 	}
 }
 

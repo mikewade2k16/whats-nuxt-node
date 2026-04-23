@@ -1,399 +1,418 @@
-import bcrypt from "bcryptjs";
-import { PrismaClient, ChannelType, MessageDirection, MessageStatus, UserRole } from "@prisma/client";
+import {
+  AuditEventType,
+  ChannelType,
+  ConversationStatus,
+  MessageDirection,
+  MessageStatus,
+  MessageType,
+  Prisma,
+  PrismaClient
+} from "@prisma/client";
 
 const prisma = new PrismaClient();
+const DEFAULT_SEED_TENANT_SLUGS = ["demo-core"];
 
-async function seed() {
-  const tenant = await prisma.tenant.upsert({
-    where: { slug: "demo" },
+type CoreTenantRow = {
+  tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
+};
+
+type CoreTenantUserRow = {
+  userId: string;
+  email: string;
+  name: string;
+  accessLevel: string | null;
+  isOwner: boolean;
+};
+
+function parseSeedTenantSlugs() {
+  const normalized = String(process.env.ATENDIMENTO_SEED_TENANT_SLUGS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return normalized.length > 0 ? normalized : DEFAULT_SEED_TENANT_SLUGS;
+}
+
+function buildInstanceName(tenantSlug: string) {
+  const baseSlug = tenantSlug.replace(/-core$/i, "").trim() || tenantSlug.trim() || "tenant";
+  return `${baseSlug}-instance`.slice(0, 80);
+}
+
+function buildContactPhone(seedIndex: number) {
+  return `551199900${String(seedIndex + 1000).padStart(4, "0")}`;
+}
+
+function normalizeAccessLevel(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+async function listAvailableAtendimentoTenants() {
+  return prisma.$queryRaw<CoreTenantRow[]>(Prisma.sql`
+    SELECT
+      t.id::text AS "tenantId",
+      t.slug AS "tenantSlug",
+      t.name AS "tenantName"
+    FROM platform_core.tenants t
+    JOIN platform_core.tenant_modules tm
+      ON tm.tenant_id = t.id
+     AND tm.status = 'active'
+    JOIN platform_core.modules m
+      ON m.id = tm.module_id
+     AND m.code = 'atendimento'
+    ORDER BY t.slug ASC
+  `);
+}
+
+async function resolveSeedTenants(requestedSlugs: string[]) {
+  const available = await listAvailableAtendimentoTenants();
+  const bySlug = new Map(
+    available.map((entry) => [entry.tenantSlug.trim().toLowerCase(), entry])
+  );
+
+  const resolved = requestedSlugs
+    .map((slug) => bySlug.get(slug.trim().toLowerCase()) ?? null)
+    .filter((entry): entry is CoreTenantRow => Boolean(entry));
+
+  if (resolved.length > 0) {
+    return resolved;
+  }
+
+  const availableSlugs = available.map((entry) => entry.tenantSlug).join(", ") || "nenhum";
+  throw new Error(
+    `Nenhum tenant solicitado para seed foi encontrado com módulo atendimento ativo no platform_core. ` +
+    `Solicitados: ${requestedSlugs.join(", ")}. Disponíveis: ${availableSlugs}.`
+  );
+}
+
+async function listCoreTenantUsers(tenantId: string) {
+  return prisma.$queryRaw<CoreTenantUserRow[]>(Prisma.sql`
+    SELECT
+      tu.user_id::text AS "userId",
+      u.email AS "email",
+      COALESCE(NULLIF(u.display_name, ''), NULLIF(u.name, ''), split_part(u.email, '@', 1)) AS "name",
+      tu.access_level::text AS "accessLevel",
+      tu.is_owner AS "isOwner"
+    FROM platform_core.tenant_users tu
+    JOIN platform_core.users u
+      ON u.id = tu.user_id
+    WHERE tu.tenant_id = ${tenantId}::uuid
+      AND tu.status = 'active'
+      AND COALESCE(u.deleted_at IS NULL, true)
+    ORDER BY
+      tu.is_owner DESC,
+      CASE
+        WHEN tu.access_level::text = 'admin' THEN 0
+        WHEN tu.access_level::text = 'manager' THEN 1
+        WHEN tu.access_level::text = 'viewer' THEN 2
+        ELSE 3
+      END,
+      u.email ASC
+  `);
+}
+
+function pickOperationalUsers(users: CoreTenantUserRow[]) {
+  if (users.length < 1) {
+    throw new Error("Seed operacional requer pelo menos um usuário ativo no tenant do core.");
+  }
+
+  const adminLike =
+    users.find((entry) => entry.isOwner)
+    ?? users.find((entry) => ["admin", "manager"].includes(normalizeAccessLevel(entry.accessLevel)))
+    ?? users[0];
+  const assignee =
+    users.find((entry) => entry.userId !== adminLike.userId)
+    ?? adminLike;
+
+  return {
+    adminLike,
+    assignee
+  };
+}
+
+async function seedTenantRuntime(tenant: CoreTenantRow, seedIndex: number) {
+  const coreUsers = await listCoreTenantUsers(tenant.tenantId);
+  const { adminLike, assignee } = pickOperationalUsers(coreUsers);
+  const hiddenForUserId = assignee.userId !== adminLike.userId ? adminLike.userId : assignee.userId;
+  const instanceName = buildInstanceName(tenant.tenantSlug);
+  const contactPhone = buildContactPhone(seedIndex);
+  const externalId = `${contactPhone}@s.whatsapp.net`;
+  const now = new Date();
+  const inboundCreatedAt = new Date(now.getTime() - 10 * 60_000);
+  const outboundCreatedAt = new Date(now.getTime() - 7 * 60_000);
+
+  await prisma.atendimentoTenantConfig.upsert({
+    where: {
+      tenantId: tenant.tenantId
+    },
     update: {
-      name: "Empresa Demo",
-      whatsappInstance: "demo-instance",
-      maxChannels: 1,
-      maxUsers: 3,
       retentionDays: 15,
       maxUploadMb: 500
     },
     create: {
-      slug: "demo",
-      name: "Empresa Demo",
-      whatsappInstance: "demo-instance",
-      maxChannels: 1,
-      maxUsers: 3,
+      tenantId: tenant.tenantId,
       retentionDays: 15,
       maxUploadMb: 500
     }
   });
 
-  const demoInstance = await prisma.whatsAppInstance.upsert({
+  const instance = await prisma.whatsAppInstance.upsert({
     where: {
       tenantId_instanceName: {
-        tenantId: tenant.id,
-        instanceName: "demo-instance"
+        tenantId: tenant.tenantId,
+        instanceName
       }
     },
     update: {
-      displayName: "WhatsApp Demo",
+      displayName: `WhatsApp ${tenant.tenantName}`,
       isDefault: true,
       isActive: true,
-      evolutionApiKey: tenant.evolutionApiKey
+      createdByUserId: adminLike.userId,
+      responsibleUserId: assignee.userId
     },
     create: {
-      tenantId: tenant.id,
-      instanceName: "demo-instance",
-      displayName: "WhatsApp Demo",
+      tenantId: tenant.tenantId,
+      instanceName,
+      displayName: `WhatsApp ${tenant.tenantName}`,
       isDefault: true,
       isActive: true,
-      evolutionApiKey: tenant.evolutionApiKey
+      createdByUserId: adminLike.userId,
+      responsibleUserId: assignee.userId
     }
   });
 
-  const adminPasswordHash = await bcrypt.hash("123456", 10);
-  const agentPasswordHash = await bcrypt.hash("123456", 10);
-  const supervisorPasswordHash = await bcrypt.hash("123456", 10);
-  const viewerPasswordHash = await bcrypt.hash("123456", 10);
-
-  await prisma.user.upsert({
+  await prisma.whatsAppInstance.updateMany({
     where: {
-      tenantId_email: {
-        tenantId: tenant.id,
-        email: "admin@demo.local"
-      }
+      tenantId: tenant.tenantId,
+      id: {
+        not: instance.id
+      },
+      isDefault: true
     },
-    update: {
-      name: "Admin Demo",
-      role: UserRole.ADMIN,
-      passwordHash: adminPasswordHash
-    },
-    create: {
-      tenantId: tenant.id,
-      email: "admin@demo.local",
-      name: "Admin Demo",
-      role: UserRole.ADMIN,
-      passwordHash: adminPasswordHash
+    data: {
+      isDefault: false
     }
   });
 
-  await prisma.user.upsert({
+  const existingSticker = await prisma.savedSticker.findFirst({
     where: {
-      tenantId_email: {
-        tenantId: tenant.id,
-        email: "supervisor@demo.local"
-      }
+      tenantId: tenant.tenantId,
+      name: "Boas-vindas seed core"
     },
-    update: {
-      name: "Supervisor Demo",
-      role: UserRole.SUPERVISOR,
-      passwordHash: supervisorPasswordHash
-    },
-    create: {
-      tenantId: tenant.id,
-      email: "supervisor@demo.local",
-      name: "Supervisor Demo",
-      role: UserRole.SUPERVISOR,
-      passwordHash: supervisorPasswordHash
+    select: {
+      id: true
     }
   });
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: tenant.id,
-        email: "viewer@demo.local"
+  if (existingSticker) {
+    await prisma.savedSticker.update({
+      where: {
+        id: existingSticker.id
+      },
+      data: {
+        createdByUserId: adminLike.userId,
+        mimeType: "image/webp",
+        sizeBytes: 128,
+        dataUrl: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoEAAQAAVAfCWkA",
+        updatedAt: now
       }
-    },
-    update: {
-      name: "Viewer Demo",
-      role: UserRole.VIEWER,
-      passwordHash: viewerPasswordHash
-    },
-    create: {
-      tenantId: tenant.id,
-      email: "viewer@demo.local",
-      name: "Viewer Demo",
-      role: UserRole.VIEWER,
-      passwordHash: viewerPasswordHash
-    }
-  });
+    });
+  } else {
+    await prisma.savedSticker.create({
+      data: {
+        tenantId: tenant.tenantId,
+        createdByUserId: adminLike.userId,
+        name: "Boas-vindas seed core",
+        mimeType: "image/webp",
+        sizeBytes: 128,
+        dataUrl: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoEAAQAAVAfCWkA"
+      }
+    });
+  }
 
-  await prisma.user.upsert({
+  const contact = await prisma.contact.upsert({
     where: {
-      tenantId_email: {
-        tenantId: tenant.id,
-        email: "agente@demo.local"
+      tenantId_phone: {
+        tenantId: tenant.tenantId,
+        phone: contactPhone
       }
     },
     update: {
-      name: "Agente Demo",
-      role: UserRole.AGENT,
-      passwordHash: agentPasswordHash
+      name: `Cliente ${tenant.tenantName}`,
+      source: "SEED_CORE_RUNTIME"
     },
     create: {
-      tenantId: tenant.id,
-      email: "agente@demo.local",
-      name: "Agente Demo",
-      role: UserRole.AGENT,
-      passwordHash: agentPasswordHash
+      tenantId: tenant.tenantId,
+      name: `Cliente ${tenant.tenantName}`,
+      phone: contactPhone,
+      source: "SEED_CORE_RUNTIME"
     }
   });
 
   const conversation = await prisma.conversation.upsert({
     where: {
       tenantId_externalId_channel_instanceScopeKey: {
-        tenantId: tenant.id,
-        externalId: "5511999999999@s.whatsapp.net",
+        tenantId: tenant.tenantId,
+        externalId,
         channel: ChannelType.WHATSAPP,
-        instanceScopeKey: demoInstance.instanceName
+        instanceScopeKey: instance.instanceName
       }
     },
     update: {
-      instanceId: demoInstance.id,
-      instanceScopeKey: demoInstance.instanceName,
-      contactName: "Cliente Demo",
-      contactPhone: "5511999999999",
-      lastMessageAt: new Date()
+      instanceId: instance.id,
+      assignedToId: assignee.userId,
+      contactId: contact.id,
+      contactName: contact.name,
+      contactPhone: contact.phone,
+      status: ConversationStatus.OPEN,
+      lastMessageAt: outboundCreatedAt
     },
     create: {
-      tenantId: tenant.id,
-      instanceId: demoInstance.id,
-      instanceScopeKey: demoInstance.instanceName,
+      tenantId: tenant.tenantId,
+      instanceId: instance.id,
+      instanceScopeKey: instance.instanceName,
+      assignedToId: assignee.userId,
+      contactId: contact.id,
       channel: ChannelType.WHATSAPP,
-      externalId: "5511999999999@s.whatsapp.net",
-      contactName: "Cliente Demo",
-      contactPhone: "5511999999999"
+      externalId,
+      contactName: contact.name,
+      contactPhone: contact.phone,
+      status: ConversationStatus.OPEN,
+      lastMessageAt: outboundCreatedAt
     }
   });
 
-  const messageCount = await prisma.message.count({
-    where: { conversationId: conversation.id }
+  const existingMessages = await prisma.message.findMany({
+    where: {
+      tenantId: tenant.tenantId,
+      conversationId: conversation.id
+    },
+    orderBy: {
+      createdAt: "asc"
+    },
+    select: {
+      id: true
+    }
   });
 
-  if (messageCount === 0) {
+  if (existingMessages.length < 2) {
     await prisma.message.createMany({
       data: [
         {
-          tenantId: tenant.id,
+          tenantId: tenant.tenantId,
           conversationId: conversation.id,
-          instanceId: demoInstance.id,
-          instanceScopeKey: demoInstance.instanceName,
+          instanceId: instance.id,
+          instanceScopeKey: instance.instanceName,
           direction: MessageDirection.INBOUND,
-          content: "Oi, tudo bem? Quero saber mais sobre o plano.",
-          senderName: "Cliente Demo",
-          status: MessageStatus.SENT
+          messageType: MessageType.TEXT,
+          content: `Oi, quero atendimento no tenant ${tenant.tenantSlug}.`,
+          senderName: contact.name,
+          status: MessageStatus.SENT,
+          createdAt: inboundCreatedAt
         },
         {
-          tenantId: tenant.id,
+          tenantId: tenant.tenantId,
           conversationId: conversation.id,
-          instanceId: demoInstance.id,
-          instanceScopeKey: demoInstance.instanceName,
+          instanceId: instance.id,
+          instanceScopeKey: instance.instanceName,
+          senderUserId: assignee.userId,
           direction: MessageDirection.OUTBOUND,
-          content: "Claro! Posso te explicar as opcoes disponiveis.",
-          senderName: "Admin Demo",
-          status: MessageStatus.SENT
+          messageType: MessageType.TEXT,
+          content: `Perfeito! Aqui o runtime operacional já está vinculado ao core do tenant ${tenant.tenantSlug}.`,
+          senderName: assignee.name,
+          status: MessageStatus.SENT,
+          createdAt: outboundCreatedAt
         }
       ]
     });
   }
 
-  const tenantAcme = await prisma.tenant.upsert({
-    where: { slug: "acme" },
-    update: {
-      name: "Empresa ACME",
-      whatsappInstance: "acme-instance",
-      maxChannels: 1,
-      maxUsers: 3,
-      retentionDays: 15,
-      maxUploadMb: 500
-    },
-    create: {
-      slug: "acme",
-      name: "Empresa ACME",
-      whatsappInstance: "acme-instance",
-      maxChannels: 1,
-      maxUsers: 3,
-      retentionDays: 15,
-      maxUploadMb: 500
-    }
-  });
-
-  const acmeInstance = await prisma.whatsAppInstance.upsert({
+  const latestMessages = await prisma.message.findMany({
     where: {
-      tenantId_instanceName: {
-        tenantId: tenantAcme.id,
-        instanceName: "acme-instance"
-      }
+      tenantId: tenant.tenantId,
+      conversationId: conversation.id
     },
-    update: {
-      displayName: "WhatsApp ACME",
-      isDefault: true,
-      isActive: true,
-      evolutionApiKey: tenantAcme.evolutionApiKey
+    orderBy: {
+      createdAt: "asc"
     },
-    create: {
-      tenantId: tenantAcme.id,
-      instanceName: "acme-instance",
-      displayName: "WhatsApp ACME",
-      isDefault: true,
-      isActive: true,
-      evolutionApiKey: tenantAcme.evolutionApiKey
+    take: 2,
+    select: {
+      id: true,
+      createdAt: true
     }
   });
 
-  const acmeAdminPasswordHash = await bcrypt.hash("123456", 10);
-  const acmeAgentPasswordHash = await bcrypt.hash("123456", 10);
-  const acmeSupervisorPasswordHash = await bcrypt.hash("123456", 10);
-  const acmeViewerPasswordHash = await bcrypt.hash("123456", 10);
+  const latestMessage = latestMessages[latestMessages.length - 1] ?? null;
+  if (latestMessage) {
+    await prisma.conversation.update({
+      where: {
+        id: conversation.id
+      },
+      data: {
+        lastMessageAt: latestMessage.createdAt
+      }
+    });
+  }
 
-  await prisma.user.upsert({
+  const auditCount = await prisma.auditEvent.count({
     where: {
-      tenantId_email: {
-        tenantId: tenantAcme.id,
-        email: "admin@acme.local"
-      }
-    },
-    update: {
-      name: "Admin ACME",
-      role: UserRole.ADMIN,
-      passwordHash: acmeAdminPasswordHash
-    },
-    create: {
-      tenantId: tenantAcme.id,
-      email: "admin@acme.local",
-      name: "Admin ACME",
-      role: UserRole.ADMIN,
-      passwordHash: acmeAdminPasswordHash
+      tenantId: tenant.tenantId,
+      conversationId: conversation.id
     }
   });
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: tenantAcme.id,
-        email: "supervisor@acme.local"
+  if (auditCount < 1) {
+    await prisma.auditEvent.create({
+      data: {
+        tenantId: tenant.tenantId,
+        actorUserId: assignee.userId,
+        conversationId: conversation.id,
+        messageId: latestMessage?.id ?? null,
+        eventType: AuditEventType.CONVERSATION_ASSIGNED,
+        payloadJson: {
+          seededFrom: "platform_core",
+          assignedToUserId: assignee.userId,
+          assignedToEmail: assignee.email
+        }
       }
-    },
-    update: {
-      name: "Supervisor ACME",
-      role: UserRole.SUPERVISOR,
-      passwordHash: acmeSupervisorPasswordHash
-    },
-    create: {
-      tenantId: tenantAcme.id,
-      email: "supervisor@acme.local",
-      name: "Supervisor ACME",
-      role: UserRole.SUPERVISOR,
-      passwordHash: acmeSupervisorPasswordHash
-    }
-  });
+    });
+  }
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: tenantAcme.id,
-        email: "viewer@acme.local"
-      }
-    },
-    update: {
-      name: "Viewer ACME",
-      role: UserRole.VIEWER,
-      passwordHash: acmeViewerPasswordHash
-    },
-    create: {
-      tenantId: tenantAcme.id,
-      email: "viewer@acme.local",
-      name: "Viewer ACME",
-      role: UserRole.VIEWER,
-      passwordHash: acmeViewerPasswordHash
-    }
-  });
-
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: tenantAcme.id,
-        email: "agente@acme.local"
-      }
-    },
-    update: {
-      name: "Agente ACME",
-      role: UserRole.AGENT,
-      passwordHash: acmeAgentPasswordHash
-    },
-    create: {
-      tenantId: tenantAcme.id,
-      email: "agente@acme.local",
-      name: "Agente ACME",
-      role: UserRole.AGENT,
-      passwordHash: acmeAgentPasswordHash
-    }
-  });
-
-  const acmeConversation = await prisma.conversation.upsert({
-    where: {
-      tenantId_externalId_channel_instanceScopeKey: {
-        tenantId: tenantAcme.id,
-        externalId: "5511888888888@s.whatsapp.net",
-        channel: ChannelType.WHATSAPP,
-        instanceScopeKey: acmeInstance.instanceName
-      }
-    },
-    update: {
-      instanceId: acmeInstance.id,
-      instanceScopeKey: acmeInstance.instanceName,
-      contactName: "Cliente ACME",
-      contactPhone: "5511888888888",
-      lastMessageAt: new Date()
-    },
-    create: {
-      tenantId: tenantAcme.id,
-      instanceId: acmeInstance.id,
-      instanceScopeKey: acmeInstance.instanceName,
-      channel: ChannelType.WHATSAPP,
-      externalId: "5511888888888@s.whatsapp.net",
-      contactName: "Cliente ACME",
-      contactPhone: "5511888888888"
-    }
-  });
-
-  const acmeMessageCount = await prisma.message.count({
-    where: { conversationId: acmeConversation.id }
-  });
-
-  if (acmeMessageCount === 0) {
-    await prisma.message.createMany({
+  const firstMessage = latestMessages[0] ?? latestMessage;
+  if (firstMessage) {
+    await prisma.hiddenMessageForUser.createMany({
       data: [
         {
-          tenantId: tenantAcme.id,
-          conversationId: acmeConversation.id,
-          instanceId: acmeInstance.id,
-          instanceScopeKey: acmeInstance.instanceName,
-          direction: MessageDirection.INBOUND,
-          content: "Oi, sou cliente ACME.",
-          senderName: "Cliente ACME",
-          status: MessageStatus.SENT
-        },
-        {
-          tenantId: tenantAcme.id,
-          conversationId: acmeConversation.id,
-          instanceId: acmeInstance.id,
-          instanceScopeKey: acmeInstance.instanceName,
-          direction: MessageDirection.OUTBOUND,
-          content: "Recebido, suporte ACME aqui.",
-          senderName: "Admin ACME",
-          status: MessageStatus.SENT
+          tenantId: tenant.tenantId,
+          userId: hiddenForUserId,
+          messageId: firstMessage.id
         }
-      ]
+      ],
+      skipDuplicates: true
     });
+  }
+
+  console.log(
+    `[seed] tenant=${tenant.tenantSlug} users=${coreUsers.length} instance=${instance.instanceName} conversation=${conversation.id}`
+  );
+}
+
+async function seed() {
+  const requestedSlugs = parseSeedTenantSlugs();
+  const tenants = await resolveSeedTenants(requestedSlugs);
+
+  for (const [index, tenant] of tenants.entries()) {
+    await seedTenantRuntime(tenant, index);
   }
 }
 
 seed()
   .then(async () => {
     await prisma.$disconnect();
-    console.log("Seed concluido.");
   })
   .catch(async (error) => {
-    console.error("Erro no seed:", error);
+    console.error(error);
     await prisma.$disconnect();
     process.exit(1);
   });

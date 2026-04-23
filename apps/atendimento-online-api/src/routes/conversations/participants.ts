@@ -394,12 +394,12 @@ export function collectRelatedRemoteJidsFromGroupInfo(payload: unknown, particip
   return [...related];
 }
 
-export function createEvolutionClientForTenant(tenantApiKey: string | null) {
+export function createEvolutionClientForTenant(_tenantApiKey?: string | null) {
   if (!env.EVOLUTION_BASE_URL) {
     return null;
   }
 
-  const apiKey = tenantApiKey ?? env.EVOLUTION_API_KEY;
+  const apiKey = env.EVOLUTION_API_KEY;
   if (!apiKey) {
     return null;
   }

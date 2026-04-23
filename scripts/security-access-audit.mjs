@@ -3,8 +3,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
-const UI_BASE_URL = String(process.env.SECURITY_AUDIT_UI_BASE_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
-const API_BASE_URL = String(process.env.SECURITY_AUDIT_API_BASE_URL ?? 'http://localhost:4000').replace(/\/+$/, '')
+const UI_BASE_URL = String(process.env.SECURITY_AUDIT_UI_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/, '')
+const API_BASE_URL = String(process.env.SECURITY_AUDIT_API_BASE_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '')
+const CORE_BASE_URL = String(process.env.SECURITY_AUDIT_CORE_BASE_URL ?? 'http://127.0.0.1:4100').replace(/\/+$/, '')
+const ROOT_ACCESS_TOKEN = String(process.env.SECURITY_AUDIT_ROOT_TOKEN ?? '').trim()
+const TENANT_ADMIN_ACCESS_TOKEN = String(process.env.SECURITY_AUDIT_ADMIN_TOKEN ?? '').trim()
+const REQUEST_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.SECURITY_AUDIT_TIMEOUT_MS ?? '8000'), 10) || 8000)
 const OUTPUT_FILE = process.env.SECURITY_AUDIT_OUTPUT_FILE
   ? resolve(process.cwd(), process.env.SECURITY_AUDIT_OUTPUT_FILE)
   : resolve(process.cwd(), 'docs/metrics/security-access-audit-latest.json')
@@ -32,6 +36,10 @@ const LOGIN_PATHS = [
   '/api/bff/auth/login'
 ]
 
+const CORE_LOGIN_PATHS = [
+  '/core/auth/login'
+]
+
 function nowIso() {
   return new Date().toISOString()
 }
@@ -41,7 +49,10 @@ async function requestJSON(path, options = {}) {
 }
 
 async function requestJSONWithBase(baseUrl, path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, options)
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
   const raw = await response.text()
 
   let payload = null
@@ -58,6 +69,20 @@ async function requestJSONWithBase(baseUrl, path, options = {}) {
   }
 }
 
+async function safeRequestJSONWithBase(baseUrl, path, options = {}) {
+  try {
+    return await requestJSONWithBase(baseUrl, path, options)
+  } catch (error) {
+    return {
+      ok: false,
+      status: -1,
+      payload: {
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+}
+
 function extractAccessToken(payload) {
   if (!payload || typeof payload !== 'object') {
     return ''
@@ -68,14 +93,38 @@ function extractAccessToken(payload) {
 }
 
 async function login(credentials) {
+  return loginWithFallback(credentials)
+}
+
+function buildTokenLoginResponse(token, sourceLabel) {
+  return {
+    ok: true,
+    status: 200,
+    payload: {
+      coreAccessToken: token
+    },
+    authSource: sourceLabel,
+    authBaseUrl: null,
+    authPath: null
+  }
+}
+
+async function loginAgainstBase(baseUrl, paths, credentials, sourceLabel) {
   let lastResponse = {
     ok: false,
     status: 404,
-    payload: null
+    payload: null,
+    authSource: sourceLabel,
+    authBaseUrl: baseUrl,
+    authPath: null
   }
 
-  for (const path of LOGIN_PATHS) {
-    const response = await requestJSON(path, {
+  if (!baseUrl) {
+    return lastResponse
+  }
+
+  for (const path of paths) {
+    const response = await safeRequestJSONWithBase(baseUrl, path, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -90,17 +139,57 @@ async function login(credentials) {
         payload: {
           ...(response.payload && typeof response.payload === 'object' ? response.payload : {}),
           coreAccessToken: accessToken
-        }
+        },
+        authSource: sourceLabel,
+        authBaseUrl: baseUrl,
+        authPath: path
       }
     }
 
-    lastResponse = response
+    lastResponse = {
+      ...response,
+      authSource: sourceLabel,
+      authBaseUrl: baseUrl,
+      authPath: path
+    }
+
     if (response.status !== 404) {
       break
     }
   }
 
   return lastResponse
+}
+
+function shouldFallbackToCoreLogin(response) {
+  const status = Number(response?.status ?? 0)
+  return status === -1 || status === 404 || status === 502 || status === 503 || status === 504
+}
+
+async function loginWithFallback(credentials) {
+  if (ROOT_LOGIN.email === credentials.email && ROOT_ACCESS_TOKEN) {
+    return buildTokenLoginResponse(ROOT_ACCESS_TOKEN, 'env_root_token')
+  }
+
+  if (TENANT_ADMIN_LOGIN.email === credentials.email && TENANT_ADMIN_ACCESS_TOKEN) {
+    return buildTokenLoginResponse(TENANT_ADMIN_ACCESS_TOKEN, 'env_admin_token')
+  }
+
+  const shellResponse = await loginAgainstBase(UI_BASE_URL, LOGIN_PATHS, credentials, 'ui_proxy')
+  if (shellResponse.ok && shellResponse.payload?.coreAccessToken) {
+    return shellResponse
+  }
+
+  if (!shouldFallbackToCoreLogin(shellResponse)) {
+    return shellResponse
+  }
+
+  const directCoreResponse = await loginAgainstBase(CORE_BASE_URL, CORE_LOGIN_PATHS, credentials, 'core_direct')
+  if (directCoreResponse.ok && directCoreResponse.payload?.coreAccessToken) {
+    return directCoreResponse
+  }
+
+  return directCoreResponse.status !== 404 ? directCoreResponse : shellResponse
 }
 
 function buildHeaders(coreToken, spoof = {}, extraHeaders = {}) {
@@ -203,6 +292,12 @@ async function main() {
     startedAt,
     finishedAt: '',
     baseUrl: UI_BASE_URL,
+    baseUrls: {
+      ui: UI_BASE_URL,
+      api: API_BASE_URL,
+      core: CORE_BASE_URL
+    },
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
     logins: {
       root: null,
       tenantAdmin: null
@@ -220,6 +315,9 @@ async function main() {
     report.logins.root = {
       ok: false,
       status: rootLogin.status,
+      source: rootLogin.authSource ?? 'ui_proxy',
+      baseUrl: rootLogin.authBaseUrl ?? null,
+      path: rootLogin.authPath ?? null,
       message: 'Root login failed. Check credentials or running services.'
     }
     report.finishedAt = nowIso()
@@ -227,17 +325,32 @@ async function main() {
     process.stderr.write(`Root login failed (${rootLogin.status}).\n`)
     process.exit(2)
   }
-  report.logins.root = { ok: true, status: rootLogin.status }
+  report.logins.root = {
+    ok: true,
+    status: rootLogin.status,
+    source: rootLogin.authSource ?? 'ui_proxy',
+    baseUrl: rootLogin.authBaseUrl ?? null,
+    path: rootLogin.authPath ?? null
+  }
 
   const tenantLogin = await login(TENANT_ADMIN_LOGIN)
   if (!tenantLogin.ok || !tenantLogin.payload?.coreAccessToken) {
     report.logins.tenantAdmin = {
       ok: false,
       status: tenantLogin.status,
+      source: tenantLogin.authSource ?? 'ui_proxy',
+      baseUrl: tenantLogin.authBaseUrl ?? null,
+      path: tenantLogin.authPath ?? null,
       message: 'Tenant admin login failed. Some scenarios will be skipped.'
     }
   } else {
-    report.logins.tenantAdmin = { ok: true, status: tenantLogin.status }
+    report.logins.tenantAdmin = {
+      ok: true,
+      status: tenantLogin.status,
+      source: tenantLogin.authSource ?? 'ui_proxy',
+      baseUrl: tenantLogin.authBaseUrl ?? null,
+      path: tenantLogin.authPath ?? null
+    }
   }
 
   const rootToken = String(rootLogin.payload.coreAccessToken)

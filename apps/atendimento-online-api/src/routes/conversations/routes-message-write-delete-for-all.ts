@@ -21,6 +21,7 @@ import { requireConversationWrite } from "../../lib/guards.js";
 import { outboundQueue, outboundRetryJobOptions } from "../../queue.js";
 import { recordAuditEvent } from "../../services/audit-log.js";
 import type { EvolutionClient } from "../../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import { validateOutboundUpload } from "../../services/upload-policy.js";
 import { asRecord } from "./object-utils.js";
 import {
@@ -106,20 +107,9 @@ export function registerConversationDeleteForAllRoute(protectedApp: FastifyInsta
         return reply.code(404).send({ message: "Conversa nao encontrada" });
       }
 
-      const tenant = await prisma.tenant.findUnique({
-        where: {
-          id: request.authUser.tenantId
-        },
-        select: {
-          id: true,
-          evolutionApiKey: true,
-          whatsappInstance: true
-        }
+      const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+        accessToken: request.coreAccessToken
       });
-
-      if (!tenant) {
-        return reply.code(404).send({ message: "Tenant nao encontrado" });
-      }
 
       const routedInstance = await resolveConversationInstanceRouting({
         tenantId: tenant.id,

@@ -1,9 +1,11 @@
 import { getQuery } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 interface CoreAdminClientPayload {
   id?: number
+  coreTenantId?: string
   name?: string
   status?: string
   monthlyPaymentAmount?: number
@@ -20,12 +22,6 @@ function parseLimit(value: unknown) {
   const parsed = Number.parseInt(String(value ?? '').trim(), 10)
   if (!Number.isFinite(parsed) || parsed <= 0) return 200
   return Math.min(parsed, 500)
-}
-
-function parseClientId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0
-  return parsed
 }
 
 function isActiveClientStatus(value: unknown) {
@@ -67,15 +63,15 @@ export default defineEventHandler(async (event) => {
   const access = await requireScopedFeatureAccess(event, '/admin/finance')
   const query = getQuery(event)
 
-  const requestedClientId = parseClientId(query.clientId)
+  const scope = resolveOwnedTenantScope(access, {
+    clientId: query.clientId,
+    coreTenantId: query.coreTenantId
+  })
   const limit = parseLimit(query.limit)
-  const scopedClientId = requestedClientId > 0
-    ? (access.isAdmin ? requestedClientId : access.clientId)
-    : access.clientId
 
-  if (scopedClientId > 0) {
+  if (scope.coreTenantId) {
   try {
-    const client = await coreAdminFetch<CoreAdminClientPayload>(event, `/core/admin/clients/${scopedClientId}`)
+    const client = await coreAdminFetch<CoreAdminClientPayload>(event, `/core/admin/clients/${encodeURIComponent(scope.coreTenantId)}`)
     const monthlyPaymentAmount = resolveMonthlyPaymentAmount(client)
 
     return {
@@ -83,6 +79,7 @@ export default defineEventHandler(async (event) => {
     data: isActiveClientStatus(client.status) && monthlyPaymentAmount > 0
       ? [{
       id: Number(client.id),
+      coreTenantId: String(client.coreTenantId || scope.coreTenantId || '').trim(),
       name: String(client.name || `Cliente #${client.id}`),
       monthlyPaymentAmount,
       paymentDueDay: String(client.paymentDueDay || '')
@@ -113,6 +110,7 @@ export default defineEventHandler(async (event) => {
       .filter(client => isActiveClientStatus(client.status))
       .map(client => ({
         id: Number(client.id),
+        coreTenantId: String(client.coreTenantId || '').trim(),
         name: String(client.name || `Cliente #${client.id}`),
         monthlyPaymentAmount: resolveMonthlyPaymentAmount(client),
         paymentDueDay: String(client.paymentDueDay || '')

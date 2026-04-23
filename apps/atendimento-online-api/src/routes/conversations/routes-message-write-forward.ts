@@ -152,30 +152,14 @@ export function registerConversationForwardMessagesRoute(protectedApp: FastifyIn
         const correlationId = deriveMessageCorrelationId(request.correlationId, sourceMessage.id);
         const created = await prisma.message.create({
           data: {
-            tenant: {
-              connect: {
-                id: request.authUser.tenantId
-              }
-            },
+            tenantId: request.authUser.tenantId,
             ...(targetConversation.instanceId
               ? {
-                  instance: {
-                    connect: {
-                      id: targetConversation.instanceId
-                    }
-                  }
+                  instanceId: targetConversation.instanceId
                 }
               : {}),
-            conversation: {
-              connect: {
-                id: targetConversation.id
-              }
-            },
-            senderUser: {
-              connect: {
-                id: request.authUser.sub
-              }
-            },
+            conversationId: targetConversation.id,
+            senderUserId: request.authUser.sub,
             direction: MessageDirection.OUTBOUND,
             messageType: sourceMessage.messageType,
             instanceScopeKey: targetConversation.instanceScopeKey,

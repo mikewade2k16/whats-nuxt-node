@@ -2,133 +2,57 @@
 
 ## Escopo
 
-Estas instrucoes valem para `back/internal/modules/auth`.
+Estas instruções valem para `back/internal/modules/auth`.
 
-## Versoes herdadas desta base
+## Responsabilidade do módulo hoje
 
-- Go: `1.24.0`
-- Toolchain Go: `1.24.3`
-- Nuxt integrado no frontend: `4.4.2`
-- PostgreSQL alvo: `16`
-
-## Responsabilidade do modulo
-
-O modulo `auth` e a porta de entrada de identidade e autorizacao da plataforma.
+O `auth` hospedado do `fila-atendimento` não é mais dono de login local nem de cadastro de usuário.
 
 Ele deve cuidar de:
 
-- login
-- aceite de convite e primeira senha
-- emissao e leitura de token
+- troca do bridge do shell por sessão própria do módulo
+- emissão e leitura de token do módulo
 - principal autenticado
-- catalogo de roles
+- catálogo de roles consumido pela UI hospedada
 - middleware de auth/role
-- autoatendimento do usuario autenticado:
-  - editar nome
-  - editar email
-  - trocar senha
-  - enviar foto de perfil
+- leitura de identidade atual por `GET /v1/auth/me`
 
-Ele nao deve cuidar de:
+Ele não deve cuidar de:
 
+- login local
+- convite e primeira senha
+- troca de senha
+- edição de perfil
+- avatar
+- CRUD administrativo de usuário
 - regra operacional da fila
-- CRUD de loja
-- CRUD de tenant
-- websocket de fila
 
-## Como o auth funciona hoje
+## Persistência
 
-### Persistencia
+- usuários, tenants, memberships e lojas canônicas vivem em `platform_core`
+- o schema local `fila_atendimento` não possui mais `users`, `tenants`, `stores`, `user_*_roles`, `user_external_identities` nem `user_invitations`
+- o runtime hospedado usa `CoreUserStore` e `CoreShellBridgeProvisioner`
 
-- usuarios vivem no PostgreSQL
-- memberships tenant/store sao lidas de:
-  - `users`
-  - `user_invitations`
-  - `user_platform_roles`
-  - `user_tenant_roles`
-  - `user_store_roles`
-- a migration demo continua semeando usuarios para smoke local
-
-### Token
-
-- token assinado via HMAC
-- `tenant_id`, `store_ids` e `role` ja vao no token
-- ainda nao existe refresh token
-- ainda nao existe sessao persistida por dispositivo
-
-### Roles atuais
-
-- `consultant`
-  - escopo de loja
-- `store_terminal`
-  - escopo de loja
-  - leitura operacional da propria unidade sem mutacoes
-- `manager`
-  - escopo de loja
-- `marketing`
-  - escopo de tenant
-- `owner`
-  - escopo de tenant
-- `platform_admin`
-  - escopo de plataforma
-
-### Endpoints atuais
+## Endpoints atuais
 
 - `GET /v1/auth/roles`
-- `POST /v1/auth/login`
+- `POST /v1/auth/shell/exchange`
 - `GET /v1/auth/me`
-- `PATCH /v1/auth/me/profile`
-- `PATCH /v1/auth/me/password`
-- `POST /v1/auth/me/avatar`
-- `GET /v1/auth/invitations/{token}`
-- `POST /v1/auth/invitations/accept`
-
-Quando o shell bridge estiver habilitado no runtime hospedado:
-
-- `POST /v1/auth/login` deve responder erro orientando o uso do login centralizado do shell
-- o fluxo principal de sessao passa a ser `POST /v1/auth/shell/exchange`
 
 ## Invariantes
 
 - email deve ser tratado normalizado em lowercase
-- usuario inativo nao pode autenticar
-- usuario sem `password_hash` deve receber `onboarding_required` no login
-- usuario com `must_change_password = true` pode autenticar, mas deve ser conduzido ao fluxo de troca de senha no frontend
-- token invalido ou expirado gera `401`
-- role fora do catalogo e erro de modelagem
-- `platform_admin` pode atravessar limites de tenant; os demais nao
-- `consultant`, `manager` e `store_terminal` devem carregar uma unica loja no escopo efetivo
-- token de convite deve ser persistido apenas em hash
-- foto de perfil nao deve ser salva em blob no PostgreSQL desta base
-  - o banco guarda apenas `users.avatar_path`
-  - o arquivo fica em disco/volume montado no backend
-- convite aceito deve:
-  - gravar a primeira senha
-  - limpar `must_change_password`
-  - revogar convites pendentes restantes do usuario
-  - devolver sessao valida para entrar sem login extra
-- troca de senha em `/v1/auth/me/password` deve limpar `must_change_password`
-- atualizacao de perfil do usuario autenticado deve refletir o nome do consultor no roster quando houver vinculo `consultants.user_id`
-
-## Regras para evolucao
-
-Quando este modulo crescer, a ordem certa e:
-
-1. adicionar refresh token e sessao por dispositivo
-2. auditar login/logout e revogacao
-3. expor autorizacao reutilizavel para websocket handshake
-4. separar permissoes por grant para reduzir dependencia de role fixa
-5. evoluir convite para entrega por email real
-6. endurecer sessao de `store_terminal` por loja/dispositivo
-7. auditar melhor resets de senha e primeiro login por dispositivo
+- usuário inativo não pode autenticar no bridge
+- role fora do catálogo é erro de modelagem
+- `platform_admin` pode atravessar limites de tenant; os demais não
+- `consultant`, `manager` e `store_terminal` devem carregar apenas a loja permitida pelo contexto do core
+- `owner` e `marketing` recebem o conjunto de lojas ativas do tenant via `platform_core.tenant_stores`
 
 ## Cuidados ao integrar com o Nuxt
 
-- o front deve usar `POST /v1/auth/login` e `GET /v1/me/context` antes de qualquer realtime
-- `GET /v1/auth/me` continua util para leitura simples de identidade, mas o contexto de tenant/loja agora vem do endpoint composto
-- o dropdown de perfil de teste do frontend deve ficar oculto quando houver sessao real
-- workspaces visiveis no front devem derivar do principal autenticado, nao de mock local
-- a loja ativa do runtime local deve respeitar `store_ids` do principal autenticado
+- o front hospedado deve usar `POST /v1/auth/shell/exchange` e `GET /v1/me/context`
+- `GET /v1/auth/me` serve apenas para leitura simples da identidade atual
+- workspaces visíveis no front devem derivar do principal autenticado e do contexto do core
 
 ## Arquivos atuais
 
@@ -138,20 +62,9 @@ Quando este modulo crescer, a ordem certa e:
 - `tokens.go`
 - `middleware.go`
 - `http.go`
-- `store_postgres.go`
+- `core_user_store.go`
+- `core_shell_bridge_provisioner.go`
+- `shell_bridge_scope.go`
 - `store_memory.go`
 - `passwords.go`
 - `errors.go`
-
-## Auth como host, nao como dependencia obrigatoria do core
-
-Quando outro projeto quiser reaproveitar o core Omni, este modulo pode ser substituido pelo auth do sistema host.
-
-Nesse caso, o host precisa apenas conseguir entregar para os modulos do core:
-
-- um contexto equivalente a `user_id + tenant_id + role + store_ids[]`
-- um handshake autenticado para websocket quando usar realtime
-
-Referencia:
-
-- `../../CORE_MODULES_PORTABILITY.md`

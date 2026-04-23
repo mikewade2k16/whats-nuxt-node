@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createError, getQuery, setHeader } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
-import { resolveOwnedClientId } from '~~/server/utils/access-context'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf'
@@ -35,8 +35,8 @@ interface IndicatorsDashboardResponse {
 interface IndicatorsEvaluationListItem {
   id?: string
   evaluatorName?: string
-  unitExternalID?: string
-  unitExternalId?: string
+  storeID?: string
+  storeId?: string
   unitName?: string
   scopeMode?: string
   status?: string
@@ -252,7 +252,7 @@ function wrapByChars(text: string, maxChars: number) {
 }
 
 async function getXlsxModule() {
-  const mod = await import('xlsx')
+  const mod = await import('xlsx/xlsx.mjs')
   return (mod.default ?? mod) as typeof import('xlsx')
 }
 
@@ -414,17 +414,19 @@ async function generatePdfBuffer(summaryRows: ExportSummaryRow[], evaluationRows
 async function fetchDashboard(
   event: Parameters<typeof coreAdminFetch>[0],
   clientId: number,
+  coreTenantId: string,
   startDate: string,
   endDate: string,
-  unitExternalId: string
+  storeId: string
 ) {
   const response = await coreAdminFetch<ApiEnvelope<IndicatorsDashboardResponse>>(
     event,
     toQueryPath(`${INDICATORS_CORE_BASE}/dashboard`, {
-      clientId,
+      clientId: clientId > 0 ? clientId : undefined,
+      coreTenantId: coreTenantId || undefined,
       startDate,
       endDate,
-      unitExternalId: unitExternalId || undefined
+      storeId: storeId || undefined
     })
   )
 
@@ -435,19 +437,21 @@ async function fetchEvaluationsPage(
   event: Parameters<typeof coreAdminFetch>[0],
   params: {
     clientId: number
+    coreTenantId: string
     startDate: string
     endDate: string
-    unitExternalId: string
+    storeId: string
     page: number
   }
 ) {
   return coreAdminFetch<ApiItemsEnvelope<IndicatorsEvaluationListItem>>(
     event,
     toQueryPath(`${INDICATORS_CORE_BASE}/evaluations`, {
-      clientId: params.clientId,
+      clientId: params.clientId > 0 ? params.clientId : undefined,
+      coreTenantId: params.coreTenantId || undefined,
       startDate: params.startDate,
       endDate: params.endDate,
-      unitExternalId: params.unitExternalId || undefined,
+      storeId: params.storeId || undefined,
       page: params.page,
       limit: EXPORT_PAGE_LIMIT
     })
@@ -458,9 +462,10 @@ async function fetchAllEvaluations(
   event: Parameters<typeof coreAdminFetch>[0],
   params: {
     clientId: number
+    coreTenantId: string
     startDate: string
     endDate: string
-    unitExternalId: string
+    storeId: string
   }
 ) {
   const firstPage = await fetchEvaluationsPage(event, {
@@ -502,8 +507,13 @@ export default defineEventHandler(async (event) => {
   const format = normalizeFormat(query.format)
   const startDate = normalizeDateInput(query.startDate)
   const endDate = normalizeDateInput(query.endDate)
-  const unitExternalId = normalizeText(query.unitId)
-  const clientId = resolveOwnedClientId(access, query.clientId)
+  const storeId = normalizeText(query.storeId)
+  const scope = resolveOwnedTenantScope(access, {
+    clientId: query.clientId,
+    coreTenantId: query.coreTenantId
+  })
+  const clientId = scope.clientId
+  const coreTenantId = scope.coreTenantId || ''
 
   if (!isValidDateInput(startDate) || !isValidDateInput(endDate)) {
     throw createError({
@@ -524,12 +534,13 @@ export default defineEventHandler(async (event) => {
   const generatedAt = new Date()
 
   const [dashboardResult, evaluations] = await Promise.all([
-    fetchDashboard(event, clientId, startDate, endDate, unitExternalId).catch(() => null),
+    fetchDashboard(event, clientId, coreTenantId, startDate, endDate, storeId).catch(() => null),
     fetchAllEvaluations(event, {
       clientId,
+      coreTenantId,
       startDate,
       endDate,
-      unitExternalId
+      storeId
     })
   ])
 
@@ -541,7 +552,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const summary = dashboardResult?.summary ?? null
-  const unitLabel = unitExternalId
+  const unitLabel = storeId
     ? normalizeText(evaluations[0]?.unitName, 'loja-filtrada')
     : 'todas-as-lojas'
   const summaryRows = buildSummaryRows({
@@ -582,7 +593,8 @@ export default defineEventHandler(async (event) => {
     requestId,
     format,
     clientId,
-    unitExternalId: unitExternalId || null,
+    coreTenantId: coreTenantId || null,
+    storeId: storeId || null,
     rows: evaluationRows.length,
     bytes: bytes.length,
     elapsedMs,

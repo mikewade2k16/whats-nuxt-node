@@ -53,8 +53,8 @@ func NewService(repository Repository, publisher EventPublisher, storeScopeProvi
 	}
 }
 
-func (service *Service) Snapshot(ctx context.Context, access AccessContext, storeID string) (Snapshot, error) {
-	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, storeID)
+func (service *Service) Snapshot(ctx context.Context, access AccessContext, storeID string, options SnapshotLoadOptions) (Snapshot, error) {
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, storeID, options)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -91,7 +91,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 			continue
 		}
 
-		roster, snapshotState, err := service.loadSnapshotState(ctx, storeID)
+		roster, snapshotState, err := service.loadSnapshotState(ctx, storeID, SnapshotLoadOptions{})
 		if err != nil {
 			return OperationOverview{}, err
 		}
@@ -116,12 +116,13 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				Name:            person.Name,
 				Role:            person.Role,
 				Initials:        person.Initials,
+				AvatarURL:       person.AvatarURL,
 				Color:           person.Color,
 				MonthlyGoal:     person.MonthlyGoal,
 				CommissionRate:  person.CommissionRate,
 				Status:          statusQueue,
-				StatusStartedAt: snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
-				QueueJoinedAt:   item.QueueJoinedAt,
+				StatusStartedAt: unixMillis(snapshotState.ConsultantCurrentStatus[person.ID].StartedAt),
+				QueueJoinedAt:   unixMillis(item.QueueJoinedAt),
 				QueuePosition:   index + 1,
 			})
 		}
@@ -141,14 +142,15 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				Name:             person.Name,
 				Role:             person.Role,
 				Initials:         person.Initials,
+				AvatarURL:        person.AvatarURL,
 				Color:            person.Color,
 				MonthlyGoal:      person.MonthlyGoal,
 				CommissionRate:   person.CommissionRate,
 				Status:           statusService,
-				StatusStartedAt:  snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
+				StatusStartedAt:  unixMillis(snapshotState.ConsultantCurrentStatus[person.ID].StartedAt),
 				ServiceID:        item.ServiceID,
-				ServiceStartedAt: item.ServiceStartedAt,
-				QueueJoinedAt:    item.QueueJoinedAt,
+				ServiceStartedAt: unixMillis(item.ServiceStartedAt),
+				QueueJoinedAt:    unixMillis(item.QueueJoinedAt),
 				QueueWaitMs:      item.QueueWaitMs,
 				StartMode:        item.StartMode,
 			})
@@ -169,11 +171,12 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				Name:            person.Name,
 				Role:            person.Role,
 				Initials:        person.Initials,
+				AvatarURL:       person.AvatarURL,
 				Color:           person.Color,
 				MonthlyGoal:     person.MonthlyGoal,
 				CommissionRate:  person.CommissionRate,
 				Status:          statusPaused,
-				StatusStartedAt: snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
+				StatusStartedAt: unixMillis(snapshotState.ConsultantCurrentStatus[person.ID].StartedAt),
 				PauseReason:     item.Reason,
 				PauseKind:       normalizePauseKind(item.Kind),
 			})
@@ -201,11 +204,12 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				Name:            person.Name,
 				Role:            person.Role,
 				Initials:        person.Initials,
+				AvatarURL:       person.AvatarURL,
 				Color:           person.Color,
 				MonthlyGoal:     person.MonthlyGoal,
 				CommissionRate:  person.CommissionRate,
 				Status:          statusAvailable,
-				StatusStartedAt: status.StartedAt,
+				StatusStartedAt: unixMillis(status.StartedAt),
 			})
 		}
 
@@ -253,12 +257,12 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 }
 
 func (service *Service) AddToQueue(ctx context.Context, access AccessContext, input QueueCommandInput) (MutationAck, error) {
-	resolvedStoreID, _, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID, SnapshotLoadOptions{IncludeActivitySessions: true})
 	if err != nil {
 		return MutationAck{}, err
 	}
 
-	now := nowUnixMilli()
+	now := utcNow()
 	rosterByID := mapRosterByID(roster)
 	personID := strings.TrimSpace(input.PersonID)
 	person, ok := rosterByID[personID]
@@ -281,7 +285,7 @@ func (service *Service) AddToQueue(ctx context.Context, access AccessContext, in
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "queue", person.ID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, storeName, "queue", person.ID, roster, snapshotState, nil)
 }
 
 func (service *Service) Pause(ctx context.Context, access AccessContext, input PauseCommandInput) (MutationAck, error) {
@@ -304,7 +308,7 @@ func (service *Service) pauseLike(
 	kind string,
 	rejectIfInService bool,
 ) (MutationAck, error) {
-	resolvedStoreID, _, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID, SnapshotLoadOptions{IncludeActivitySessions: true})
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -331,7 +335,7 @@ func (service *Service) pauseLike(
 		return service.buildAck(resolvedStoreID, action, personID), nil
 	}
 
-	now := nowUnixMilli()
+	now := utcNow()
 	snapshotState.WaitingList = filterWaiting(snapshotState.WaitingList, personID)
 	snapshotState.PausedEmployees = append(snapshotState.PausedEmployees, PausedStateItem{
 		ConsultantID: personID,
@@ -346,11 +350,11 @@ func (service *Service) pauseLike(
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, action, personID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, storeName, action, personID, roster, snapshotState, nil)
 }
 
 func (service *Service) Resume(ctx context.Context, access AccessContext, input QueueCommandInput) (MutationAck, error) {
-	resolvedStoreID, _, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID, SnapshotLoadOptions{IncludeActivitySessions: true})
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -364,7 +368,7 @@ func (service *Service) Resume(ctx context.Context, access AccessContext, input 
 		return service.buildAck(resolvedStoreID, "resume", personID), nil
 	}
 
-	now := nowUnixMilli()
+	now := utcNow()
 	snapshotState.PausedEmployees = filterPaused(snapshotState.PausedEmployees, personID)
 	if !isWaiting(snapshotState.WaitingList, personID) && !isInService(snapshotState.ActiveServices, personID) {
 		snapshotState.WaitingList = append(snapshotState.WaitingList, QueueStateItem{
@@ -385,11 +389,11 @@ func (service *Service) Resume(ctx context.Context, access AccessContext, input 
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "resume", personID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, storeName, "resume", personID, roster, snapshotState, nil)
 }
 
 func (service *Service) Start(ctx context.Context, access AccessContext, input StartCommandInput) (MutationAck, error) {
-	resolvedStoreID, _, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID, SnapshotLoadOptions{IncludeActivitySessions: true})
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -416,7 +420,7 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 		}
 	}
 
-	now := nowUnixMilli()
+	now := utcNow()
 	nextPerson := snapshotState.WaitingList[targetIndex]
 	remainingQueue := make([]QueueStateItem, 0, len(snapshotState.WaitingList)-1)
 	for _, item := range snapshotState.WaitingList {
@@ -452,7 +456,7 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 		ServiceID:            createServiceID(person.ID, now),
 		ServiceStartedAt:     now,
 		QueueJoinedAt:        nextPerson.QueueJoinedAt,
-		QueueWaitMs:          maxInt64(0, now-nextPerson.QueueJoinedAt),
+		QueueWaitMs:          elapsedMillis(nextPerson.QueueJoinedAt, now),
 		QueuePositionAtStart: targetIndex + 1,
 		StartMode:            startMode,
 		SkippedPeople:        skippedPeople,
@@ -464,11 +468,11 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "start", person.ID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, storeName, "start", person.ID, roster, snapshotState, nil)
 }
 
 func (service *Service) Finish(ctx context.Context, access AccessContext, input FinishCommandInput) (MutationAck, error) {
-	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID, SnapshotLoadOptions{IncludeActivitySessions: true})
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -484,7 +488,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 	}
 
 	activeService := snapshotState.ActiveServices[activeIndex]
-	now := nowUnixMilli()
+	now := utcNow()
 	snapshotState.ActiveServices = filterActiveServices(snapshotState.ActiveServices, personID)
 
 	rosterByID := mapRosterByID(roster)
@@ -506,7 +510,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		PersonName:                 person.Name,
 		StartedAt:                  activeService.ServiceStartedAt,
 		FinishedAt:                 now,
-		DurationMs:                 maxInt64(0, now-activeService.ServiceStartedAt),
+		DurationMs:                 elapsedMillis(activeService.ServiceStartedAt, now),
 		FinishOutcome:              strings.TrimSpace(input.Outcome),
 		StartMode:                  activeService.StartMode,
 		QueuePositionAtStart:       activeService.QueuePositionAtStart,
@@ -558,7 +562,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "finish", person.ID, snapshotState, []ServiceHistoryEntry{historyEntry})
+	return service.persistAndAck(ctx, resolvedStoreID, storeName, "finish", person.ID, roster, snapshotState, []ServiceHistoryEntry{historyEntry})
 }
 
 func (service *Service) buildAck(storeID string, action string, personID string) MutationAck {
@@ -574,8 +578,10 @@ func (service *Service) buildAck(storeID string, action string, personID string)
 func (service *Service) persistAndAck(
 	ctx context.Context,
 	storeID string,
+	storeName string,
 	action string,
 	personID string,
+	roster []ConsultantProfile,
 	snapshotState SnapshotState,
 	appendedHistory []ServiceHistoryEntry,
 ) (MutationAck, error) {
@@ -599,6 +605,7 @@ func (service *Service) persistAndAck(
 	}
 
 	ack := service.buildAck(storeID, action, personID)
+	ack.Delta = buildMutationDelta(storeID, storeName, action, personID, roster, snapshotState, appendedHistory)
 	service.publisher.PublishOperationEvent(ctx, PublishedEvent{
 		StoreID:  ack.StoreID,
 		Action:   ack.Action,
@@ -613,6 +620,7 @@ func (service *Service) loadSnapshot(
 	ctx context.Context,
 	access AccessContext,
 	storeID string,
+	options SnapshotLoadOptions,
 ) (string, string, []ConsultantProfile, SnapshotState, error) {
 	resolvedStoreID, err := service.resolveStoreID(ctx, access, storeID)
 	if err != nil {
@@ -624,7 +632,7 @@ func (service *Service) loadSnapshot(
 		return "", "", nil, SnapshotState{}, err
 	}
 
-	roster, snapshotState, err := service.loadSnapshotState(ctx, resolvedStoreID)
+	roster, snapshotState, err := service.loadSnapshotState(ctx, resolvedStoreID, options)
 	if err != nil {
 		return "", "", nil, SnapshotState{}, err
 	}
@@ -632,13 +640,13 @@ func (service *Service) loadSnapshot(
 	return resolvedStoreID, storeName, roster, snapshotState, nil
 }
 
-func (service *Service) loadSnapshotState(ctx context.Context, storeID string) ([]ConsultantProfile, SnapshotState, error) {
+func (service *Service) loadSnapshotState(ctx context.Context, storeID string, options SnapshotLoadOptions) ([]ConsultantProfile, SnapshotState, error) {
 	roster, err := service.repository.ListRoster(ctx, storeID)
 	if err != nil {
 		return nil, SnapshotState{}, err
 	}
 
-	snapshotState, err := service.repository.LoadSnapshot(ctx, storeID)
+	snapshotState, err := service.repository.LoadSnapshot(ctx, storeID, options)
 	if err != nil {
 		return nil, SnapshotState{}, err
 	}
@@ -708,59 +716,30 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 	rosterByID := mapRosterByID(roster)
 	waitingList := make([]QueueEntry, 0, len(snapshotState.WaitingList))
 	for _, item := range snapshotState.WaitingList {
-		person, ok := rosterByID[item.ConsultantID]
+		view, ok := buildQueueEntryView(rosterByID, item)
 		if !ok {
 			continue
 		}
 
-		waitingList = append(waitingList, QueueEntry{
-			ID:             person.ID,
-			Name:           person.Name,
-			Role:           person.Role,
-			Initials:       person.Initials,
-			Color:          person.Color,
-			MonthlyGoal:    person.MonthlyGoal,
-			CommissionRate: person.CommissionRate,
-			QueueJoinedAt:  item.QueueJoinedAt,
-		})
+		waitingList = append(waitingList, view)
 	}
 
 	activeServices := make([]ActiveService, 0, len(snapshotState.ActiveServices))
 	for _, item := range snapshotState.ActiveServices {
-		person, ok := rosterByID[item.ConsultantID]
+		view, ok := buildActiveServiceView(rosterByID, item)
 		if !ok {
 			continue
 		}
 
-		activeServices = append(activeServices, ActiveService{
-			ID:                   person.ID,
-			Name:                 person.Name,
-			Role:                 person.Role,
-			Initials:             person.Initials,
-			Color:                person.Color,
-			MonthlyGoal:          person.MonthlyGoal,
-			CommissionRate:       person.CommissionRate,
-			ServiceID:            item.ServiceID,
-			ServiceStartedAt:     item.ServiceStartedAt,
-			QueueJoinedAt:        item.QueueJoinedAt,
-			QueueWaitMs:          item.QueueWaitMs,
-			QueuePositionAtStart: item.QueuePositionAtStart,
-			StartMode:            item.StartMode,
-			SkippedPeople:        cloneSkippedPeople(item.SkippedPeople),
-		})
+		activeServices = append(activeServices, view)
 	}
 
 	pausedEmployees := make([]PausedEmployee, 0, len(snapshotState.PausedEmployees))
 	for _, item := range snapshotState.PausedEmployees {
-		pausedEmployees = append(pausedEmployees, PausedEmployee{
-			PersonID:  item.ConsultantID,
-			Reason:    item.Reason,
-			Kind:      normalizePauseKind(item.Kind),
-			StartedAt: item.StartedAt,
-		})
+		pausedEmployees = append(pausedEmployees, buildPausedEmployeeView(item))
 	}
 
-	history := make([]ServiceHistoryEntry, 0, len(snapshotState.ServiceHistory))
+	history := make([]ServiceHistoryEntryView, 0, len(snapshotState.ServiceHistory))
 	for _, entry := range snapshotState.ServiceHistory {
 		normalized := normalizeHistoryEntry(entry)
 		if normalized.StoreID == "" {
@@ -769,30 +748,191 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 		if normalized.StoreName == "" {
 			normalized.StoreName = storeName
 		}
-		history = append(history, normalized)
+		history = append(history, buildHistoryEntryView(normalized))
 	}
 
 	return Snapshot{
 		StoreID:                    storeID,
+		StoreName:                  storeName,
 		WaitingList:                waitingList,
 		ActiveServices:             activeServices,
 		PausedEmployees:            pausedEmployees,
-		ConsultantActivitySessions: cloneSessions(snapshotState.ConsultantActivitySessions),
-		ConsultantCurrentStatus:    cloneCurrentStatus(snapshotState.ConsultantCurrentStatus),
+		ConsultantActivitySessions: buildSessionViews(snapshotState.ConsultantActivitySessions),
+		ConsultantCurrentStatus:    buildCurrentStatusViews(snapshotState.ConsultantCurrentStatus),
 		ServiceHistory:             history,
 	}
 }
 
+func buildMutationDelta(
+	storeID string,
+	storeName string,
+	action string,
+	personID string,
+	roster []ConsultantProfile,
+	snapshotState SnapshotState,
+	appendedHistory []ServiceHistoryEntry,
+) *MutationDelta {
+	normalizedPersonID := strings.TrimSpace(personID)
+	if normalizedPersonID == "" {
+		return nil
+	}
+
+	rosterByID := mapRosterByID(roster)
+	delta := &MutationDelta{}
+
+	switch strings.TrimSpace(action) {
+	case "queue":
+		if view, ok := findQueueEntryView(rosterByID, snapshotState.WaitingList, normalizedPersonID); ok {
+			delta.WaitingEntry = &view
+		}
+	case "pause", "assign-task":
+		delta.RemoveWaitingPersonID = normalizedPersonID
+		if view, ok := findPausedEmployeeView(snapshotState.PausedEmployees, normalizedPersonID); ok {
+			delta.PausedEmployee = &view
+		}
+	case "resume":
+		delta.RemovePausedPersonID = normalizedPersonID
+		if view, ok := findQueueEntryView(rosterByID, snapshotState.WaitingList, normalizedPersonID); ok {
+			delta.WaitingEntry = &view
+		}
+	case "start":
+		delta.RemoveWaitingPersonID = normalizedPersonID
+		if view, ok := findActiveServiceView(rosterByID, snapshotState.ActiveServices, normalizedPersonID); ok {
+			delta.ActiveService = &view
+		}
+	case "finish":
+		delta.RemoveActivePersonID = normalizedPersonID
+		if view, ok := findQueueEntryView(rosterByID, snapshotState.WaitingList, normalizedPersonID); ok {
+			delta.WaitingEntry = &view
+		}
+		if len(appendedHistory) > 0 {
+			historyEntry := normalizeHistoryEntry(appendedHistory[len(appendedHistory)-1])
+			if historyEntry.StoreID == "" {
+				historyEntry.StoreID = storeID
+			}
+			if historyEntry.StoreName == "" {
+				historyEntry.StoreName = storeName
+			}
+			view := buildHistoryEntryView(historyEntry)
+			delta.ServiceHistoryEntry = &view
+		}
+	}
+
+	if status, ok := snapshotState.ConsultantCurrentStatus[normalizedPersonID]; ok {
+		view := buildConsultantStatusView(status)
+		delta.ConsultantStatus = &MutationConsultantStatus{
+			PersonID: normalizedPersonID,
+			Status:   view,
+		}
+	}
+
+	if delta.RemoveWaitingPersonID == "" && delta.RemoveActivePersonID == "" && delta.RemovePausedPersonID == "" && delta.WaitingEntry == nil && delta.ActiveService == nil && delta.PausedEmployee == nil && delta.ConsultantStatus == nil && delta.ServiceHistoryEntry == nil {
+		return nil
+	}
+
+	return delta
+}
+
+func buildQueueEntryView(rosterByID map[string]ConsultantProfile, item QueueStateItem) (QueueEntry, bool) {
+	person, ok := rosterByID[item.ConsultantID]
+	if !ok {
+		return QueueEntry{}, false
+	}
+
+	return QueueEntry{
+		ID:             person.ID,
+		Name:           person.Name,
+		Role:           person.Role,
+		Initials:       person.Initials,
+		AvatarURL:      person.AvatarURL,
+		Color:          person.Color,
+		MonthlyGoal:    person.MonthlyGoal,
+		CommissionRate: person.CommissionRate,
+		QueueJoinedAt:  unixMillis(item.QueueJoinedAt),
+	}, true
+}
+
+func buildActiveServiceView(rosterByID map[string]ConsultantProfile, item ActiveServiceState) (ActiveService, bool) {
+	person, ok := rosterByID[item.ConsultantID]
+	if !ok {
+		return ActiveService{}, false
+	}
+
+	return ActiveService{
+		ID:                   person.ID,
+		Name:                 person.Name,
+		Role:                 person.Role,
+		Initials:             person.Initials,
+		AvatarURL:            person.AvatarURL,
+		Color:                person.Color,
+		MonthlyGoal:          person.MonthlyGoal,
+		CommissionRate:       person.CommissionRate,
+		ServiceID:            item.ServiceID,
+		ServiceStartedAt:     unixMillis(item.ServiceStartedAt),
+		QueueJoinedAt:        unixMillis(item.QueueJoinedAt),
+		QueueWaitMs:          item.QueueWaitMs,
+		QueuePositionAtStart: item.QueuePositionAtStart,
+		StartMode:            item.StartMode,
+		SkippedPeople:        cloneSkippedPeople(item.SkippedPeople),
+	}, true
+}
+
+func buildPausedEmployeeView(item PausedStateItem) PausedEmployee {
+	return PausedEmployee{
+		PersonID:  item.ConsultantID,
+		Reason:    item.Reason,
+		Kind:      normalizePauseKind(item.Kind),
+		StartedAt: unixMillis(item.StartedAt),
+	}
+}
+
+func buildConsultantStatusView(status ConsultantStatus) ConsultantStatusView {
+	return ConsultantStatusView{
+		Status:    status.Status,
+		StartedAt: unixMillis(status.StartedAt),
+	}
+}
+
+func findQueueEntryView(rosterByID map[string]ConsultantProfile, waitingList []QueueStateItem, personID string) (QueueEntry, bool) {
+	for _, item := range waitingList {
+		if item.ConsultantID == personID {
+			return buildQueueEntryView(rosterByID, item)
+		}
+	}
+
+	return QueueEntry{}, false
+}
+
+func findActiveServiceView(rosterByID map[string]ConsultantProfile, activeServices []ActiveServiceState, personID string) (ActiveService, bool) {
+	for _, item := range activeServices {
+		if item.ConsultantID == personID {
+			return buildActiveServiceView(rosterByID, item)
+		}
+	}
+
+	return ActiveService{}, false
+}
+
+func findPausedEmployeeView(pausedEmployees []PausedStateItem, personID string) (PausedEmployee, bool) {
+	for _, item := range pausedEmployees {
+		if item.ConsultantID == personID {
+			return buildPausedEmployeeView(item), true
+		}
+	}
+
+	return PausedEmployee{}, false
+}
+
 func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshotState SnapshotState) SnapshotState {
 	rosterByID := mapRosterByID(roster)
-	now := nowUnixMilli()
+	now := utcNow()
 
 	waitingList := make([]QueueStateItem, 0, len(snapshotState.WaitingList))
 	for _, item := range snapshotState.WaitingList {
 		if _, ok := rosterByID[item.ConsultantID]; ok {
 			waitingList = append(waitingList, QueueStateItem{
 				ConsultantID:  item.ConsultantID,
-				QueueJoinedAt: item.QueueJoinedAt,
+				QueueJoinedAt: normalizeMoment(item.QueueJoinedAt),
 			})
 		}
 	}
@@ -803,8 +943,8 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 			activeServices = append(activeServices, ActiveServiceState{
 				ConsultantID:         item.ConsultantID,
 				ServiceID:            strings.TrimSpace(item.ServiceID),
-				ServiceStartedAt:     item.ServiceStartedAt,
-				QueueJoinedAt:        item.QueueJoinedAt,
+				ServiceStartedAt:     normalizeMoment(item.ServiceStartedAt),
+				QueueJoinedAt:        normalizeMoment(item.QueueJoinedAt),
 				QueueWaitMs:          item.QueueWaitMs,
 				QueuePositionAtStart: item.QueuePositionAtStart,
 				StartMode:            normalizeStartMode(item.StartMode),
@@ -820,7 +960,7 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 				ConsultantID: item.ConsultantID,
 				Reason:       strings.TrimSpace(item.Reason),
 				Kind:         normalizePauseKind(item.Kind),
-				StartedAt:    item.StartedAt,
+				StartedAt:    normalizeMoment(item.StartedAt),
 			})
 		}
 	}
@@ -830,7 +970,7 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 		if _, ok := rosterByID[consultantID]; ok {
 			currentStatus[consultantID] = ConsultantStatus{
 				Status:    normalizeStatus(status.Status),
-				StartedAt: status.StartedAt,
+				StartedAt: normalizeMoment(status.StartedAt),
 			}
 		}
 	}
@@ -879,7 +1019,7 @@ func applyStatusTransitions(
 	currentSessions []ConsultantSession,
 	currentStatus map[string]ConsultantStatus,
 	transitions []transition,
-	now int64,
+	now time.Time,
 ) ([]ConsultantSession, map[string]ConsultantStatus) {
 	nextSessions := cloneSessions(currentSessions)
 	nextStatus := cloneCurrentStatus(currentStatus)
@@ -907,7 +1047,7 @@ func applyStatusTransitions(
 			Status:     previous.Status,
 			StartedAt:  previous.StartedAt,
 			EndedAt:    now,
-			DurationMs: maxInt64(0, now-previous.StartedAt),
+			DurationMs: elapsedMillis(previous.StartedAt, now),
 		})
 
 		nextStatus[item.personID] = ConsultantStatus{
@@ -932,7 +1072,7 @@ func deriveConsultantStatus(waitingList []QueueStateItem, activeServices []Activ
 	return statusAvailable
 }
 
-func deriveConsultantStartedAt(waitingList []QueueStateItem, activeServices []ActiveServiceState, pausedEmployees []PausedStateItem, consultantID string, now int64) int64 {
+func deriveConsultantStartedAt(waitingList []QueueStateItem, activeServices []ActiveServiceState, pausedEmployees []PausedStateItem, consultantID string, now time.Time) time.Time {
 	for _, item := range activeServices {
 		if item.ConsultantID == consultantID {
 			return item.ServiceStartedAt
@@ -957,6 +1097,8 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 	entry.StoreName = strings.TrimSpace(entry.StoreName)
 	entry.PersonID = strings.TrimSpace(entry.PersonID)
 	entry.PersonName = strings.TrimSpace(entry.PersonName)
+	entry.StartedAt = normalizeMoment(entry.StartedAt)
+	entry.FinishedAt = normalizeMoment(entry.FinishedAt)
 	entry.FinishOutcome = normalizeOutcome(entry.FinishOutcome)
 	entry.StartMode = normalizeStartMode(entry.StartMode)
 	entry.ProductSeen = strings.TrimSpace(entry.ProductSeen)
@@ -1093,6 +1235,75 @@ func cloneCurrentStatus(currentStatus map[string]ConsultantStatus) map[string]Co
 	return cloned
 }
 
+func buildSessionViews(sessions []ConsultantSession) []ConsultantSessionView {
+	views := make([]ConsultantSessionView, 0, len(sessions))
+	for _, item := range sessions {
+		views = append(views, ConsultantSessionView{
+			PersonID:   item.PersonID,
+			Status:     item.Status,
+			StartedAt:  unixMillis(item.StartedAt),
+			EndedAt:    unixMillis(item.EndedAt),
+			DurationMs: item.DurationMs,
+		})
+	}
+	return views
+}
+
+func buildCurrentStatusViews(currentStatus map[string]ConsultantStatus) map[string]ConsultantStatusView {
+	views := make(map[string]ConsultantStatusView, len(currentStatus))
+	for key, item := range currentStatus {
+		views[key] = buildConsultantStatusView(item)
+	}
+	return views
+}
+
+func buildHistoryEntryView(entry ServiceHistoryEntry) ServiceHistoryEntryView {
+	return ServiceHistoryEntryView{
+		ServiceID:                  entry.ServiceID,
+		StoreID:                    entry.StoreID,
+		StoreName:                  entry.StoreName,
+		PersonID:                   entry.PersonID,
+		PersonName:                 entry.PersonName,
+		StartedAt:                  unixMillis(entry.StartedAt),
+		FinishedAt:                 unixMillis(entry.FinishedAt),
+		DurationMs:                 entry.DurationMs,
+		FinishOutcome:              entry.FinishOutcome,
+		StartMode:                  entry.StartMode,
+		QueuePositionAtStart:       entry.QueuePositionAtStart,
+		QueueWaitMs:                entry.QueueWaitMs,
+		SkippedPeople:              cloneSkippedPeople(entry.SkippedPeople),
+		SkippedCount:               entry.SkippedCount,
+		IsWindowService:            entry.IsWindowService,
+		IsGift:                     entry.IsGift,
+		ProductSeen:                entry.ProductSeen,
+		ProductClosed:              entry.ProductClosed,
+		ProductDetails:             entry.ProductDetails,
+		ProductsSeen:               cloneProducts(entry.ProductsSeen),
+		ProductsClosed:             cloneProducts(entry.ProductsClosed),
+		ProductsSeenNone:           entry.ProductsSeenNone,
+		VisitReasonsNotInformed:    entry.VisitReasonsNotInformed,
+		CustomerSourcesNotInformed: entry.CustomerSourcesNotInformed,
+		CustomerName:               entry.CustomerName,
+		CustomerPhone:              entry.CustomerPhone,
+		CustomerEmail:              entry.CustomerEmail,
+		IsExistingCustomer:         entry.IsExistingCustomer,
+		VisitReasons:               normalizeStringSlice(entry.VisitReasons),
+		VisitReasonDetails:         normalizeStringMap(entry.VisitReasonDetails),
+		CustomerSources:            normalizeStringSlice(entry.CustomerSources),
+		CustomerSourceDetails:      normalizeStringMap(entry.CustomerSourceDetails),
+		LossReasons:                normalizeStringSlice(entry.LossReasons),
+		LossReasonDetails:          normalizeStringMap(entry.LossReasonDetails),
+		LossReasonID:               entry.LossReasonID,
+		LossReason:                 entry.LossReason,
+		SaleAmount:                 entry.SaleAmount,
+		CustomerProfession:         entry.CustomerProfession,
+		QueueJumpReason:            entry.QueueJumpReason,
+		Notes:                      entry.Notes,
+		CampaignMatches:            normalizeCampaignMatches(entry.CampaignMatches),
+		CampaignBonusTotal:         entry.CampaignBonusTotal,
+	}
+}
+
 func cloneHistory(history []ServiceHistoryEntry) []ServiceHistoryEntry {
 	cloned := make([]ServiceHistoryEntry, 0, len(history))
 	for _, item := range history {
@@ -1196,12 +1407,12 @@ func normalizeStatus(value string) string {
 	}
 }
 
-func createServiceID(personID string, timestamp int64) string {
+func createServiceID(personID string, timestamp time.Time) string {
 	buffer := make([]byte, 3)
 	if _, err := rand.Read(buffer); err != nil {
 		return personID + "-" + time.Now().UTC().Format("20060102150405")
 	}
-	return personID + "-" + strings.TrimSpace(time.UnixMilli(timestamp).UTC().Format("20060102150405")) + "-" + hex.EncodeToString(buffer)
+	return personID + "-" + strings.TrimSpace(normalizeMoment(timestamp).Format("20060102150405")) + "-" + hex.EncodeToString(buffer)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1228,6 +1439,35 @@ func maxInt64(value int64, minimum int64) int64 {
 	return value
 }
 
-func nowUnixMilli() int64 {
-	return time.Now().UTC().UnixMilli()
+func utcNow() time.Time {
+	return time.Now().UTC()
+}
+
+func normalizeMoment(moment time.Time) time.Time {
+	if moment.IsZero() {
+		return time.Time{}
+	}
+
+	return moment.UTC()
+}
+
+func unixMillis(moment time.Time) int64 {
+	if moment.IsZero() {
+		return 0
+	}
+
+	return normalizeMoment(moment).UnixMilli()
+}
+
+func elapsedMillis(start time.Time, end time.Time) int64 {
+	if start.IsZero() || end.IsZero() {
+		return 0
+	}
+
+	duration := normalizeMoment(end).Sub(normalizeMoment(start))
+	if duration < 0 {
+		return 0
+	}
+
+	return duration.Milliseconds()
 }

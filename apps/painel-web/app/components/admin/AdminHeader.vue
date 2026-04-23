@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
           />
 
           <NuxtLink :to="logoTo" class="admin-header__brand-link">
-            <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" class="admin-header__brand-logo">
+            <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" width="1080" height="402" class="admin-header__brand-logo">
           </NuxtLink>
         </div>
       </div>
@@ -436,7 +436,7 @@ onBeforeUnmount(() => {
             />
 
             <NuxtLink :to="logoTo" class="admin-header__brand-link">
-              <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" class="admin-header__brand-logo">
+              <img :src="adminAuthBrandLogo" :alt="logoTitle || 'Plataforma'" width="1080" height="402" class="admin-header__brand-logo">
             </NuxtLink>
           </div>
         </div>

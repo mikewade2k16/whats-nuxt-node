@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plano de Finalização do Banco</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --paper: rgba(255, 252, 246, 0.92);
+      --ink: #1f1a17;
+      --muted: #6d6259;
+      --line: rgba(79, 59, 45, 0.18);
+      --accent: #a43820;
+      --accent-soft: #efd5ca;
+      --teal: #295a57;
+      --gold: #b07c23;
+      --shadow: 0 18px 48px rgba(68, 40, 24, 0.12);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(164, 56, 32, 0.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(41, 90, 87, 0.12), transparent 28%),
+        linear-gradient(180deg, #faf5ee 0%, var(--bg) 100%);
+    }
+
+    code {
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(164, 56, 32, 0.08);
+      color: var(--accent);
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.92em;
+    }
+
+    .shell {
+      max-width: 90%;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    .hero,
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      padding: 28px;
+      border-radius: 32px;
+      background: linear-gradient(135deg, rgba(255, 252, 246, 0.96), rgba(249, 240, 230, 0.9));
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -100px auto;
+      width: 260px;
+      height: 260px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(176, 124, 35, 0.18), transparent 70%);
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 6vw, 60px);
+      line-height: 0.98;
+      max-width: 980px;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 960px;
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .chip-row,
+    .link-row,
+    .schema-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip,
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .chip {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .status-pill.high {
+      background: rgba(164, 56, 32, 0.14);
+      color: var(--accent);
+    }
+
+    .status-pill.medium {
+      background: rgba(176, 124, 35, 0.16);
+      color: var(--gold);
+    }
+
+    .status-pill.ok {
+      background: rgba(41, 90, 87, 0.12);
+      color: var(--teal);
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+
+    .two-col {
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+
+    .three-col {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .panel {
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+
+    .metric-value {
+      font-size: 36px;
+      line-height: 1;
+      margin: 0 0 8px;
+    }
+
+    .metric-label,
+    .panel p,
+    .panel li {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+    }
+
+    .panel ul,
+    .panel ol {
+      margin: 12px 0 0;
+      padding-left: 18px;
+    }
+
+    .phase-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .phase-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 6px;
+      background: linear-gradient(180deg, var(--accent), var(--gold));
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      background: rgba(255, 249, 243, 0.86);
+      border-radius: 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Fechamento Estrutural Auditável</div>
+      <h1>O runtime canônico ficou fechado; o que sobra agora é compatibilidade consciente, não dívida operacional</h1>
+      <p class="lead">A passada final consolidou <code>coreTenantId</code> e <code>coreUserId</code> no caminho ativo do backend e do painel, removeu o lookup por <code>legacy_id</code> do runtime vivo, manteve <code>tenant_store_charges</code> preso ao papel de overlay financeiro e preservou <code>storeId</code> como identidade única de loja em <code>indicators</code>. O banco local continua com os dados legados preenchidos, mas eles deixaram de ser fonte de resolução operacional.</p>
+      <div class="chip-row">
+        <span class="chip">73 tabelas ativas</span>
+        <span class="chip">111 FKs físicas</span>
+        <span class="chip">0 lookups ativos por legacy_id</span>
+        <span class="chip">go test ./... OK</span>
+      </div>
+      <div class="link-row">
+        <a href="index.html">Voltar ao índice visual</a>
+        <a href="README.md">Abrir README do banco-inspecao</a>
+        <a href="07-plano-finalizacao-banco.md">Abrir versão markdown legada</a>
+      </div>
+    </section>
+
+    <section class="grid metrics">
+      <article class="panel">
+        <p class="metric-value">4/4</p>
+        <div class="metric-label">Cobertura local de <code>tenant_store_charges -&gt; tenant_stores</code> com <code>store_id</code> obrigatório e sem divergência medida</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">0</p>
+        <div class="metric-label">Lookups ativos por <code>legacy_id</code> no runtime principal depois da passada final</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">0</p>
+        <div class="metric-label">Registros locais remanescentes com contrato vivo por <code>unit_external_id</code> em <code>indicators</code></div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">38</p>
+        <div class="metric-label">Registros ainda preenchidos com <code>legacy_id</code> no banco local como compatibilidade física transitória</div>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="panel">
+        <h2 class="section-title">O que foi fechado nesta passada</h2>
+        <ul>
+          <li><code>auth/me</code> deixou de usar <code>t.legacy_id</code> para montar o contexto ativo da sessão.</li>
+          <li><code>indicators</code> passou a resolver tenant prioritariamente por <code>coreTenantId</code>, sem fallback vivo por inteiro legado.</li>
+          <li>O BFF e a simulação de sessão passaram a recompor <code>clientId</code> compatível a partir de <code>/core/admin/clients/{coreTenantId}</code>, sem depender do auth legado.</li>
+          <li>Os fluxos administrativos, financeiros e de módulo continuam usando rotas canônicas por UUID no caminho ativo.</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h2 class="section-title">O que ainda existe, mas já não bloqueia o runtime</h2>
+        <ul>
+          <li>As colunas <code>legacy_id</code> continuam preenchidas em <code>platform_core.tenants</code> e <code>platform_core.users</code> por compatibilidade histórica.</li>
+          <li>Alguns DTOs administrativos e financeiros ainda expõem <code>clientId</code> como metadado de compatibilidade para a UI atual.</li>
+          <li><code>finance.finance_lines.fixed_account_id</code> segue como soft ref consciente e auditada, não como inconsistência estrutural medida.</li>
+          <li>A limpeza física final dessas compatibilidades pode virar trilha própria de migrations sem reabrir a arquitetura do shell.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid three-col">
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill ok">Concluído</span></div>
+        <h3>Diretório canônico de lojas</h3>
+        <p><code>tenant_stores</code> permanece como diretório único de loja. <code>tenant_store_charges</code> ficou reduzido ao billing por loja, com <code>store_id</code> obrigatório, FK composta por tenant e campos-espelho sem papel operacional.</p>
+      </article>
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill ok">Concluído</span></div>
+        <h3>Indicators sem contrato legado</h3>
+        <p><code>storeId</code> UUID ficou consolidado como identidade de loja em <code>indicators</code>, e o runtime do módulo já não usa <code>unit_external_id</code> nem <code>legacy_id</code> para resolver tenant no caminho ativo.</p>
+      </article>
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill ok">Concluído</span></div>
+        <h3>Escopo canônico no runtime</h3>
+        <p><code>coreTenantId</code> e <code>coreUserId</code> passaram a ser os identificadores de verdade para rotas, BFF, realtime, gestão administrativa e contexto efetivo de sessão.</p>
+      </article>
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill medium">Compatibilidade</span></div>
+        <h3>clientId ainda visível</h3>
+        <p><code>clientId</code> continua aparecendo onde o painel local ainda precisa dele para seleção, filtros ou rótulos antigos, mas já não comanda lookup de tenant no backend principal.</p>
+      </article>
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill ok">Validado</span></div>
+        <h3>Validação técnica</h3>
+        <p>Os arquivos alterados fecharam sem erros de diagnóstico e a suíte <code>go test ./...</code> em <code>apps/plataforma-api</code> voltou verde após a rodada final de compatibilização.</p>
+      </article>
+      <article class="panel">
+        <div class="schema-meta"><span class="status-pill medium">Próximo passo opcional</span></div>
+        <h3>Limpeza física futura</h3>
+        <p>O que resta agora é decidir quando remover de vez colunas e campos compatíveis, sem urgência de runtime: primeiro aposentar DTOs dependentes, depois limpar banco e contratos legados.</p>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="panel phase-card">
+        <h2 class="section-title">Fase 0</h2>
+        <h3>Baseline e guardrails</h3>
+        <ol>
+          <li>Inventário congelado e trilha de compatibilidade explicitada.</li>
+          <li>Regressões novas para <code>legacy_id</code>, <code>tenant_store_charges</code> e <code>unit_external_id</code> passaram a ser proibidas.</li>
+          <li>Esta página virou o snapshot visual do fechamento estrutural local.</li>
+        </ol>
+      </article>
+      <article class="panel phase-card">
+        <h2 class="section-title">Fase 1</h2>
+        <h3>Loja canônica no shell</h3>
+        <ol>
+          <li><code>tenant_store_charges.store_id</code> ficou obrigatório.</li>
+          <li>A relação por tenant e loja ficou travada no banco.</li>
+          <li>O core deixou de tratar <code>tenant_store_charges</code> como diretório operacional.</li>
+        </ol>
+      </article>
+      <article class="panel phase-card">
+        <h2 class="section-title">Fase 2</h2>
+        <h3>Indicators por <code>storeId</code></h3>
+        <ol>
+          <li>A migration <code>0033_indicators_store_id.sql</code> consolidou o contrato canônico.</li>
+          <li>Handlers, domínio e BFF passaram a usar <code>storeId</code> UUID.</li>
+          <li>Não há trilha viva de compatibilidade por <code>unit_external_id</code> no local.</li>
+        </ol>
+      </article>
+      <article class="panel phase-card">
+        <h2 class="section-title">Fase 3</h2>
+        <h3>Runtime sem lookup legado</h3>
+        <ol>
+          <li><code>coreTenantId</code> e <code>coreUserId</code> assumiram o papel operacional definitivo.</li>
+          <li><code>auth</code>, <code>indicators</code>, admin, BFF e simulação de sessão saíram do lookup por <code>legacy_id</code>.</li>
+          <li><code>legacy_id</code> ficou relegado a compatibilidade física e metadados pontuais.</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="panel">
+        <h2 class="section-title">Migrations e decisões seguintes</h2>
+        <ol>
+          <li><code>0031_harden_tenant_store_billing_boundary.sql</code>, <code>0032_fix_store_billing_trigger_search_path.sql</code> e <code>0033_indicators_store_id.sql</code> já cobrem a parte estrutural fechada no local.</li>
+          <li>Não há blocker atual de runtime exigindo nova migration antes do deploy do contrato canônico.</li>
+          <li>As próximas migrations, se forem abertas, devem mirar limpeza física de compatibilidades e não correção da arquitetura principal.</li>
+          <li>Vale manter guardrails explícitos para impedir reaparecimento de <code>unit_external_id</code> e uso operacional de <code>tenant_store_charges</code>.</li>
+        </ol>
+      </article>
+      <article class="panel">
+        <h2 class="section-title">Critério atual de banco finalizado</h2>
+        <ol>
+          <li><code>tenant_stores</code> é o único diretório canônico de loja.</li>
+          <li><code>tenant_store_charges</code> ficou restrito ao overlay financeiro.</li>
+          <li><code>indicators</code> opera por <code>storeId</code> UUID no caminho ativo.</li>
+          <li><code>legacy_id</code> saiu do lookup de runtime principal.</li>
+          <li>As sobras remanescentes estão pequenas, conscientes e auditáveis.</li>
+        </ol>
+      </article>
+    </section>
+
+    <p class="footer-note">Status local consolidado em 2026-04-14: a arquitetura do banco ficou fechada para o runtime atual. O trabalho remanescente deixou de ser “salvar o desenho” e passou a ser “apagar compatibilidades com segurança” quando o painel não precisar mais delas.</p>
+  </main>
+</body>
+</html>

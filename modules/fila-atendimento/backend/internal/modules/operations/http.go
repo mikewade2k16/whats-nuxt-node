@@ -3,6 +3,7 @@ package operations
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -66,7 +67,26 @@ func RegisterRoutesWithOptions(mux *http.ServeMux, service *Service, options HTT
 	})
 
 	registerReadRoute("GET /v1/operations/snapshot", func(w http.ResponseWriter, r *http.Request, access AccessContext) {
-		snapshot, err := service.Snapshot(r.Context(), access, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		includeHistory := true
+		if raw := strings.TrimSpace(r.URL.Query().Get("includeHistory")); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err == nil {
+				includeHistory = parsed
+			}
+		}
+
+		includeActivitySessions := false
+		if raw := strings.TrimSpace(r.URL.Query().Get("includeActivitySessions")); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err == nil {
+				includeActivitySessions = parsed
+			}
+		}
+
+		snapshot, err := service.Snapshot(r.Context(), access, strings.TrimSpace(r.URL.Query().Get("storeId")), SnapshotLoadOptions{
+			IncludeHistory:          includeHistory,
+			IncludeActivitySessions: includeActivitySessions,
+		})
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

@@ -44,6 +44,26 @@ cleanup_artifacts() {
   rm -rf .nuxt/* .nuxt/.[!.]* .nuxt/..?* .output/* .output/.[!.]* .output/..?* .nitro/* .nitro/.[!.]* .nitro/..?* 2>/dev/null || true
 }
 
+warmup_routes() {
+  if [ "${WEB_WARMUP_ROUTES:-1}" != "1" ]; then
+    return
+  fi
+
+  (
+    for _ in $(seq 1 90); do
+      if wget --quiet --tries=1 --timeout="${WEB_WARMUP_READY_TIMEOUT:-2}" --spider "http://127.0.0.1:3000/" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+
+    for route in ${WEB_WARMUP_PATHS:-/admin/login /admin/fila-atendimento}; do
+      echo "[painel-web] aquecendo rota ${route}"
+      wget --quiet --tries=1 --timeout="${WEB_WARMUP_ROUTE_TIMEOUT:-90}" -O /dev/null "http://127.0.0.1:3000${route}" >/dev/null 2>&1 || true
+    done
+  ) &
+}
+
 main() {
   sync_dependencies
 
@@ -52,7 +72,14 @@ main() {
     exec env NITRO_HOST=0.0.0.0 NITRO_PORT=3000 NODE_ENV=production node .output/server/index.mjs
   fi
 
-  cleanup_artifacts
+  if [ "${WEB_CLEAN_ARTIFACTS:-0}" = "1" ]; then
+    echo "[painel-web] limpando artefatos Nuxt por WEB_CLEAN_ARTIFACTS=1"
+    cleanup_artifacts
+  else
+    mkdir -p .nuxt .output .nitro
+  fi
+
+  warmup_routes
   exec npm run dev -- --host 0.0.0.0 --port 3000
 }
 

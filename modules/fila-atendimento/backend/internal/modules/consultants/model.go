@@ -15,6 +15,7 @@ type Consultant struct {
 	Name           string
 	RoleLabel      string
 	Initials       string
+	AvatarURL      string
 	Color          string
 	MonthlyGoal    float64
 	CommissionRate float64
@@ -38,6 +39,7 @@ type ConsultantView struct {
 	Name           string                `json:"name"`
 	Role           string                `json:"role"`
 	Initials       string                `json:"initials"`
+	AvatarURL      string                `json:"avatarUrl,omitempty"`
 	Color          string                `json:"color"`
 	MonthlyGoal    float64               `json:"monthlyGoal"`
 	CommissionRate float64               `json:"commissionRate"`
@@ -48,14 +50,8 @@ type ConsultantView struct {
 	Access         *ConsultantAccessView `json:"access,omitempty"`
 }
 
-type ProvisionedAccess struct {
-	Email           string `json:"email"`
-	InitialPassword string `json:"initialPassword"`
-}
-
 type CreateResult struct {
-	Consultant ConsultantView     `json:"consultant"`
-	Access     *ProvisionedAccess `json:"access,omitempty"`
+	Consultant ConsultantView `json:"consultant"`
 }
 
 type CreateInput struct {
@@ -99,6 +95,7 @@ func (consultant Consultant) View() ConsultantView {
 		Name:           consultant.Name,
 		Role:           consultant.RoleLabel,
 		Initials:       consultant.Initials,
+		AvatarURL:      consultant.AvatarURL,
 		Color:          consultant.Color,
 		MonthlyGoal:    consultant.MonthlyGoal,
 		CommissionRate: consultant.CommissionRate,

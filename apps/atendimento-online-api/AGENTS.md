@@ -13,29 +13,30 @@
 - webhooks do canal
 - envio outbound via fila
 - sweep de retenção
-- projeção operacional mínima de tenant e user no schema `public`, vinculada por IDs do core
+- configuração operacional local mínima por tenant canônico
 
 ## Contratos que consome
 
 - `ActorContext`: sessão principal vinda do `plataforma-api`
 - `TenantContext`: tenant ativo vindo do token do core, de `x-selected-tenant-slug` e do contexto administrativo do shell (`x-client-id`) quando a sessão for platform/root
 - `AccessPolicy`: módulos ativos e permissões resolvidos pelo `plataforma-api`
-- `PersistenceProvider`: Prisma sobre o schema `public`
+- `TenantDirectory`: usuários do tenant lidos do core, sem shadow local
+- `PersistenceProvider`: Prisma sobre o schema `atendimento_online`
 - `QueueProvider`: BullMQ para envio outbound
 - `RealtimePublisher`: Redis + Socket.IO para atualização da inbox
 - `ChannelGateway`: integração com `whatsapp-evolution-gateway`
 
 ## Contratos que exporta
 
-- rotas operacionais de sessão/tenant, conversas e webhooks
+- rotas operacionais de sessão/contexto, tenant runtime, conversas e webhooks
 - filas e workers de outbound e retenção
 - resolvedor compartilhado de auth em `src/services/auth-context.ts`
-- projeção de identidade core -> runtime local em `src/services/core-identity.ts`
+- resolvedores de diretório e runtime em `src/services/core-tenant-directory.ts` e `src/services/tenant-runtime.ts`
 
 ## Persistência sob responsabilidade do módulo
 
-- schema: `public`
-- tabelas/modelos principais: `Tenant`, `User`, `WhatsAppInstance`, `WhatsAppInstanceUserAccess`, `SavedSticker`, `Conversation`, `Message`, `AuditEvent`, `Contact`, `HiddenMessageForUser`
+- schema: `atendimento_online`
+- tabelas/modelos principais: `AtendimentoTenantConfig`, `WhatsAppInstance`, `SavedSticker`, `Conversation`, `Message`, `AuditEvent`, `Contact`, `HiddenMessageForUser`
 - filas/storage: BullMQ no Redis para outbound; pub/sub realtime no Redis
 - seeds locais: `prisma/seed.ts`
 
@@ -51,7 +52,7 @@
 
 Regra:
 
-- nao existe mais rota local de login para o painel neste módulo
+- não existe rota local de login para o painel neste módulo
 - qualquer sessão administrativa deve nascer no `POST /core/auth/login` do `plataforma-api`
 
 ## Eventos e sinais de integração
@@ -64,14 +65,15 @@ Regra:
 
 - auth paralela independente do `plataforma-api`
 - regra administrativa de `finance`
-- tabela interna do schema `platform_core`
+- tabela interna do schema `platform_core` fora dos contratos de serviço
 - detalhe de tela concreta do `painel-web`
-- decisão de RBAC baseada apenas em shadow local
+- decisão de RBAC baseada apenas em tabela local do módulo
 
 ## Checks mínimos de mudança
 
 - `npm run prisma:generate`
 - `npm run build`
+- `npm run prisma:seed` quando alterar seed ou schema operacional
 - `npm run test:tenant:isolation`
 - se alterar fila/outbound: `npm run test:media:integration`
 - se alterar gate de acesso: `npm run test:gate:mvp`
@@ -82,15 +84,18 @@ Regra:
 - o login principal vive em `POST /core/auth/login` no `plataforma-api`; o módulo não expõe mais login próprio
 - `POST /session/context` apenas atualiza o contexto operacional de tenant para platform admins e reaproveita o mesmo `core token`
 - no runtime hospedado, o shell pode selecionar o tenant efetivo do módulo por `x-client-id` sem exigir login paralelo nem shadow de sessão
-- vários fluxos ainda dependem de projeção local de `Tenant` e `User` por causa das FKs operacionais
-- `Tenant.coreTenantId`, `User.coreUserId` e `User.coreTenantUserId` são o vínculo canônico da projeção com o `plataforma-api`
-- quando auth, users ou clients divergirem entre `public` e `platform_core`, considerar o core como fonte de verdade
+- `Tenant` e `User` locais foram removidos do schema Prisma
+- colunas como `tenantId`, `assignedToId`, `senderUserId`, `actorUserId`, `createdByUserId`, `responsibleUserId` e `userId` armazenam ids canônicos do core
+- a elegibilidade por instância não é mais persistida localmente; o módulo assume o grant resolvido no `platform_core`
+- `evolutionApiKey` não é mais persistido no banco do módulo; o runtime usa apenas segredo de ambiente
+- quando auth, users, clients ou limits divergirem entre runtime e `platform_core`, considerar o core como fonte de verdade
 
 ## Direção arquitetural
 
-- manter a projeção local estritamente derivada do core, sem autenticação paralela nem match por conveniência
-- usar `plataforma-api` como contexto real de auth e módulos
 - manter o módulo focado em operação omnichannel, webhooks, fila e histórico operacional
+- usar `plataforma-api` como contexto real de auth, módulos, limits e diretório de usuários
+- manter configuração local apenas quando ela for estritamente operacional ao runtime
+- manter o schema `atendimento_online` como owner físico do runtime operacional do módulo
 
 ## Funções desejadas do módulo
 

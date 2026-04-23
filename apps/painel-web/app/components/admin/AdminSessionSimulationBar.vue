@@ -60,20 +60,12 @@ const clientItems = computed(() => sessionSimulation.clientOptions.map(option =>
 })))
 
 async function refreshClientOptions() {
-  await sessionSimulation.refreshClientOptions()
+  await sessionSimulation.refreshClientOptions({ force: true })
 }
 
 onMounted(() => {
   sessionSimulation.initialize()
-  void refreshClientOptions()
 })
-
-watch(
-  () => sessionSimulation.requestContextHash,
-  () => {
-    void refreshClientOptions()
-  }
-)
 </script>
 
 <template>

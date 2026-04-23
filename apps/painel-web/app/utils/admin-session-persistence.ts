@@ -35,6 +35,19 @@ function normalizeRememberedLoginEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeStorageValue(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
+function resolveStorage(mode: AdminSessionPersistenceMode) {
+  if (!canUseWebStorage()) {
+    return null;
+  }
+
+  return mode === "persistent" ? window.localStorage : window.sessionStorage;
+}
+
 export function getAdminSessionPersistenceMode(): AdminSessionPersistenceMode {
   if (!canUseWebStorage()) {
     return "session";
@@ -79,12 +92,12 @@ export function clearRememberedAdminLoginEmail() {
 
 export function readAdminSessionSnapshot(keys: AdminSessionStorageKeys): AdminSessionStorageSnapshot {
   const preferredMode = getAdminSessionPersistenceMode();
-  clearAdminSessionSnapshot(keys);
+  const storage = resolveStorage(preferredMode);
 
   return {
-    token: null,
-    userRaw: null,
-    expiresAt: null,
+    token: normalizeStorageValue(storage?.getItem(keys.tokenKey)),
+    userRaw: normalizeStorageValue(storage?.getItem(keys.userKey)),
+    expiresAt: normalizeStorageValue(storage?.getItem(keys.expiresAtKey)),
     mode: preferredMode
   };
 }
@@ -103,8 +116,24 @@ export function persistAdminSessionSnapshot(
   }
 
   window.localStorage.setItem(SESSION_PERSISTENCE_KEY, mode);
-  void values;
   clearAdminSessionSnapshot(keys);
+
+  const storage = resolveStorage(mode);
+  if (!storage) {
+    return;
+  }
+
+  if (values.token) {
+    storage.setItem(keys.tokenKey, values.token);
+  }
+
+  if (values.userRaw) {
+    storage.setItem(keys.userKey, values.userRaw);
+  }
+
+  if (values.expiresAt) {
+    storage.setItem(keys.expiresAtKey, values.expiresAt);
+  }
 }
 
 export function clearAdminSessionSnapshot(keys: AdminSessionStorageKeys) {

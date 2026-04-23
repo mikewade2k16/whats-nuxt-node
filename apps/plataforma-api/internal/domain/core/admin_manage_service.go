@@ -43,6 +43,146 @@ type adminUserDirectoryState struct {
 	RegistrationNumber string
 }
 
+type adminUserMembershipState struct {
+	BusinessRole string
+	AccessLevel  string
+	UserType     string
+	IsOwner      bool
+}
+
+func resolveBusinessRoleForAccessLevel(level string, isPlatformAdmin bool) string {
+	if isPlatformAdmin {
+		return "system_admin"
+	}
+
+	switch normalizeAccessLevel(level) {
+	case "admin":
+		return "owner"
+	case "consultant":
+		return "consultant"
+	case "manager":
+		return "general_manager"
+	case "finance":
+		return "finance"
+	case "viewer":
+		return "viewer"
+	default:
+		return "marketing"
+	}
+}
+
+func resolveUserTypeForBusinessRole(role string, isPlatformAdmin bool) string {
+	if isPlatformAdmin {
+		return "admin"
+	}
+
+	switch normalizeBusinessRole(role) {
+	case "owner", "system_admin":
+		return "admin"
+	default:
+		return "client"
+	}
+}
+
+func resolveOwnerFlagForBusinessRole(role string, isPlatformAdmin bool) bool {
+	if isPlatformAdmin {
+		return true
+	}
+
+	switch normalizeBusinessRole(role) {
+	case "owner", "system_admin":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveAdminUserMembershipState(rawRole, level string, isPlatformAdmin bool) adminUserMembershipState {
+	if isPlatformAdmin {
+		return adminUserMembershipState{
+			BusinessRole: "system_admin",
+			AccessLevel:  "admin",
+			UserType:     "admin",
+			IsOwner:      true,
+		}
+	}
+
+	role := normalizeBusinessRole(rawRole)
+	if role == "" {
+		role = resolveBusinessRoleForAccessLevel(level, isPlatformAdmin)
+	}
+
+	return adminUserMembershipState{
+		BusinessRole: role,
+		AccessLevel:  resolveAccessLevelForBusinessRole(role, level, isPlatformAdmin),
+		UserType:     resolveUserTypeForBusinessRole(role, isPlatformAdmin),
+		IsOwner:      resolveOwnerFlagForBusinessRole(role, isPlatformAdmin),
+	}
+}
+
+func validateExplicitBusinessRole(raw string, allowSystemAdmin bool) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	role := normalizeBusinessRole(trimmed)
+	if role == "" {
+		return ErrInvalidInput
+	}
+	if role == "system_admin" && !allowSystemAdmin {
+		return ErrForbidden
+	}
+
+	return nil
+}
+
+func effectiveTenantUserAccessLevelSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.access_level, '') IS NOT NULL THEN %s.access_level
+		WHEN COALESCE(%s.business_role, '') IN ('owner', 'system_admin') THEN 'admin'
+		WHEN COALESCE(%s.business_role, '') = 'consultant' THEN 'consultant'
+		WHEN COALESCE(%s.business_role, '') IN ('store_manager', 'general_manager') THEN 'manager'
+		WHEN COALESCE(%s.business_role, '') = 'finance' THEN 'finance'
+		WHEN COALESCE(%s.business_role, '') = 'viewer' THEN 'viewer'
+		WHEN %s.is_platform_admin THEN 'admin'
+		ELSE 'marketing'
+	END`, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, userAlias)
+}
+
+func effectiveTenantUserTypeSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.user_type, '') IS NOT NULL THEN %s.user_type
+		WHEN COALESCE(%s.business_role, '') IN ('owner', 'system_admin') THEN 'admin'
+		WHEN %s.is_platform_admin THEN 'admin'
+		ELSE 'client'
+	END`, scopeAlias, scopeAlias, scopeAlias, userAlias)
+}
+
+func effectiveTenantUserBusinessRoleSQL(scopeAlias, userAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN NULLIF(%s.business_role, '') IS NOT NULL THEN %s.business_role
+		WHEN %s.is_platform_admin THEN 'system_admin'
+		WHEN COALESCE(%s.access_level, '') = 'admin' THEN 'owner'
+		WHEN COALESCE(%s.access_level, '') = 'consultant' THEN 'consultant'
+		WHEN COALESCE(%s.access_level, '') = 'manager' THEN 'general_manager'
+		WHEN COALESCE(%s.access_level, '') = 'finance' THEN 'finance'
+		WHEN COALESCE(%s.access_level, '') = 'viewer' THEN 'viewer'
+		ELSE 'marketing'
+	END`, scopeAlias, scopeAlias, userAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias, scopeAlias)
+}
+
+func effectiveAdminMembershipOrderSQL(scopeAlias string) string {
+	return fmt.Sprintf(`CASE
+		WHEN %s.is_owner
+			OR COALESCE(%s.business_role, '') IN ('owner', 'system_admin')
+			OR COALESCE(%s.access_level, '') = 'admin'
+			OR COALESCE(%s.user_type, '') = 'admin'
+		THEN 0
+		ELSE 1
+	END`, scopeAlias, scopeAlias, scopeAlias, scopeAlias)
+}
+
 func isUniqueConstraintError(err error, constraintName string) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
@@ -146,6 +286,29 @@ func resolveAdminUserBusinessRole(raw, level, userType string, isPlatformAdmin, 
 	}
 
 	return role
+}
+
+func resolveAccessLevelForBusinessRole(role, fallbackLevel string, isPlatformAdmin bool) string {
+	if isPlatformAdmin {
+		return "admin"
+	}
+
+	switch normalizeBusinessRole(role) {
+	case "consultant":
+		return "consultant"
+	case "store_manager", "general_manager":
+		return "manager"
+	case "finance":
+		return "finance"
+	case "viewer":
+		return "viewer"
+	case "owner", "system_admin":
+		return "admin"
+	case "marketing":
+		return "marketing"
+	default:
+		return normalizeAccessLevel(fallbackLevel)
+	}
 }
 
 func isStoreScopedBusinessRole(role string) bool {
@@ -262,6 +425,7 @@ LEFT JOIN LATERAL (
 		WHERE scope.id IS NOT NULL
 		  AND (
 			scope.is_owner
+				OR COALESCE(scope.business_role, '') IN ('owner', 'system_admin')
 			OR COALESCE(scope.access_level, '') = 'admin'
 			OR COALESCE(scope.user_type, '') = 'admin'
 		  )
@@ -275,7 +439,7 @@ LEFT JOIN LATERAL (
 	)
 	SELECT
 		COALESCE(json_agg(mod.code ORDER BY mod.code), '[]'::json) AS module_codes,
-		COALESCE(bool_or(mod.code = 'atendimento'), false) AS atendimento_access
+		COALESCE(bool_or(mod.code = 'fila-atendimento'), false) AS atendimento_access
 	FROM (
 		SELECT DISTINCT code
 		FROM effective_user_modules
@@ -436,8 +600,9 @@ func (s *Service) resolveTenantUserDirectoryRules(ctx context.Context, tenantID 
 			COALESCE(t.require_user_registration, true),
 			COALESCE((
 				SELECT COUNT(*)
-				FROM tenant_store_charges sc
-				WHERE sc.tenant_id = t.id
+				FROM tenant_stores ts
+				WHERE ts.tenant_id = t.id
+				  AND ts.is_active = true
 			), 0)
 		 FROM tenants t
 		 WHERE t.id = $1
@@ -462,7 +627,7 @@ func (s *Service) sanitizeAdminUserDirectoryState(
 ) (adminUserDirectoryState, error) {
 	state.BusinessRole = normalizeBusinessRole(state.BusinessRole)
 	if state.BusinessRole == "" {
-		state.BusinessRole = "marketing"
+		return adminUserDirectoryState{}, ErrInvalidInput
 	}
 	state.StoreID = normalizeOptionalStoreID(state.StoreID)
 	state.RegistrationNumber = normalizeRegistrationNumber(state.RegistrationNumber)
@@ -480,9 +645,10 @@ func (s *Service) sanitizeAdminUserDirectoryState(
 	err := s.pool.QueryRow(
 		ctx,
 		`SELECT id::text
-		 FROM tenant_store_charges
+		 FROM tenant_stores
 		 WHERE tenant_id = $1
 		   AND id = $2
+		   AND is_active = true
 		 LIMIT 1`,
 		tenantID,
 		state.StoreID,
@@ -599,7 +765,9 @@ SELECT
 		WHEN COALESCE(NULLIF(t.billing_mode, ''), 'single') = 'per_store' THEN COALESCE((
 			SELECT SUM(sc.amount)::float8
 			FROM tenant_store_charges sc
+			JOIN tenant_stores ts ON ts.id = sc.store_id
 			WHERE sc.tenant_id = t.id
+			  AND ts.is_active = true
 		), 0)
 		ELSE COALESCE(t.monthly_payment_amount, 0)::float8
 	END,
@@ -615,14 +783,16 @@ SELECT
 	COALESCE((
 		SELECT json_agg(
 			json_build_object(
-				'id', sc.id::text,
-				'name', sc.store_name,
-				'amount', sc.amount::float8
+				'id', ts.id::text,
+				'name', ts.name,
+				'amount', COALESCE(sc.amount, 0)::float8
 			)
-			ORDER BY sc.sort_order ASC, sc.created_at ASC
+			ORDER BY ts.sort_order ASC, ts.created_at ASC
 		)
-		FROM tenant_store_charges sc
-		WHERE sc.tenant_id = t.id
+		FROM tenant_stores ts
+		LEFT JOIN tenant_store_charges sc ON sc.store_id = ts.id
+		WHERE ts.tenant_id = t.id
+		  AND ts.is_active = true
 	), '[]'::json),
 	COALESCE((
 		WITH module_scope AS (
@@ -747,11 +917,11 @@ LIMIT %s OFFSET %s
 }
 
 func (s *Service) GetAdminClient(ctx context.Context, input GetAdminClientInput) (AdminClient, error) {
-	if input.ClientID <= 0 {
+	if strings.TrimSpace(input.CoreTenantID) == "" {
 		return AdminClient{}, ErrInvalidInput
 	}
 
-	item, tenantID, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	item, tenantID, err := s.getAdminClientByCoreTenantID(ctx, input.CoreTenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1036,7 +1206,7 @@ func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClient
 		return AdminClient{}, fmt.Errorf("commit create admin client tx: %w", err)
 	}
 
-	item, _, err := s.getAdminClientByLegacyID(ctx, legacyID)
+	item, _, err := s.getAdminClientByCoreTenantID(ctx, tenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1060,7 +1230,7 @@ func (s *Service) CreateAdminClient(ctx context.Context, input CreateAdminClient
 }
 
 func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminClientFieldInput) (AdminClient, error) {
-	item, tenantID, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	item, tenantID, err := s.getAdminClientByCoreTenantID(ctx, input.CoreTenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1093,7 +1263,9 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 				     monthly_payment_amount = COALESCE((
 				       SELECT SUM(sc.amount)::float8
 				       FROM tenant_store_charges sc
+				       JOIN tenant_stores ts ON ts.id = sc.store_id
 				       WHERE sc.tenant_id = $1
+				         AND ts.is_active = true
 				     ), 0),
 				     updated_at = now()
 				 WHERE id = $1`,
@@ -1115,7 +1287,9 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 			       WHEN billing_mode = 'per_store' THEN COALESCE((
 			         SELECT SUM(sc.amount)::float8
 			         FROM tenant_store_charges sc
+			         JOIN tenant_stores ts ON ts.id = sc.store_id
 			         WHERE sc.tenant_id = $1
+			           AND ts.is_active = true
 			       ), 0)
 			       ELSE $2
 			     END,
@@ -1173,7 +1347,7 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 		return AdminClient{}, fmt.Errorf("update admin client field: %w", err)
 	}
 
-	updated, _, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	updated, _, err := s.getAdminClientByCoreTenantID(ctx, tenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1195,7 +1369,7 @@ func (s *Service) UpdateAdminClientField(ctx context.Context, input UpdateAdminC
 }
 
 func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdminClientStoresInput) (AdminClient, error) {
-	_, tenantID, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	_, tenantID, err := s.getAdminClientByCoreTenantID(ctx, input.CoreTenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1212,23 +1386,149 @@ func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdm
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if _, err := tx.Exec(ctx, `DELETE FROM tenant_store_charges WHERE tenant_id = $1`, tenantID); err != nil {
-		return AdminClient{}, fmt.Errorf("clear tenant stores: %w", err)
+	type existingStoreRecord struct {
+		ID   string
+		Name string
+		Code string
 	}
 
+	existingStoresRows, err := tx.Query(ctx, `
+		SELECT id::text, name, code
+		FROM tenant_stores
+		WHERE tenant_id = $1
+	`, tenantID)
+	if err != nil {
+		return AdminClient{}, fmt.Errorf("list tenant stores: %w", err)
+	}
+
+	existingStoresByID := make(map[string]existingStoreRecord)
+	existingStoresByName := make(map[string]existingStoreRecord)
+	usedCodes := make(map[string]bool)
+	for existingStoresRows.Next() {
+		var record existingStoreRecord
+		if err := existingStoresRows.Scan(&record.ID, &record.Name, &record.Code); err != nil {
+			existingStoresRows.Close()
+			return AdminClient{}, fmt.Errorf("scan tenant store: %w", err)
+		}
+		record.ID = strings.TrimSpace(record.ID)
+		record.Name = strings.TrimSpace(record.Name)
+		record.Code = normalizeAdminStoreCode(record.Code)
+		existingStoresByID[record.ID] = record
+		if record.Name != "" {
+			existingStoresByName[strings.ToLower(record.Name)] = record
+		}
+		if record.Code != "" {
+			usedCodes[record.Code] = true
+		}
+	}
+	if err := existingStoresRows.Err(); err != nil {
+		existingStoresRows.Close()
+		return AdminClient{}, fmt.Errorf("iterate tenant stores: %w", err)
+	}
+	existingStoresRows.Close()
+
 	totalAmount := 0.0
+	desiredStoreIDs := make([]string, 0, len(stores))
+
 	for index, store := range stores {
 		totalAmount += store.Amount
+
+		resolvedStoreID := strings.TrimSpace(store.ID)
+		existingRecord, hasExisting := existingStoresByID[resolvedStoreID]
+		if !hasExisting && resolvedStoreID == "" {
+			existingRecord, hasExisting = existingStoresByName[strings.ToLower(strings.TrimSpace(store.Name))]
+		}
+		if !hasExisting && resolvedStoreID != "" {
+			return AdminClient{}, ErrInvalidInput
+		}
+
+		storeCode := ""
+		if hasExisting {
+			resolvedStoreID = existingRecord.ID
+			storeCode = normalizeAdminStoreCode(existingRecord.Code)
+		}
+		if storeCode == "" {
+			storeCode = buildAdminStoreCode(store.Name, usedCodes)
+		}
+		usedCodes[storeCode] = true
+
+		if err := tx.QueryRow(
+			ctx,
+			`INSERT INTO tenant_stores (id, tenant_id, code, name, city, is_active, sort_order, metadata)
+			 VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, '', true, $5, '{}'::jsonb)
+			 ON CONFLICT (id) DO UPDATE
+			 SET code = EXCLUDED.code,
+			     name = EXCLUDED.name,
+			     city = EXCLUDED.city,
+			     is_active = true,
+			     sort_order = EXCLUDED.sort_order,
+			     updated_at = now()
+			 RETURNING id::text`,
+			resolvedStoreID,
+			tenantID,
+			storeCode,
+			store.Name,
+			index,
+		).Scan(&resolvedStoreID); err != nil {
+			return AdminClient{}, fmt.Errorf("upsert tenant store directory: %w", err)
+		}
+
 		if _, err := tx.Exec(
 			ctx,
-			`INSERT INTO tenant_store_charges (tenant_id, store_name, amount, sort_order, metadata)
-			 VALUES ($1, $2, $3, $4, '{}'::jsonb)`,
+			`INSERT INTO tenant_store_charges (tenant_id, store_id, amount, metadata)
+			 VALUES ($1, $2, $3, '{}'::jsonb)
+			 ON CONFLICT (store_id) DO UPDATE
+			 SET tenant_id = EXCLUDED.tenant_id,
+			     amount = EXCLUDED.amount,
+			     updated_at = now()`,
 			tenantID,
-			store.Name,
+			resolvedStoreID,
 			store.Amount,
-			index,
 		); err != nil {
-			return AdminClient{}, fmt.Errorf("insert tenant store: %w", err)
+			return AdminClient{}, fmt.Errorf("upsert tenant store billing: %w", err)
+		}
+
+		desiredStoreIDs = append(desiredStoreIDs, resolvedStoreID)
+	}
+
+	if len(desiredStoreIDs) > 0 {
+		if _, err := tx.Exec(
+			ctx,
+			`UPDATE tenant_stores
+			 SET is_active = false,
+			     updated_at = now()
+			 WHERE tenant_id = $1
+			   AND NOT (id::text = ANY($2))`,
+			tenantID,
+			desiredStoreIDs,
+		); err != nil {
+			return AdminClient{}, fmt.Errorf("archive removed tenant stores: %w", err)
+		}
+
+		if _, err := tx.Exec(
+			ctx,
+			`DELETE FROM tenant_store_charges
+			 WHERE tenant_id = $1
+			   AND NOT (store_id::text = ANY($2))`,
+			tenantID,
+			desiredStoreIDs,
+		); err != nil {
+			return AdminClient{}, fmt.Errorf("clear removed tenant store billing: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(
+			ctx,
+			`UPDATE tenant_stores
+			 SET is_active = false,
+			     updated_at = now()
+			 WHERE tenant_id = $1`,
+			tenantID,
+		); err != nil {
+			return AdminClient{}, fmt.Errorf("archive tenant stores: %w", err)
+		}
+
+		if _, err := tx.Exec(ctx, `DELETE FROM tenant_store_charges WHERE tenant_id = $1`, tenantID); err != nil {
+			return AdminClient{}, fmt.Errorf("clear tenant store billing: %w", err)
 		}
 	}
 
@@ -1248,7 +1548,7 @@ func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdm
 		return AdminClient{}, fmt.Errorf("commit stores tx: %w", err)
 	}
 
-	updated, _, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	updated, _, err := s.getAdminClientByCoreTenantID(ctx, tenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1266,7 +1566,7 @@ func (s *Service) ReplaceAdminClientStores(ctx context.Context, input ReplaceAdm
 }
 
 func (s *Service) RotateAdminClientWebhook(ctx context.Context, input RotateAdminClientWebhookInput) (AdminClient, error) {
-	_, tenantID, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	_, tenantID, err := s.getAdminClientByCoreTenantID(ctx, input.CoreTenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1293,7 +1593,7 @@ func (s *Service) RotateAdminClientWebhook(ctx context.Context, input RotateAdmi
 		return AdminClient{}, fmt.Errorf("rotate webhook key: %w", err)
 	}
 
-	updated, _, err := s.getAdminClientByLegacyID(ctx, input.ClientID)
+	updated, _, err := s.getAdminClientByCoreTenantID(ctx, tenantID)
 	if err != nil {
 		return AdminClient{}, err
 	}
@@ -1315,15 +1615,20 @@ func (s *Service) DeleteAdminClient(ctx context.Context, input DeleteAdminClient
 		return ErrForbidden
 	}
 
+	coreTenantID := strings.TrimSpace(input.CoreTenantID)
+	if coreTenantID == "" {
+		return ErrInvalidInput
+	}
+
 	result, err := s.pool.Exec(
 		ctx,
 		`UPDATE tenants
 		 SET status = 'cancelled',
 		     deleted_at = COALESCE(deleted_at, now()),
 		     updated_at = now()
-		 WHERE legacy_id = $1
+		 WHERE id = $1::uuid
 		   AND deleted_at IS NULL`,
-		input.ClientID,
+		coreTenantID,
 	)
 	if err != nil {
 		return fmt.Errorf("delete admin client: %w", err)
@@ -1373,14 +1678,14 @@ LEFT JOIN LATERAL (
 			WHEN 'invited' THEN 1
 			ELSE 2
 		END,
-		tu.is_owner DESC,
+		%s,
 		tu.created_at DESC
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
+LEFT JOIN tenant_stores store ON store.id = scope.store_id
 %s
-`, adminUserModuleScopeJoinClause())
+`, effectiveAdminMembershipOrderSQL("tu"), adminUserModuleScopeJoinClause())
 
 	if !input.IsPlatformAdmin {
 		tenantPlaceholder := arg(strings.TrimSpace(input.TenantID))
@@ -1389,7 +1694,7 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
+LEFT JOIN tenant_stores store ON store.id = scope.store_id
 %s
 `, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
@@ -1406,18 +1711,19 @@ LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 			OR LOWER(COALESCE(scope.access_level, '')) LIKE %s
 			OR LOWER(COALESCE(scope.user_type, '')) LIKE %s
 			OR LOWER(COALESCE(scope.business_role, '')) LIKE %s
-			OR LOWER(COALESCE(store.store_name, '')) LIKE %s
+			OR LOWER(COALESCE(store.name, '')) LIKE %s
 			OR LOWER(COALESCE(scope.registration_number, '')) LIKE %s
 			OR LOWER(COALESCE(t.name, '')) LIKE %s
-			OR u.legacy_id::text LIKE %s
-		)`, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder))
+			OR u.id::text LIKE %s
+			OR COALESCE(scope.tenant_id::text, '') LIKE %s
+		)`, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder, placeholder))
 	}
 
-	if input.ClientID != nil {
-		if *input.ClientID == 0 {
-			conditions = append(conditions, "t.legacy_id IS NULL")
-		} else if *input.ClientID > 0 {
-			conditions = append(conditions, fmt.Sprintf("t.legacy_id = %s", arg(*input.ClientID)))
+	if input.CoreTenantID != nil {
+		if strings.TrimSpace(*input.CoreTenantID) == "" {
+			conditions = append(conditions, "scope.tenant_id IS NULL")
+		} else {
+			conditions = append(conditions, fmt.Sprintf("scope.tenant_id = %s::uuid", arg(strings.TrimSpace(*input.CoreTenantID))))
 		}
 	}
 
@@ -1426,10 +1732,9 @@ LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
 
 	query := fmt.Sprintf(`
 SELECT
-	u.legacy_id,
-	u.id,
+	u.id::text,
 	u.is_platform_admin,
-	t.legacy_id,
+	scope.tenant_id,
 	COALESCE(t.name, ''),
 	u.name,
 	COALESCE(u.nick, ''),
@@ -1439,20 +1744,12 @@ SELECT
 	COALESCE(u.avatar_url, ''),
 	u.last_login_at,
 	u.created_at,
-	CASE
-		WHEN NULLIF(scope.access_level, '') IS NOT NULL THEN scope.access_level
-		WHEN u.is_platform_admin THEN 'admin'
-		ELSE 'marketing'
-	END,
-	CASE
-		WHEN NULLIF(scope.user_type, '') IS NOT NULL THEN scope.user_type
-		WHEN u.is_platform_admin THEN 'admin'
-		ELSE 'client'
-	END,
-	COALESCE(scope.business_role, ''),
+	%s,
+	%s,
+	%s,
 	scope.store_id::text,
-	COALESCE(store.store_name, ''),
-	COALESCE(scope.registration_number, ''),
+			COALESCE(store.name, ''),
+			COALESCE(scope.registration_number, ''),
 	COALESCE(u.preferences::text, '{}'),
 	COALESCE(module_scope.module_codes, '[]'::json),
 	COALESCE(module_scope.atendimento_access, false),
@@ -1462,7 +1759,15 @@ FROM users u
 WHERE %s
 ORDER BY u.created_at DESC
 LIMIT %s OFFSET %s
-`, joinClause, strings.Join(conditions, " AND "), limitPlaceholder, offsetPlaceholder)
+`,
+		effectiveTenantUserAccessLevelSQL("scope", "u"),
+		effectiveTenantUserTypeSQL("scope", "u"),
+		effectiveTenantUserBusinessRoleSQL("scope", "u"),
+		joinClause,
+		strings.Join(conditions, " AND "),
+		limitPlaceholder,
+		offsetPlaceholder,
+	)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -1476,7 +1781,7 @@ LIMIT %s OFFSET %s
 	for rows.Next() {
 		var (
 			item            AdminUser
-			coreClientID    *int
+			scopeTenantID   *string
 			storeID         *string
 			lastLoginAt     *time.Time
 			createdAt       time.Time
@@ -1485,10 +1790,9 @@ LIMIT %s OFFSET %s
 		)
 
 		if err := rows.Scan(
-			&item.ID,
 			&item.CoreUserID,
 			&item.IsPlatformAdmin,
-			&coreClientID,
+			&scopeTenantID,
 			&item.ClientName,
 			&item.Name,
 			&item.Nick,
@@ -1512,12 +1816,13 @@ LIMIT %s OFFSET %s
 			return nil, 0, fmt.Errorf("scan admin users row: %w", err)
 		}
 
-		item.ClientID = coreClientID
+		item.ID = item.CoreUserID
+		item.CoreTenantID = scopeTenantID
 		item.StoreID = storeID
 		item.Status = normalizeUserRecordStatus(item.Status)
-		item.Level = normalizeAccessLevel(item.Level)
 		item.UserType = normalizeUserType(item.UserType)
 		item.BusinessRole = resolveAdminUserBusinessRole(item.BusinessRole, item.Level, item.UserType, item.IsPlatformAdmin, false)
+		item.Level = resolveAccessLevelForBusinessRole(item.BusinessRole, item.Level, item.IsPlatformAdmin)
 		item.RegistrationNumber = normalizeRegistrationNumber(item.RegistrationNumber)
 		if err := json.Unmarshal(moduleCodesJSON, &item.ModuleCodes); err != nil {
 			item.ModuleCodes = []string{}
@@ -1555,7 +1860,10 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 	}
 
 	targetIsPlatformAdmin := input.TargetIsPlatformAdmin && input.IsPlatformAdmin
-	shouldCreateTenantMembership := shouldCreateAdminUserTenantMembership(input.IsPlatformAdmin, targetIsPlatformAdmin, input.ClientID)
+	if err := validateExplicitBusinessRole(input.BusinessRole, targetIsPlatformAdmin); err != nil {
+		return AdminUser{}, "", err
+	}
+	shouldCreateTenantMembership := shouldCreateAdminUserTenantMembership(input.IsPlatformAdmin, targetIsPlatformAdmin, input.CoreTenantID)
 
 	var targetTenantID string
 	var err error
@@ -1563,7 +1871,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		if targetIsPlatformAdmin {
 			targetTenantID, err = s.resolveRootTenantID(ctx)
 		} else {
-			targetTenantID, err = s.resolveTargetTenantForUserMutation(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+			targetTenantID, err = s.resolveTargetTenantForUserMutation(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID)
 		}
 		if err != nil {
 			return AdminUser{}, "", err
@@ -1571,22 +1879,13 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 	}
 
 	level := normalizeAccessLevel(input.Level)
-	userType := normalizeUserType(input.UserType)
 	if targetIsPlatformAdmin {
 		level = "admin"
-		userType = "admin"
-	} else if !input.IsPlatformAdmin {
-		userType = "client"
 	}
+	membershipState := resolveAdminUserMembershipState(input.BusinessRole, level, targetIsPlatformAdmin)
 	desiredUserStatus := resolveCreatedAdminUserStatus(shouldCreateTenantMembership)
 	directoryState := adminUserDirectoryState{
-		BusinessRole: resolveAdminUserBusinessRole(
-			input.BusinessRole,
-			level,
-			userType,
-			targetIsPlatformAdmin,
-			!targetIsPlatformAdmin && level == "admin" && userType == "admin",
-		),
+		BusinessRole:       membershipState.BusinessRole,
 		StoreID:            normalizeOptionalStoreID(input.StoreID),
 		RegistrationNumber: normalizeRegistrationNumber(input.RegistrationNumber),
 	}
@@ -1611,11 +1910,10 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 
 	var (
 		coreUserID   string
-		legacyID     int
 		tenantUserID string
 	)
 
-	coreUserID, legacyID, err = upsertAdminManagedUserByEmail(
+	coreUserID, _, err = upsertAdminManagedUserByEmail(
 		ctx,
 		tx,
 		adminManagedUserInput{
@@ -1675,9 +1973,9 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			RETURNING id`,
 			targetTenantID,
 			coreUserID,
-			targetIsPlatformAdmin,
-			level,
-			userType,
+			membershipState.IsOwner,
+			membershipState.AccessLevel,
+			membershipState.UserType,
 			directoryState.BusinessRole,
 			directoryState.StoreID,
 			directoryState.RegistrationNumber,
@@ -1691,7 +1989,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			targetTenantID,
 			tenantUserID,
 			strings.TrimSpace(input.UserID),
-			level,
+			membershipState.AccessLevel,
 			targetIsPlatformAdmin,
 		); err != nil {
 			return AdminUser{}, "", err
@@ -1701,7 +1999,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 			if err := s.grantPlatformAdminModules(ctx, tx, targetTenantID, tenantUserID, strings.TrimSpace(input.UserID)); err != nil {
 				return AdminUser{}, "", err
 			}
-		} else if level == "admin" && userType == "admin" {
+		} else if membershipState.AccessLevel == "admin" && membershipState.UserType == "admin" {
 			if _, err := tx.Exec(
 				ctx,
 				`INSERT INTO tenant_user_modules (
@@ -1746,7 +2044,7 @@ func (s *Service) CreateAdminUser(ctx context.Context, input CreateAdminUserInpu
 		return AdminUser{}, "", fmt.Errorf("commit create user tx: %w", err)
 	}
 
-	item, _, err := s.getAdminUserByLegacyID(ctx, legacyID, targetTenantID, false)
+	item, _, err := s.getAdminUserByCoreUserID(ctx, coreUserID, targetTenantID, false)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
@@ -1870,14 +2168,14 @@ func upsertAdminManagedUserByEmail(ctx context.Context, tx pgx.Tx, input adminMa
 }
 
 func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUserFieldInput) (AdminUser, string, error) {
-	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
+	current, scopeTenantID, err := s.getAdminUserByCoreUserID(ctx, input.TargetCoreUserID, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
 
 	field := strings.TrimSpace(input.Field)
 	switch field {
-	case "clientId":
+	case "coreTenantId":
 		if !input.IsPlatformAdmin {
 			return AdminUser{}, "", ErrForbidden
 		}
@@ -1885,28 +2183,24 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 			return AdminUser{}, "", ErrForbidden
 		}
 
-		nextClientID := intValue(input.Value)
-		if nextClientID <= 0 {
+		nextCoreTenantID := strings.TrimSpace(stringValue(input.Value))
+		if nextCoreTenantID == "" {
 			return AdminUser{}, "", ErrInvalidInput
 		}
 
-		if current.ClientID != nil && *current.ClientID == nextClientID {
+		if current.CoreTenantID != nil && strings.TrimSpace(*current.CoreTenantID) == nextCoreTenantID {
 			return current, scopeTenantID, nil
 		}
 
-		nextTenantID, resolveErr := s.resolveTargetTenantForUserMutation(ctx, input.TenantID, true, &nextClientID)
+		nextTenantID, resolveErr := s.resolveTargetTenantForUserMutation(ctx, input.TenantID, true, stringPtr(nextCoreTenantID))
 		if resolveErr != nil {
 			return AdminUser{}, "", resolveErr
 		}
 
+		nextMembershipState := resolveAdminUserMembershipState(current.BusinessRole, current.Level, current.IsPlatformAdmin)
+
 		nextDirectoryState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, nextTenantID, adminUserDirectoryState{
-			BusinessRole: resolveAdminUserBusinessRole(
-				current.BusinessRole,
-				current.Level,
-				current.UserType,
-				current.IsPlatformAdmin,
-				normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin",
-			),
+			BusinessRole:       nextMembershipState.BusinessRole,
 			StoreID:            "",
 			RegistrationNumber: current.RegistrationNumber,
 		})
@@ -1978,31 +2272,32 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 				$1,
 				$2,
 				$3::tenant_user_status,
-				false,
-				now(),
 				$4,
+				now(),
 				$5,
 				$6,
-				NULLIF($7, '')::uuid,
-				NULLIF($8, ''),
+				$7,
+				NULLIF($8, '')::uuid,
+				NULLIF($9, ''),
 				'{}'::jsonb
 			)
 			ON CONFLICT (tenant_id, user_id)
 			DO UPDATE SET
 				status = EXCLUDED.status,
+				is_owner = EXCLUDED.is_owner,
 				access_level = EXCLUDED.access_level,
 				user_type = EXCLUDED.user_type,
 				business_role = EXCLUDED.business_role,
 				store_id = EXCLUDED.store_id,
 				registration_number = EXCLUDED.registration_number,
-				is_owner = false,
 				updated_at = now()
 			RETURNING id`,
 			nextTenantID,
 			current.CoreUserID,
 			nextTenantUserStatus,
-			normalizeAccessLevel(current.Level),
-			normalizeUserType(current.UserType),
+			nextMembershipState.IsOwner,
+			nextMembershipState.AccessLevel,
+			nextMembershipState.UserType,
 			nextDirectoryState.BusinessRole,
 			nextDirectoryState.StoreID,
 			nextDirectoryState.RegistrationNumber,
@@ -2084,16 +2379,38 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		if scopeTenantID == "" {
 			return AdminUser{}, "", ErrInvalidInput
 		}
+		nextMembershipState := resolveAdminUserMembershipState("", stringValue(input.Value), current.IsPlatformAdmin)
+		nextState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
+			BusinessRole:       nextMembershipState.BusinessRole,
+			StoreID:            stringFromPtr(current.StoreID),
+			RegistrationNumber: current.RegistrationNumber,
+		})
+		if stateErr != nil {
+			return AdminUser{}, "", stateErr
+		}
+		if current.Status == "active" {
+			if requirementErr := s.enforceAdminUserDirectoryRequirements(ctx, scopeTenantID, nextState); requirementErr != nil {
+				return AdminUser{}, "", requirementErr
+			}
+		}
 		_, err = s.pool.Exec(
 			ctx,
 			`UPDATE tenant_users
-			 SET access_level = $3,
+			 SET is_owner = $3,
+			     access_level = $4,
+			     user_type = $5,
+			     business_role = $6,
+			     store_id = NULLIF($7, '')::uuid,
 			     updated_at = now()
 			 WHERE tenant_id = $1
 			   AND user_id = $2`,
 			scopeTenantID,
 			current.CoreUserID,
-			normalizeAccessLevel(stringValue(input.Value)),
+			nextMembershipState.IsOwner,
+			nextMembershipState.AccessLevel,
+			nextMembershipState.UserType,
+			nextState.BusinessRole,
+			nextState.StoreID,
 		)
 	case "userType":
 		if scopeTenantID == "" {
@@ -2117,14 +2434,12 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		if scopeTenantID == "" {
 			return AdminUser{}, "", ErrInvalidInput
 		}
+		if err := validateExplicitBusinessRole(stringValue(input.Value), false); err != nil {
+			return AdminUser{}, "", err
+		}
+		nextMembershipState := resolveAdminUserMembershipState(stringValue(input.Value), current.Level, false)
 		nextState, stateErr := s.sanitizeAdminUserDirectoryState(ctx, scopeTenantID, adminUserDirectoryState{
-			BusinessRole: resolveAdminUserBusinessRole(
-				stringValue(input.Value),
-				current.Level,
-				current.UserType,
-				false,
-				normalizeAccessLevel(current.Level) == "admin" && normalizeUserType(current.UserType) == "admin",
-			),
+			BusinessRole:       nextMembershipState.BusinessRole,
 			StoreID:            stringFromPtr(current.StoreID),
 			RegistrationNumber: current.RegistrationNumber,
 		})
@@ -2139,13 +2454,19 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		_, err = s.pool.Exec(
 			ctx,
 			`UPDATE tenant_users
-			 SET business_role = $3,
-			     store_id = NULLIF($4, '')::uuid,
+			 SET is_owner = $3,
+			     access_level = $4,
+			     user_type = $5,
+			     business_role = $6,
+			     store_id = NULLIF($7, '')::uuid,
 			     updated_at = now()
 			 WHERE tenant_id = $1
 			   AND user_id = $2`,
 			scopeTenantID,
 			current.CoreUserID,
+			nextMembershipState.IsOwner,
+			nextMembershipState.AccessLevel,
+			nextMembershipState.UserType,
 			nextState.BusinessRole,
 			nextState.StoreID,
 		)
@@ -2332,7 +2653,7 @@ func (s *Service) UpdateAdminUserField(ctx context.Context, input UpdateAdminUse
 		return AdminUser{}, "", fmt.Errorf("update admin user field: %w", err)
 	}
 
-	updated, _, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
+	updated, _, err := s.getAdminUserByCoreUserID(ctx, input.TargetCoreUserID, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
@@ -2421,7 +2742,7 @@ func (s *Service) UpdateOwnProfileField(ctx context.Context, input UpdateOwnProf
 }
 
 func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserInput) (AdminUser, string, error) {
-	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
+	current, scopeTenantID, err := s.getAdminUserByCoreUserID(ctx, input.TargetCoreUserID, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
@@ -2471,7 +2792,7 @@ func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserIn
 		return AdminUser{}, "", fmt.Errorf("commit approve user tx: %w", err)
 	}
 
-	updated, _, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
+	updated, _, err := s.getAdminUserByCoreUserID(ctx, input.TargetCoreUserID, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
@@ -2480,7 +2801,7 @@ func (s *Service) ApproveAdminUser(ctx context.Context, input ApproveAdminUserIn
 }
 
 func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInput) (AdminUser, string, error) {
-	current, scopeTenantID, err := s.getAdminUserByLegacyID(ctx, input.UserIDLegacy, input.TenantID, !input.IsPlatformAdmin)
+	current, scopeTenantID, err := s.getAdminUserByCoreUserID(ctx, input.TargetCoreUserID, input.TenantID, !input.IsPlatformAdmin)
 	if err != nil {
 		return AdminUser{}, "", err
 	}
@@ -2525,7 +2846,7 @@ func (s *Service) DeleteAdminUser(ctx context.Context, input DeleteAdminUserInpu
 	return current, scopeTenantID, nil
 }
 
-func (s *Service) getAdminClientByLegacyID(ctx context.Context, clientID int) (AdminClient, string, error) {
+func (s *Service) getAdminClientByCoreTenantID(ctx context.Context, coreTenantID string) (AdminClient, string, error) {
 	rows, err := s.pool.Query(
 		ctx,
 		`
@@ -2543,7 +2864,9 @@ SELECT
 		WHEN COALESCE(NULLIF(t.billing_mode, ''), 'single') = 'per_store' THEN COALESCE((
 			SELECT SUM(sc.amount)::float8
 			FROM tenant_store_charges sc
+			JOIN tenant_stores ts ON ts.id = sc.store_id
 			WHERE sc.tenant_id = t.id
+			  AND ts.is_active = true
 		), 0)
 		ELSE COALESCE(t.monthly_payment_amount, 0)::float8
 	END,
@@ -2559,14 +2882,16 @@ SELECT
 	COALESCE((
 		SELECT json_agg(
 			json_build_object(
-				'id', sc.id::text,
-				'name', sc.store_name,
-				'amount', sc.amount::float8
+				'id', ts.id::text,
+				'name', ts.name,
+				'amount', COALESCE(sc.amount, 0)::float8
 			)
-			ORDER BY sc.sort_order ASC, sc.created_at ASC
+			ORDER BY ts.sort_order ASC, ts.created_at ASC
 		)
-		FROM tenant_store_charges sc
-		WHERE sc.tenant_id = t.id
+		FROM tenant_stores ts
+		LEFT JOIN tenant_store_charges sc ON sc.store_id = ts.id
+		WHERE ts.tenant_id = t.id
+		  AND ts.is_active = true
 	), '[]'::json),
 	COALESCE((
 		WITH module_scope AS (
@@ -2619,11 +2944,11 @@ SELECT
 		WHERE md.status = 'active'
 	), '[]'::json)
 FROM tenants t
-WHERE t.legacy_id = $1
+WHERE t.id = $1::uuid
   AND t.deleted_at IS NULL
 LIMIT 1
 `,
-		clientID,
+		strings.TrimSpace(coreTenantID),
 	)
 	if err != nil {
 		return AdminClient{}, "", fmt.Errorf("get admin client by id: %w", err)
@@ -2680,14 +3005,14 @@ LIMIT 1
 	return item, item.CoreTenantID, nil
 }
 
-func (s *Service) getAdminUserByLegacyID(ctx context.Context, legacyUserID int, tenantID string, enforceTenant bool) (AdminUser, string, error) {
+func (s *Service) getAdminUserByCoreUserID(ctx context.Context, coreUserID, tenantID string, enforceTenant bool) (AdminUser, string, error) {
 	args := make([]any, 0, 4)
 	arg := func(value any) string {
 		args = append(args, value)
 		return fmt.Sprintf("$%d", len(args))
 	}
 
-	userPlaceholder := arg(legacyUserID)
+	userPlaceholder := arg(strings.TrimSpace(coreUserID))
 	joinClause := fmt.Sprintf(`
 LEFT JOIN LATERAL (
 	SELECT
@@ -2710,16 +3035,16 @@ LEFT JOIN LATERAL (
 			WHEN 'invited' THEN 1
 			ELSE 2
 		END,
-		tu.is_owner DESC,
+		%s,
 		tu.created_at DESC
 	LIMIT 1
 ) scope ON true
 LEFT JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
+LEFT JOIN tenant_stores store ON store.id = scope.store_id
 %s
-`, adminUserModuleScopeJoinClause())
+`, effectiveAdminMembershipOrderSQL("tu"), adminUserModuleScopeJoinClause())
 	conditions := []string{
-		fmt.Sprintf("u.legacy_id = %s", userPlaceholder),
+		fmt.Sprintf("u.id = %s::uuid", userPlaceholder),
 		"u.deleted_at IS NULL",
 	}
 
@@ -2730,18 +3055,16 @@ JOIN tenant_users scope ON scope.user_id = u.id
 	AND scope.tenant_id = %s
 	AND scope.status IN ('active', 'invited', 'suspended')
 JOIN tenants t ON t.id = scope.tenant_id AND t.deleted_at IS NULL
-LEFT JOIN tenant_store_charges store ON store.id = scope.store_id
+LEFT JOIN tenant_stores store ON store.id = scope.store_id
 %s
 `, tenantPlaceholder, adminUserModuleScopeJoinClause())
 	}
 
 	query := fmt.Sprintf(`
 SELECT
-	u.legacy_id,
-	u.id,
+	u.id::text,
 	u.is_platform_admin,
 	scope.tenant_id,
-	t.legacy_id,
 	COALESCE(t.name, ''),
 	u.name,
 	COALESCE(u.nick, ''),
@@ -2751,19 +3074,11 @@ SELECT
 	COALESCE(u.avatar_url, ''),
 	u.last_login_at,
 	u.created_at,
-	CASE
-		WHEN NULLIF(scope.access_level, '') IS NOT NULL THEN scope.access_level
-		WHEN u.is_platform_admin THEN 'admin'
-		ELSE 'marketing'
-	END,
-	CASE
-		WHEN NULLIF(scope.user_type, '') IS NOT NULL THEN scope.user_type
-		WHEN u.is_platform_admin THEN 'admin'
-		ELSE 'client'
-	END,
-	COALESCE(scope.business_role, ''),
+	%s,
+	%s,
+	%s,
 	scope.store_id::text,
-	COALESCE(store.store_name, ''),
+	COALESCE(store.name, ''),
 	COALESCE(scope.registration_number, ''),
 	COALESCE(u.preferences::text, '{}'),
 	COALESCE(module_scope.module_codes, '[]'::json),
@@ -2772,12 +3087,17 @@ FROM users u
 %s
 WHERE %s
 LIMIT 1
-`, joinClause, strings.Join(conditions, " AND "))
+`,
+		effectiveTenantUserAccessLevelSQL("scope", "u"),
+		effectiveTenantUserTypeSQL("scope", "u"),
+		effectiveTenantUserBusinessRoleSQL("scope", "u"),
+		joinClause,
+		strings.Join(conditions, " AND "),
+	)
 
 	var (
 		item            AdminUser
 		scopeTenantID   *string
-		scopeClientID   *int
 		storeID         *string
 		lastLoginAt     *time.Time
 		createdAt       time.Time
@@ -2785,11 +3105,9 @@ LIMIT 1
 	)
 
 	err := s.pool.QueryRow(ctx, query, args...).Scan(
-		&item.ID,
 		&item.CoreUserID,
 		&item.IsPlatformAdmin,
 		&scopeTenantID,
-		&scopeClientID,
 		&item.ClientName,
 		&item.Name,
 		&item.Nick,
@@ -2816,12 +3134,13 @@ LIMIT 1
 		return AdminUser{}, "", fmt.Errorf("get admin user by id: %w", err)
 	}
 
-	item.ClientID = scopeClientID
+	item.ID = item.CoreUserID
+	item.CoreTenantID = scopeTenantID
 	item.StoreID = storeID
 	item.Status = normalizeUserRecordStatus(item.Status)
-	item.Level = normalizeAccessLevel(item.Level)
 	item.UserType = normalizeUserType(item.UserType)
 	item.BusinessRole = resolveAdminUserBusinessRole(item.BusinessRole, item.Level, item.UserType, item.IsPlatformAdmin, false)
+	item.Level = resolveAccessLevelForBusinessRole(item.BusinessRole, item.Level, item.IsPlatformAdmin)
 	item.RegistrationNumber = normalizeRegistrationNumber(item.RegistrationNumber)
 	if err := json.Unmarshal(moduleCodesJSON, &item.ModuleCodes); err != nil {
 		item.ModuleCodes = []string{}
@@ -2868,7 +3187,7 @@ func (s *Service) findTenantUserIDByUserID(ctx context.Context, tenantID, userID
 	return tenantUserID, nil
 }
 
-func (s *Service) resolveTargetTenantForUserMutation(ctx context.Context, claimsTenantID string, isPlatformAdmin bool, clientID *int) (string, error) {
+func (s *Service) resolveTargetTenantForUserMutation(ctx context.Context, claimsTenantID string, isPlatformAdmin bool, coreTenantID *string) (string, error) {
 	if !isPlatformAdmin {
 		tenantID := strings.TrimSpace(claimsTenantID)
 		if tenantID == "" {
@@ -2877,22 +3196,22 @@ func (s *Service) resolveTargetTenantForUserMutation(ctx context.Context, claims
 		return tenantID, nil
 	}
 
-	if clientID != nil && *clientID > 0 {
+	if coreTenantID != nil && strings.TrimSpace(*coreTenantID) != "" {
 		var tenantID string
 		err := s.pool.QueryRow(
 			ctx,
 			`SELECT id
 			 FROM tenants
-			 WHERE legacy_id = $1
+			 WHERE id = $1::uuid
 			   AND deleted_at IS NULL
 			 LIMIT 1`,
-			*clientID,
+			strings.TrimSpace(*coreTenantID),
 		).Scan(&tenantID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return "", ErrNotFound
 			}
-			return "", fmt.Errorf("resolve target tenant by client id: %w", err)
+			return "", fmt.Errorf("resolve target tenant by core tenant id: %w", err)
 		}
 		return tenantID, nil
 	}
@@ -2904,18 +3223,18 @@ func (s *Service) resolveTargetTenantForUserMutation(ctx context.Context, claims
 	return tenantID, nil
 }
 
-func hasAssignedAdminClient(clientID *int) bool {
-	return clientID != nil && *clientID > 0
+func hasAssignedAdminTenant(coreTenantID *string) bool {
+	return coreTenantID != nil && strings.TrimSpace(*coreTenantID) != ""
 }
 
-func shouldCreateAdminUserTenantMembership(actorIsPlatformAdmin, targetIsPlatformAdmin bool, clientID *int) bool {
+func shouldCreateAdminUserTenantMembership(actorIsPlatformAdmin, targetIsPlatformAdmin bool, coreTenantID *string) bool {
 	if targetIsPlatformAdmin {
 		return true
 	}
 	if !actorIsPlatformAdmin {
 		return true
 	}
-	return hasAssignedAdminClient(clientID)
+	return hasAssignedAdminTenant(coreTenantID)
 }
 
 func resolveCreatedAdminUserStatus(shouldCreateTenantMembership bool) string {
@@ -2932,7 +3251,7 @@ func canActivateManagedAdminUser(current AdminUser, scopeTenantID string) bool {
 	if strings.TrimSpace(scopeTenantID) == "" {
 		return false
 	}
-	return hasAssignedAdminClient(current.ClientID)
+	return hasAssignedAdminTenant(current.CoreTenantID)
 }
 
 func (s *Service) generateUniqueTenantSlug(ctx context.Context, name string) (string, error) {
@@ -3119,6 +3438,54 @@ func normalizeStoreInputs(stores []AdminClientStoreInput) []AdminClientStoreInpu
 		}
 	}
 	return output
+}
+
+func normalizeAdminStoreCode(value string) string {
+	trimmed := strings.ToUpper(strings.TrimSpace(value))
+	if trimmed == "" {
+		return ""
+	}
+
+	var builder strings.Builder
+	lastDash := false
+	for _, char := range trimmed {
+		isLetter := char >= 'A' && char <= 'Z'
+		isNumber := char >= '0' && char <= '9'
+		if isLetter || isNumber {
+			builder.WriteRune(char)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	return trimText(strings.Trim(builder.String(), "-"), 40)
+}
+
+func buildAdminStoreCode(name string, used map[string]bool) string {
+	base := normalizeAdminStoreCode(name)
+	if base == "" {
+		base = "STORE"
+	}
+
+	if !used[base] {
+		return base
+	}
+
+	for suffix := 2; suffix <= 999; suffix++ {
+		candidate := trimText(fmt.Sprintf("%s-%d", base, suffix), 40)
+		if candidate == "" {
+			continue
+		}
+		if !used[candidate] {
+			return candidate
+		}
+	}
+
+	return trimText(fmt.Sprintf("%s-%d", base, time.Now().UTC().Unix()%1000), 40)
 }
 
 func normalizeModuleCodesInput(value any) []string {

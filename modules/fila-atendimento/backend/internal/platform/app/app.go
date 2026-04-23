@@ -10,6 +10,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/observability"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
@@ -21,17 +22,13 @@ import (
 )
 
 func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
-	hasher := auth.NewBcryptHasher(cfg.BcryptCost)
-	userStore := auth.NewPostgresUserStore(pool)
+	userStore := auth.NewCoreUserStore(pool)
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
 	shellBridgeClaims := auth.NewShellBridgeTokenManager(cfg.AuthShellBridgeSecret)
-	shellBridgeProvisioner := auth.NewShellBridgeProvisioner(pool, cfg.AuthShellBridgeTenantSlug)
+	shellBridgeProvisioner := auth.NewCoreShellBridgeProvisioner(pool)
 	shellBridgeExchange := auth.NewShellBridgeExchangeService(shellBridgeClaims, shellBridgeProvisioner, tokenManager)
-	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
 	consultantRepository := consultants.NewPostgresRepository(pool)
-	consultantProfileSync := consultants.NewProfileSync(consultantRepository)
-	authService := auth.NewService(userStore, hasher, tokenManager, avatarStorage, nil, consultantProfileSync)
-	invitationService := auth.NewInvitationService(userStore, hasher, tokenManager, cfg.WebAppURL, cfg.AuthInviteTTL)
+	authService := auth.NewService(userStore, nil, tokenManager, nil, nil, nil)
 	authMiddleware := auth.NewMiddleware(authService)
 	tenantRepository := tenants.NewPostgresRepository(pool)
 	tenantService := tenants.NewService(tenantRepository)
@@ -42,13 +39,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	storeRepository := stores.NewPostgresRepository(pool)
 	storeService := stores.NewService(storeRepository, realtimeService)
 	realtimeResolver.SetStoreFinder(storeService)
-	consultantIdentityProvisioner := consultants.NewAuthIdentityProvisioner(pool, hasher, cfg.ConsultantDefaultPassword)
 	consultantService := consultants.NewService(
 		consultantRepository,
 		stores.NewCatalogProvider(storeService),
-		consultantIdentityProvisioner,
-		cfg.ConsultantEmailDomain,
-		cfg.ConsultantDefaultPassword,
 	)
 	settingsRepository := settings.NewPostgresRepository(pool)
 	settingsService := settings.NewService(settingsRepository)
@@ -58,6 +51,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reportsService := reports.NewService(reportsRepository, stores.NewCatalogProvider(storeService))
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, stores.NewCatalogProvider(storeService))
+	observabilityRepository := observability.NewPostgresRepository(pool)
+	observabilityService := observability.NewService(observabilityRepository)
 
 	mux := http.NewServeMux()
 	if strings.TrimSpace(cfg.UploadsDir) != "" {
@@ -78,12 +73,13 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"realtime",
 				"reports",
 				"analytics",
+				"observability",
 			},
 			"tenantMode": "owner-is-client",
 		})
 	})
 
-	auth.RegisterRoutes(mux, authService, invitationService, authMiddleware, shellBridgeExchange)
+	auth.RegisterRoutes(mux, authService, authMiddleware, shellBridgeExchange)
 	registerContextRoutes(mux, authService, authMiddleware, tenantService, storeService)
 	tenants.RegisterRoutes(mux, tenantService, authMiddleware)
 	stores.RegisterRoutes(mux, storeService, authMiddleware)
@@ -107,6 +103,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	analytics.RegisterRoutesWithOptions(mux, analyticsService, analytics.HTTPRouteOptions{
 		RequireAuth:    analytics.AuthRouteGuard(authMiddleware),
 		AccessResolver: analytics.NewAuthAccessContextResolver(),
+	})
+	observability.RegisterRoutesWithOptions(mux, observabilityService, observability.HTTPRouteOptions{
+		RequireAuth:    observability.AuthRouteGuard(authMiddleware),
+		AccessResolver: observability.NewAuthAccessContextResolver(),
 	})
 
 	return httpapi.Chain(

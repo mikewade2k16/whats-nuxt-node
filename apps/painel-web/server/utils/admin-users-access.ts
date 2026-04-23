@@ -4,18 +4,14 @@ import { buildCoreQuery, coreAdminFetch } from '~~/server/utils/core-admin-fetch
 
 interface CoreAdminUsersScopeResponse {
   items?: Array<{
-    id?: number
-    clientId?: number | null
+    coreUserId?: string
+    coreTenantId?: string | null
     isPlatformAdmin?: boolean
   }>
 }
 
-function normalizeLegacyUserId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 0
-  }
-  return parsed
+function normalizeCoreUserId(value: unknown) {
+  return String(value ?? '').trim()
 }
 
 export function assertCanManageUsers(access: AccessContext) {
@@ -24,15 +20,15 @@ export function assertCanManageUsers(access: AccessContext) {
   }
 }
 
-export function resolveManagedUsersClientId(access: AccessContext, requestedClientId?: string) {
+export function resolveManagedUsersCoreTenantId(access: AccessContext, requestedCoreTenantId?: string) {
   if (!access.canCrossClientAccess) {
-    if (access.clientId <= 0) {
+    if (!String(access.tenantId || '').trim()) {
       throw createError({ statusCode: 403, statusMessage: 'Sessao sem cliente valido para listar usuarios.' })
     }
-    return String(access.clientId)
+    return String(access.tenantId)
   }
 
-  const normalized = String(requestedClientId ?? '').trim()
+  const normalized = String(requestedCoreTenantId ?? '').trim()
   return normalized
 }
 
@@ -44,7 +40,7 @@ export function normalizeCreateUserPayloadForScope(
     const isPlatformAdmin = Boolean(payload.isPlatformAdmin)
     return {
       ...payload,
-      clientId: isPlatformAdmin ? null : payload.clientId ?? null,
+      coreTenantId: isPlatformAdmin ? null : payload.coreTenantId ?? null,
       level: isPlatformAdmin ? 'admin' : payload.level,
       userType: isPlatformAdmin ? 'admin' : payload.userType,
       isPlatformAdmin
@@ -53,8 +49,7 @@ export function normalizeCreateUserPayloadForScope(
 
   return {
     ...payload,
-    clientId: access.clientId > 0 ? access.clientId : null,
-    userType: 'client',
+    coreTenantId: String(access.tenantId || '').trim() || null,
     isPlatformAdmin: false
   }
 }
@@ -62,7 +57,7 @@ export function normalizeCreateUserPayloadForScope(
 export function assertUserFieldAllowedForScope(access: AccessContext, field: string) {
   if (access.canCrossClientAccess) return
 
-  if (field === 'clientId') {
+  if (field === 'coreTenantId') {
     throw createError({
       statusCode: 403,
       statusMessage: 'Admin de cliente nao pode mover usuario entre clientes.'
@@ -70,12 +65,12 @@ export function assertUserFieldAllowedForScope(access: AccessContext, field: str
   }
 }
 
-export async function assertUserWithinManagedScope(event: H3Event, access: AccessContext, legacyUserId: number) {
+export async function assertUserWithinManagedScope(event: H3Event, access: AccessContext, coreUserId: string) {
   if (access.canCrossClientAccess) {
     return
   }
 
-  if (access.clientId <= 0) {
+  if (!String(access.tenantId || '').trim()) {
     throw createError({ statusCode: 403, statusMessage: 'Sessao sem cliente valido para gerenciar usuarios.' })
   }
 
@@ -84,12 +79,12 @@ export async function assertUserWithinManagedScope(event: H3Event, access: Acces
     `/core/admin/users${buildCoreQuery({
       page: 1,
       limit: 200,
-      clientId: access.clientId
+      coreTenantId: String(access.tenantId || '').trim()
     })}`
   )
 
-  const targetId = normalizeLegacyUserId(legacyUserId)
-  const matched = (response.items || []).find(item => normalizeLegacyUserId(item.id) === targetId)
+	const targetId = normalizeCoreUserId(coreUserId)
+	const matched = (response.items || []).find(item => normalizeCoreUserId(item.coreUserId) === targetId)
 
   if (!matched || Boolean(matched.isPlatformAdmin)) {
     throw createError({ statusCode: 403, statusMessage: 'Usuario fora do escopo deste cliente.' })

@@ -21,6 +21,7 @@ import { requireConversationWrite } from "../../lib/guards.js";
 import { outboundQueue, outboundRetryJobOptions } from "../../queue.js";
 import { recordAuditEvent } from "../../services/audit-log.js";
 import type { EvolutionClient } from "../../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import { validateOutboundUpload } from "../../services/upload-policy.js";
 import { asRecord } from "./object-utils.js";
 import {
@@ -179,27 +180,18 @@ export function registerConversationMessageMediaRoute(protectedApp: FastifyInsta
         }
 
         if (resolvedEvolutionClient === undefined) {
-          const tenant = await prisma.tenant.findUnique({
-            where: {
-              id: request.authUser.tenantId
-            },
-            select: {
-              id: true,
-              whatsappInstance: true,
-              evolutionApiKey: true
-            }
+          const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+            accessToken: request.coreAccessToken
           });
 
-          resolvedEvolutionClient = tenant ? createEvolutionClientForTenant(tenant.evolutionApiKey) : null;
-          const routedInstance = tenant
-            ? await resolveConversationInstanceRouting({
-                tenantId: tenant.id,
-                conversation: {
-                  instanceId: message.instanceId,
-                  instanceScopeKey: message.instanceScopeKey
-                }
-              })
-            : null;
+          resolvedEvolutionClient = createEvolutionClientForTenant(tenant.evolutionApiKey);
+          const routedInstance = await resolveConversationInstanceRouting({
+            tenantId: tenant.id,
+            conversation: {
+              instanceId: message.instanceId,
+              instanceScopeKey: message.instanceScopeKey
+            }
+          });
           resolvedInstanceName =
             routedInstance?.instanceName ||
             tenant?.whatsappInstance?.trim() ||

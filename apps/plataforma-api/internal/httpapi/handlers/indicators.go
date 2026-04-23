@@ -31,14 +31,17 @@ func (h *IndicatorsHandler) GetDashboard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	item, err := h.service.GetDashboard(r.Context(), indicatorsdomain.GetDashboardInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		StartDate:       strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:         strings.TrimSpace(r.URL.Query().Get("endDate")),
-		UnitExternalID:  strings.TrimSpace(r.URL.Query().Get("unitExternalId")),
+		StoreID:         strings.TrimSpace(r.URL.Query().Get("storeId")),
 	})
 	if err != nil {
 		h.writeIndicatorsError(w, err, "failed to get indicators dashboard")
@@ -55,14 +58,17 @@ func (h *IndicatorsHandler) GetDashboardStores(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	item, err := h.service.GetDashboard(r.Context(), indicatorsdomain.GetDashboardInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		StartDate:       strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:         strings.TrimSpace(r.URL.Query().Get("endDate")),
-		UnitExternalID:  strings.TrimSpace(r.URL.Query().Get("unitExternalId")),
+		StoreID:         strings.TrimSpace(r.URL.Query().Get("storeId")),
 	})
 	if err != nil {
 		h.writeIndicatorsError(w, err, "failed to get indicators stores dashboard")
@@ -198,6 +204,7 @@ func (h *IndicatorsHandler) CreateTemplate(w http.ResponseWriter, r *http.Reques
 	}
 	req.UserID = claims.Subject
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
 
 	item, err := h.service.CreateTemplate(r.Context(), req)
 	if err != nil {
@@ -205,8 +212,8 @@ func (h *IndicatorsHandler) CreateTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, parseIntQueryParam(r, "clientId")); ok {
-		h.broadcastIndicatorsEvent(tenantID, "created", clientID, map[string]any{
+	if tenantID, resolvedClientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, coreTenantID, clientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "created", resolvedClientID, coreTenantID, map[string]any{
 			"scope":      "template",
 			"templateId": item.RecordID,
 		})
@@ -236,6 +243,7 @@ func (h *IndicatorsHandler) UpdateTemplate(w http.ResponseWriter, r *http.Reques
 	req.UserID = claims.Subject
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
 	req.TemplateID = templateID
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
 
 	item, err := h.service.UpdateTemplate(r.Context(), req)
 	if err != nil {
@@ -243,8 +251,8 @@ func (h *IndicatorsHandler) UpdateTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, parseIntQueryParam(r, "clientId")); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, resolvedClientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, coreTenantID, clientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", resolvedClientID, coreTenantID, map[string]any{
 			"scope":      "template",
 			"templateId": item.RecordID,
 		})
@@ -260,11 +268,14 @@ func (h *IndicatorsHandler) GetActiveProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	item, err := h.service.GetActiveProfile(r.Context(), indicatorsdomain.GetActiveProfileInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeIndicatorsError(w, err, "failed to get active indicators profile")
@@ -289,7 +300,7 @@ func (h *IndicatorsHandler) ReplaceActiveProfile(w http.ResponseWriter, r *http.
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 
 	item, err := h.service.ReplaceActiveProfile(r.Context(), req)
 	if err != nil {
@@ -297,8 +308,8 @@ func (h *IndicatorsHandler) ReplaceActiveProfile(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, req.CoreTenantID, map[string]any{
 			"scope":     "profile",
 			"profileId": item.Profile.RecordID,
 		})
@@ -320,11 +331,14 @@ func (h *IndicatorsHandler) GetActiveProfileStore(w http.ResponseWriter, r *http
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	item, err := h.service.GetStoreOverride(r.Context(), indicatorsdomain.GetStoreOverrideInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		StoreID:         storeID,
 	})
 	if err != nil {
@@ -356,7 +370,7 @@ func (h *IndicatorsHandler) ReplaceActiveProfileStore(w http.ResponseWriter, r *
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 	req.StoreID = storeID
 
 	item, err := h.service.ReplaceStoreOverride(r.Context(), req)
@@ -365,8 +379,8 @@ func (h *IndicatorsHandler) ReplaceActiveProfileStore(w http.ResponseWriter, r *
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, req.CoreTenantID, map[string]any{
 			"scope":   "store",
 			"storeId": item.ID,
 		})
@@ -383,12 +397,14 @@ func (h *IndicatorsHandler) ListEvaluations(w http.ResponseWriter, r *http.Reque
 	}
 
 	page, limit := parsePageAndLimit(r)
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
 	items, total, err := h.service.ListEvaluations(r.Context(), indicatorsdomain.ListEvaluationsInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
-		UnitExternalID:  strings.TrimSpace(r.URL.Query().Get("unitExternalId")),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
+		StoreID:         strings.TrimSpace(r.URL.Query().Get("storeId")),
 		Status:          strings.TrimSpace(r.URL.Query().Get("status")),
 		StartDate:       strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:         strings.TrimSpace(r.URL.Query().Get("endDate")),
@@ -419,11 +435,14 @@ func (h *IndicatorsHandler) GetEvaluation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	item, err := h.service.GetEvaluation(r.Context(), indicatorsdomain.GetEvaluationInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		EvaluationID:    evaluationID,
 	})
 	if err != nil {
@@ -449,7 +468,7 @@ func (h *IndicatorsHandler) CreateEvaluation(w http.ResponseWriter, r *http.Requ
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 
 	item, err := h.service.CreateEvaluation(r.Context(), req)
 	if err != nil {
@@ -457,8 +476,8 @@ func (h *IndicatorsHandler) CreateEvaluation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "created", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "created", clientID, req.CoreTenantID, map[string]any{
 			"scope":        "evaluation",
 			"evaluationId": item.ID,
 		})
@@ -480,7 +499,7 @@ func (h *IndicatorsHandler) DeleteEvaluation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	clientID := parseIntQueryParam(r, "clientId")
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
 	tenantID, _ := h.service.ResolveEvaluationRealtimeTenant(r.Context(), evaluationID)
 
 	if err := h.service.DeleteEvaluation(r.Context(), indicatorsdomain.DeleteEvaluationInput{
@@ -488,6 +507,7 @@ func (h *IndicatorsHandler) DeleteEvaluation(w http.ResponseWriter, r *http.Requ
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
 		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 		EvaluationID:    evaluationID,
 	}); err != nil {
 		h.writeIndicatorsError(w, err, "failed to delete indicators evaluation")
@@ -495,7 +515,7 @@ func (h *IndicatorsHandler) DeleteEvaluation(w http.ResponseWriter, r *http.Requ
 	}
 
 	if strings.TrimSpace(tenantID) != "" {
-		h.broadcastIndicatorsEvent(tenantID, "deleted", clientID, map[string]any{
+		h.broadcastIndicatorsEvent(tenantID, "deleted", clientID, coreTenantID, map[string]any{
 			"scope":        "evaluation",
 			"evaluationId": evaluationID,
 		})
@@ -511,11 +531,14 @@ func (h *IndicatorsHandler) GetTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientID, coreTenantID := parseIndicatorsTenantScope(r)
+
 	items, err := h.service.GetTargets(r.Context(), indicatorsdomain.GetActiveProfileInput{
 		UserID:          claims.Subject,
 		TenantID:        claims.TenantID,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
-		ClientID:        parseIntQueryParam(r, "clientId"),
+		ClientID:        clientID,
+		CoreTenantID:    coreTenantID,
 	})
 	if err != nil {
 		h.writeIndicatorsError(w, err, "failed to get indicators targets")
@@ -540,7 +563,7 @@ func (h *IndicatorsHandler) ReplaceTargets(w http.ResponseWriter, r *http.Reques
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 
 	items, err := h.service.ReplaceTargets(r.Context(), req)
 	if err != nil {
@@ -548,8 +571,8 @@ func (h *IndicatorsHandler) ReplaceTargets(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, req.CoreTenantID, map[string]any{
 			"scope": "targets",
 		})
 	}
@@ -572,7 +595,7 @@ func (h *IndicatorsHandler) IngestProviderSnapshots(w http.ResponseWriter, r *ht
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 
 	items, err := h.service.IngestProviderSnapshots(r.Context(), req)
 	if err != nil {
@@ -580,8 +603,8 @@ func (h *IndicatorsHandler) IngestProviderSnapshots(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, req.CoreTenantID, map[string]any{
 			"scope":        "providers",
 			"providerName": req.ProviderName,
 		})
@@ -605,7 +628,7 @@ func (h *IndicatorsHandler) CreateAssetUploadIntent(w http.ResponseWriter, r *ht
 	req.UserID = claims.Subject
 	req.TenantID = claims.TenantID
 	req.IsPlatformAdmin = claims.IsPlatformAdmin
-	req.ClientID = parseIntQueryParam(r, "clientId")
+	req.ClientID, req.CoreTenantID = parseIndicatorsTenantScope(r)
 
 	item, err := h.service.CreateAssetUploadIntent(r.Context(), req)
 	if err != nil {
@@ -613,8 +636,8 @@ func (h *IndicatorsHandler) CreateAssetUploadIntent(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.ClientID); ok {
-		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, map[string]any{
+	if tenantID, clientID, ok := h.resolveIndicatorsBroadcastTenant(r.Context(), claims.TenantID, claims.IsPlatformAdmin, req.CoreTenantID, req.ClientID); ok {
+		h.broadcastIndicatorsEvent(tenantID, "updated", clientID, req.CoreTenantID, map[string]any{
 			"scope":   "assets",
 			"assetId": item.AssetID,
 		})
@@ -623,21 +646,26 @@ func (h *IndicatorsHandler) CreateAssetUploadIntent(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusCreated, map[string]any{"item": item})
 }
 
-func (h *IndicatorsHandler) broadcastIndicatorsEvent(tenantID, action string, clientID int, payload map[string]any) {
+func parseIndicatorsTenantScope(r *http.Request) (int, string) {
+	return parseIntQueryParam(r, "clientId"), parseStringQueryParam(r, "coreTenantId")
+}
+
+func (h *IndicatorsHandler) broadcastIndicatorsEvent(tenantID, action string, clientID int, coreTenantID string, payload map[string]any) {
 	if h.hub == nil || strings.TrimSpace(tenantID) == "" {
 		return
 	}
 	h.hub.BroadcastTenant(tenantID, map[string]any{
-		"entity":    "indicators",
-		"action":    action,
-		"clientId":  clientID,
-		"payload":   payload,
-		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		"entity":       "indicators",
+		"action":       action,
+		"clientId":     clientID,
+		"coreTenantId": strings.TrimSpace(coreTenantID),
+		"payload":      payload,
+		"timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }
 
-func (h *IndicatorsHandler) resolveIndicatorsBroadcastTenant(ctx context.Context, tenantID string, isPlatformAdmin bool, clientID int) (string, int, bool) {
-	tenantID, err := h.service.ResolveRealtimeTenant(ctx, tenantID, isPlatformAdmin, clientID)
+func (h *IndicatorsHandler) resolveIndicatorsBroadcastTenant(ctx context.Context, tenantID string, isPlatformAdmin bool, coreTenantID string, clientID int) (string, int, bool) {
+	tenantID, err := h.service.ResolveRealtimeTenant(ctx, tenantID, isPlatformAdmin, coreTenantID, clientID)
 	if err != nil {
 		return "", 0, false
 	}

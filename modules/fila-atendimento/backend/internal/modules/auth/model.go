@@ -25,15 +25,6 @@ type User struct {
 	CreatedAt          time.Time
 }
 
-type InvitationStatus string
-
-const (
-	InvitationStatusPending  InvitationStatus = "pending"
-	InvitationStatusAccepted InvitationStatus = "accepted"
-	InvitationStatusRevoked  InvitationStatus = "revoked"
-	InvitationStatusExpired  InvitationStatus = "expired"
-)
-
 type UserView struct {
 	ID                 string   `json:"id"`
 	DisplayName        string   `json:"displayName"`
@@ -72,61 +63,12 @@ type LoginResult struct {
 	Session SessionView `json:"session"`
 }
 
-type Invitation struct {
-	ID              string
-	UserID          string
-	Email           string
-	InvitedByUserID string
-	Status          InvitationStatus
-	ExpiresAt       time.Time
-	AcceptedAt      *time.Time
-	RevokedAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-type InvitationView struct {
-	ID          string           `json:"id"`
-	Email       string           `json:"email"`
-	DisplayName string           `json:"displayName"`
-	Role        Role             `json:"role"`
-	TenantID    string           `json:"tenantId,omitempty"`
-	StoreIDs    []string         `json:"storeIds,omitempty"`
-	Status      InvitationStatus `json:"status"`
-	ExpiresAt   time.Time        `json:"expiresAt"`
-}
-
-type InvitationIssueResult struct {
-	Invitation InvitationView `json:"invitation"`
-	InviteURL  string         `json:"inviteUrl"`
-}
-
-type InvitationInspectResult struct {
-	Invitation InvitationView `json:"invitation"`
-}
-
-type InvitationAcceptInput struct {
-	Token    string
-	Password string
-}
-
-type InvitationIssueInput struct {
-	User            User
-	InvitedByUserID string
-}
-
 type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, userID string, displayName string, email string) (User, error)
 	UpdatePassword(ctx context.Context, userID string, passwordHash string, mustChangePassword bool) (User, error)
 	UpdateAvatarPath(ctx context.Context, userID string, avatarPath string) (User, error)
-}
-
-type InvitationRepository interface {
-	ReplacePendingInvitation(ctx context.Context, user User, invitedByUserID string, tokenHash string, expiresAt time.Time) (Invitation, error)
-	FindInvitationByTokenHash(ctx context.Context, tokenHash string) (Invitation, User, error)
-	AcceptInvitation(ctx context.Context, invitationID string, userID string, passwordHash string, acceptedAt time.Time) (User, error)
 }
 
 type PasswordHasher interface {

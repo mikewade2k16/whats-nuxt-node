@@ -12,6 +12,3 @@ type AccessContext = modulecontracts.AccessContext
 type StoreCatalogFilter = modulecontracts.StoreCatalogFilter
 type StoreCatalogProvider = modulecontracts.StoreCatalogProvider
 type StoreCatalogView = modulecontracts.StoreCatalogView
-type IdentityProvisioner = modulecontracts.IdentityProvisioner
-type ConsultantIdentityInput = modulecontracts.ConsultantIdentityInput
-type ProvisionedIdentity = modulecontracts.ProvisionedIdentity

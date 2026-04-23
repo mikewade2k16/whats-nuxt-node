@@ -7,11 +7,15 @@ import (
 
 type ShellBridgeExchangeService struct {
 	claims      *ShellBridgeTokenManager
-	provisioner *ShellBridgeProvisioner
+	provisioner ShellBridgeUserProvisioner
 	tokens      TokenManager
 }
 
-func NewShellBridgeExchangeService(claims *ShellBridgeTokenManager, provisioner *ShellBridgeProvisioner, tokens TokenManager) *ShellBridgeExchangeService {
+type ShellBridgeUserProvisioner interface {
+	Provision(ctx context.Context, claims ShellBridgeClaims) (User, error)
+}
+
+func NewShellBridgeExchangeService(claims *ShellBridgeTokenManager, provisioner ShellBridgeUserProvisioner, tokens TokenManager) *ShellBridgeExchangeService {
 	if claims == nil || provisioner == nil || tokens == nil {
 		return nil
 	}

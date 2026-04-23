@@ -36,8 +36,8 @@ func (s *Service) ListSheets(ctx context.Context, input ListSheetsInput) ([]Shee
 
 	if !input.IsPlatformAdmin {
 		conditions = append(conditions, fmt.Sprintf("fs.tenant_id = %s", arg(strings.TrimSpace(input.TenantID))))
-	} else if input.ClientID > 0 {
-		conditions = append(conditions, fmt.Sprintf("t.legacy_id = %s", arg(input.ClientID)))
+	} else if strings.TrimSpace(input.CoreTenantID) != "" {
+		conditions = append(conditions, fmt.Sprintf("fs.tenant_id = %s::uuid", arg(strings.TrimSpace(input.CoreTenantID))))
 	}
 
 	if p := normalizePeriod(input.Period); p != "" {
@@ -58,8 +58,8 @@ func (s *Service) ListSheets(ctx context.Context, input ListSheetsInput) ([]Shee
 	var total int
 	countSQL := fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM finance_sheets fs
-		JOIN tenants t ON t.id = fs.tenant_id
+		FROM finance.finance_sheets fs
+		JOIN platform_core.tenants t ON t.id = fs.tenant_id
 		WHERE %s
 	`, whereClause)
 	if err := s.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
@@ -76,7 +76,7 @@ func (s *Service) ListSheets(ctx context.Context, input ListSheetsInput) ([]Shee
 			fs.period,
 			fs.status,
 			fs.notes,
-			t.legacy_id  AS client_id,
+			t.id::text    AS core_tenant_id,
 			t.name        AS client_name,
 			fs.created_at,
 			fs.updated_at,
@@ -84,18 +84,18 @@ func (s *Service) ListSheets(ctx context.Context, input ListSheetsInput) ([]Shee
 			COALESCE(s.effective_in, 0),
 			COALESCE(s.expected_out, 0),
 			COALESCE(s.effective_out, 0)
-		FROM finance_sheets fs
-		JOIN tenants t ON t.id = fs.tenant_id
+		FROM finance.finance_sheets fs
+		JOIN platform_core.tenants t ON t.id = fs.tenant_id
 		LEFT JOIN LATERAL (
 			SELECT
 				SUM(CASE WHEN fl.kind = 'entrada' THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END) AS expected_in,
 				SUM(CASE WHEN fl.kind = 'entrada' AND fl.effective THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END) AS effective_in,
 				SUM(CASE WHEN fl.kind = 'saida' THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END) AS expected_out,
 				SUM(CASE WHEN fl.kind = 'saida' AND fl.effective THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END) AS effective_out
-			FROM finance_lines fl
+			FROM finance.finance_lines fl
 			LEFT JOIN LATERAL (
 				SELECT COALESCE(SUM(fla.amount), 0) AS adj_sum
-				FROM finance_line_adjustments fla
+				FROM finance.finance_line_adjustments fla
 				WHERE fla.line_id = fl.id
 			) adj ON true
 			WHERE fl.sheet_id = fs.id
@@ -116,7 +116,7 @@ func (s *Service) ListSheets(ctx context.Context, input ListSheetsInput) ([]Shee
 		var item SheetListItem
 		if err := rows.Scan(
 			&item.ID, &item.Title, &item.Period, &item.Status, &item.Notes,
-			&item.ClientID, &item.ClientName, &item.CreatedAt, &item.UpdatedAt,
+			&item.CoreTenantID, &item.ClientName, &item.CreatedAt, &item.UpdatedAt,
 			&item.Summary.ExpectedIn, &item.Summary.EffectiveIn,
 			&item.Summary.ExpectedOut, &item.Summary.EffectiveOut,
 		); err != nil {
@@ -148,13 +148,13 @@ func (s *Service) GetSheet(ctx context.Context, input GetSheetInput) (*SheetDeta
 
 	err := s.pool.QueryRow(ctx, `
 		SELECT fs.id::text, fs.title, fs.period, fs.status, fs.notes,
-		       t.legacy_id, t.name, fs.created_at, fs.updated_at
-		FROM finance_sheets fs
-		JOIN tenants t ON t.id = fs.tenant_id
+		       t.id::text, t.name, fs.created_at, fs.updated_at
+		FROM finance.finance_sheets fs
+		JOIN platform_core.tenants t ON t.id = fs.tenant_id
 		WHERE fs.id = $1::uuid
 	`, sheetID).Scan(
 		&detail.ID, &detail.Title, &detail.Period, &detail.Status, &detail.Notes,
-		&detail.ClientID, &detail.ClientName, &detail.CreatedAt, &detail.UpdatedAt,
+		&detail.CoreTenantID, &detail.ClientName, &detail.CreatedAt, &detail.UpdatedAt,
 	)
 	if err != nil {
 		return nil, ErrNotFound
@@ -163,7 +163,7 @@ func (s *Service) GetSheet(ctx context.Context, input GetSheetInput) (*SheetDeta
 	// Access control
 	if !input.IsPlatformAdmin {
 		var ownerTenantUUID string
-		_ = s.pool.QueryRow(ctx, `SELECT tenant_id FROM finance_sheets WHERE id = $1::uuid`, detail.ID).Scan(&ownerTenantUUID)
+		_ = s.pool.QueryRow(ctx, `SELECT tenant_id FROM finance.finance_sheets WHERE id = $1::uuid`, detail.ID).Scan(&ownerTenantUUID)
 		if strings.TrimSpace(input.TenantID) != ownerTenantUUID {
 			return nil, ErrForbidden
 		}
@@ -184,7 +184,7 @@ func (s *Service) GetSheet(ctx context.Context, input GetSheetInput) (*SheetDeta
 }
 
 func (s *Service) CreateSheet(ctx context.Context, input CreateSheetInput) (*SheetDetail, error) {
-	tenantUUID, clientLegacyID, clientName, err := s.resolveFinanceTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, clientName, err := s.resolveFinanceTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (s *Service) CreateSheet(ctx context.Context, input CreateSheetInput) (*She
 	var createdAt, updatedAt time.Time
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO finance_sheets (tenant_id, title, period, status, notes)
+		INSERT INTO finance.finance_sheets (tenant_id, title, period, status, notes)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at, updated_at
 	`,
@@ -237,7 +237,7 @@ func (s *Service) CreateSheet(ctx context.Context, input CreateSheetInput) (*She
 		return nil, err
 	}
 
-	return s.loadSheetDetail(ctx, sheetUUID, clientLegacyID, clientName, createdAt, updatedAt)
+	return s.loadSheetDetail(ctx, sheetUUID, tenantUUID, clientName, createdAt, updatedAt)
 }
 
 func (s *Service) ReplaceSheet(ctx context.Context, input ReplaceSheetInput) (*SheetDetail, error) {
@@ -250,15 +250,14 @@ func (s *Service) ReplaceSheet(ctx context.Context, input ReplaceSheetInput) (*S
 	}
 
 	var ownerTenantUUID string
-	var ownerLegacyID int
 	var ownerName string
 
 	err := s.pool.QueryRow(ctx, `
-		SELECT fs.tenant_id, t.legacy_id, t.name
-		FROM finance_sheets fs
-		JOIN tenants t ON t.id = fs.tenant_id
+		SELECT fs.tenant_id, t.name
+		FROM finance.finance_sheets fs
+		JOIN platform_core.tenants t ON t.id = fs.tenant_id
 		WHERE fs.id = $1::uuid
-	`, sheetUUID).Scan(&ownerTenantUUID, &ownerLegacyID, &ownerName)
+	`, sheetUUID).Scan(&ownerTenantUUID, &ownerName)
 	if err != nil {
 		return nil, ErrNotFound
 	}
@@ -284,7 +283,7 @@ func (s *Service) ReplaceSheet(ctx context.Context, input ReplaceSheetInput) (*S
 
 	var updatedAt time.Time
 	err = tx.QueryRow(ctx, `
-		UPDATE finance_sheets
+		UPDATE finance.finance_sheets
 		SET title = $1,
 		    period = $2,
 		    status = $3,
@@ -303,7 +302,7 @@ func (s *Service) ReplaceSheet(ctx context.Context, input ReplaceSheetInput) (*S
 		return nil, err
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM finance_lines WHERE sheet_id = $1::uuid`, sheetUUID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM finance.finance_lines WHERE sheet_id = $1::uuid`, sheetUUID); err != nil {
 		return nil, err
 	}
 	if err := insertLines(ctx, tx, sheetUUID, input.Entradas, "entrada"); err != nil {
@@ -318,9 +317,9 @@ func (s *Service) ReplaceSheet(ctx context.Context, input ReplaceSheetInput) (*S
 	}
 
 	var createdAt time.Time
-	_ = s.pool.QueryRow(ctx, `SELECT created_at FROM finance_sheets WHERE id = $1::uuid`, sheetUUID).Scan(&createdAt)
+	_ = s.pool.QueryRow(ctx, `SELECT created_at FROM finance.finance_sheets WHERE id = $1::uuid`, sheetUUID).Scan(&createdAt)
 
-	return s.loadSheetDetail(ctx, sheetUUID, ownerLegacyID, ownerName, createdAt, updatedAt)
+	return s.loadSheetDetail(ctx, sheetUUID, ownerTenantUUID, ownerName, createdAt, updatedAt)
 }
 
 func (s *Service) PatchLine(ctx context.Context, input PatchLineInput) (*LineMutationResult, error) {
@@ -340,8 +339,8 @@ func (s *Service) PatchLine(ctx context.Context, input PatchLineInput) (*LineMut
 
 	err := s.pool.QueryRow(ctx, `
 		SELECT fs.tenant_id, fs.period, fl.effective, fl.effective_date
-		FROM finance_sheets fs
-		JOIN finance_lines fl ON fl.sheet_id = fs.id
+		FROM finance.finance_sheets fs
+		JOIN finance.finance_lines fl ON fl.sheet_id = fs.id
 		WHERE fs.id = $1::uuid
 		  AND fl.id = $2::uuid
 	`, sheetUUID, lineUUID).Scan(
@@ -380,7 +379,7 @@ func (s *Service) PatchLine(ctx context.Context, input PatchLineInput) (*LineMut
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	result, err := tx.Exec(ctx, `
-		UPDATE finance_lines
+		UPDATE finance.finance_lines
 		SET effective = $1,
 		    effective_date = $2
 		WHERE id = $3::uuid
@@ -395,7 +394,7 @@ func (s *Service) PatchLine(ctx context.Context, input PatchLineInput) (*LineMut
 
 	var updatedAt time.Time
 	if err := tx.QueryRow(ctx, `
-		UPDATE finance_sheets
+		UPDATE finance.finance_sheets
 		SET updated_at = now()
 		WHERE id = $1::uuid
 		RETURNING updated_at
@@ -435,7 +434,7 @@ func (s *Service) DeleteSheet(ctx context.Context, input DeleteSheetInput) error
 
 	var ownerTenantUUID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT tenant_id FROM finance_sheets WHERE id = $1::uuid
+		SELECT tenant_id FROM finance.finance_sheets WHERE id = $1::uuid
 	`, sheetUUID).Scan(&ownerTenantUUID)
 	if err != nil {
 		return ErrNotFound
@@ -445,7 +444,7 @@ func (s *Service) DeleteSheet(ctx context.Context, input DeleteSheetInput) error
 		return ErrForbidden
 	}
 
-	result, err := s.pool.Exec(ctx, `DELETE FROM finance_sheets WHERE id = $1::uuid`, sheetUUID)
+	result, err := s.pool.Exec(ctx, `DELETE FROM finance.finance_sheets WHERE id = $1::uuid`, sheetUUID)
 	if err != nil {
 		return err
 	}
@@ -458,7 +457,7 @@ func (s *Service) DeleteSheet(ctx context.Context, input DeleteSheetInput) error
 // ---- Config ----
 
 func (s *Service) GetConfig(ctx context.Context, input GetConfigInput) (*Config, error) {
-	tenantUUID, clientLegacyID, err := s.resolveFinanceTenantUUID(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, err := s.resolveFinanceTenantUUID(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -468,11 +467,11 @@ func (s *Service) GetConfig(ctx context.Context, input GetConfigInput) (*Config,
 		return nil, err
 	}
 
-	return s.loadConfig(ctx, configUUID, clientLegacyID)
+	return s.loadConfig(ctx, configUUID, tenantUUID)
 }
 
 func (s *Service) ReplaceConfig(ctx context.Context, input ReplaceConfigInput) (*Config, error) {
-	tenantUUID, clientLegacyID, err := s.resolveFinanceTenantUUID(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, err := s.resolveFinanceTenantUUID(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +509,7 @@ func (s *Service) ReplaceConfig(ctx context.Context, input ReplaceConfigInput) (
 		return nil, err
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE finance_configs SET updated_at = now() WHERE id = $1`, configUUID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE finance.finance_configs SET updated_at = now() WHERE id = $1`, configUUID); err != nil {
 		return nil, err
 	}
 
@@ -518,11 +517,11 @@ func (s *Service) ReplaceConfig(ctx context.Context, input ReplaceConfigInput) (
 		return nil, err
 	}
 
-	return s.loadConfig(ctx, configUUID, clientLegacyID)
+	return s.loadConfig(ctx, configUUID, tenantUUID)
 }
 
-func (s *Service) ResolveRealtimeTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, error) {
-	tenantUUID, _, err := s.resolveFinanceTenantUUID(ctx, jwtTenantID, isPlatformAdmin, clientLegacyID)
+func (s *Service) ResolveRealtimeTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, coreTenantID string) (string, error) {
+	tenantUUID, err := s.resolveFinanceTenantUUID(ctx, jwtTenantID, isPlatformAdmin, coreTenantID)
 	if err != nil {
 		return "", err
 	}
@@ -537,7 +536,7 @@ func (s *Service) ResolveSheetRealtimeTenant(ctx context.Context, sheetID string
 	}
 
 	var tenantUUID string
-	if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM finance_sheets WHERE id = $1::uuid`, sheetUUID).Scan(&tenantUUID); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM finance.finance_sheets WHERE id = $1::uuid`, sheetUUID).Scan(&tenantUUID); err != nil {
 		if err == pgx.ErrNoRows {
 			return "", ErrNotFound
 		}
@@ -549,65 +548,63 @@ func (s *Service) ResolveSheetRealtimeTenant(ctx context.Context, sheetID string
 
 // ---- Internal helpers ----
 
-func (s *Service) resolveFinanceTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, int, string, error) {
-	if isPlatformAdmin && clientLegacyID > 0 {
+func (s *Service) resolveFinanceTenant(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, coreTenantID string) (string, string, error) {
+	if isPlatformAdmin && strings.TrimSpace(coreTenantID) != "" {
 		var uuid, name string
-		var legacyID int
 		err := s.pool.QueryRow(ctx, `
-			SELECT id, legacy_id, name FROM tenants WHERE legacy_id = $1 AND deleted_at IS NULL LIMIT 1
-		`, clientLegacyID).Scan(&uuid, &legacyID, &name)
+			SELECT id, name FROM platform_core.tenants WHERE id = $1::uuid AND deleted_at IS NULL LIMIT 1
+		`, strings.TrimSpace(coreTenantID)).Scan(&uuid, &name)
 		if err != nil {
-			return "", 0, "", ErrNotFound
+			return "", "", ErrNotFound
 		}
-		return uuid, legacyID, name, nil
+		return uuid, name, nil
 	}
 
 	tenantID := strings.TrimSpace(jwtTenantID)
 	if tenantID == "" {
-		return "", 0, "", ErrInvalidInput
+		return "", "", ErrInvalidInput
 	}
-	var legacyID int
 	var name string
 	err := s.pool.QueryRow(ctx, `
-		SELECT legacy_id, name FROM tenants WHERE id = $1 AND deleted_at IS NULL LIMIT 1
-	`, tenantID).Scan(&legacyID, &name)
+		SELECT name FROM platform_core.tenants WHERE id = $1 AND deleted_at IS NULL LIMIT 1
+	`, tenantID).Scan(&name)
 	if err != nil {
-		return "", 0, "", ErrNotFound
+		return "", "", ErrNotFound
 	}
-	return tenantID, legacyID, name, nil
+	return tenantID, name, nil
 }
 
-func (s *Service) resolveFinanceTenantUUID(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, clientLegacyID int) (string, int, error) {
-	uuid, legacyID, _, err := s.resolveFinanceTenant(ctx, jwtTenantID, isPlatformAdmin, clientLegacyID)
-	return uuid, legacyID, err
+func (s *Service) resolveFinanceTenantUUID(ctx context.Context, jwtTenantID string, isPlatformAdmin bool, coreTenantID string) (string, error) {
+	uuid, _, err := s.resolveFinanceTenant(ctx, jwtTenantID, isPlatformAdmin, coreTenantID)
+	return uuid, err
 }
 
 func (s *Service) ensureConfig(ctx context.Context, tenantUUID string) (string, error) {
 	if _, err := s.pool.Exec(ctx, `
-		INSERT INTO finance_configs (tenant_id) VALUES ($1)
+		INSERT INTO finance.finance_configs (tenant_id) VALUES ($1)
 		ON CONFLICT (tenant_id) DO NOTHING
 	`, tenantUUID); err != nil {
 		return "", err
 	}
 
 	var configUUID string
-	err := s.pool.QueryRow(ctx, `SELECT id FROM finance_configs WHERE tenant_id = $1`, tenantUUID).Scan(&configUUID)
+	err := s.pool.QueryRow(ctx, `SELECT id FROM finance.finance_configs WHERE tenant_id = $1`, tenantUUID).Scan(&configUUID)
 	if err != nil {
 		return "", err
 	}
 	return configUUID, nil
 }
 
-func (s *Service) loadConfig(ctx context.Context, configUUID string, clientLegacyID int) (*Config, error) {
+func (s *Service) loadConfig(ctx context.Context, configUUID string, tenantUUID string) (*Config, error) {
 	var updatedAt time.Time
-	if err := s.pool.QueryRow(ctx, `SELECT updated_at FROM finance_configs WHERE id = $1`, configUUID).Scan(&updatedAt); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT updated_at FROM finance.finance_configs WHERE id = $1`, configUUID).Scan(&updatedAt); err != nil {
 		return nil, err
 	}
 
 	// Categories
 	catRows, err := s.pool.Query(ctx, `
 		SELECT id, name, kind, description
-		FROM finance_categories
+		FROM finance.finance_categories
 		WHERE config_id = $1
 		ORDER BY position, name
 	`, configUUID)
@@ -647,8 +644,8 @@ func (s *Service) loadConfig(ctx context.Context, configUUID string, clientLegac
 				) FILTER (WHERE fam.id IS NOT NULL),
 				'[]'::json
 			) AS members
-		FROM finance_fixed_accounts fa
-		LEFT JOIN finance_fixed_account_members fam ON fam.fixed_account_id = fa.id
+		FROM finance.finance_fixed_accounts fa
+		LEFT JOIN finance.finance_fixed_account_members fam ON fam.fixed_account_id = fa.id
 		WHERE fa.config_id = $1
 		GROUP BY fa.id, fa.name, fa.kind, fa.category_id, fa.default_amount, fa.notes, fa.position
 		ORDER BY fa.position, fa.name
@@ -682,11 +679,11 @@ func (s *Service) loadConfig(ctx context.Context, configUUID string, clientLegac
 
 	// Recurring entries
 	reRows, err := s.pool.Query(ctx, `
-		SELECT t.legacy_id, fre.adjustment_amount, fre.notes
-		FROM finance_recurring_entries fre
-		JOIN tenants t ON t.id = fre.source_tenant_id
+		SELECT t.id::text, fre.adjustment_amount, fre.notes
+		FROM finance.finance_recurring_entries fre
+		JOIN platform_core.tenants t ON t.id = fre.source_tenant_id
 		WHERE fre.config_id = $1
-		ORDER BY t.legacy_id
+		ORDER BY t.name, t.id
 	`, configUUID)
 	if err != nil {
 		return nil, err
@@ -696,7 +693,7 @@ func (s *Service) loadConfig(ctx context.Context, configUUID string, clientLegac
 	recurringEntries := []RecurringEntry{}
 	for reRows.Next() {
 		var re RecurringEntry
-		if err := reRows.Scan(&re.SourceClientID, &re.AdjustmentAmount, &re.Notes); err != nil {
+		if err := reRows.Scan(&re.SourceCoreTenantID, &re.AdjustmentAmount, &re.Notes); err != nil {
 			return nil, err
 		}
 		recurringEntries = append(recurringEntries, re)
@@ -706,7 +703,7 @@ func (s *Service) loadConfig(ctx context.Context, configUUID string, clientLegac
 	}
 
 	return &Config{
-		ClientID:         clientLegacyID,
+		CoreTenantID:     tenantUUID,
 		Categories:       categories,
 		FixedAccounts:    fixedAccounts,
 		RecurringEntries: recurringEntries,
@@ -723,10 +720,10 @@ func (s *Service) loadSheetSummary(ctx context.Context, sheetUUID string) (Sheet
 			COALESCE(SUM(CASE WHEN fl.kind = 'entrada' AND fl.effective THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN fl.kind = 'saida' THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN fl.kind = 'saida' AND fl.effective THEN fl.amount + COALESCE(adj.adj_sum, 0) ELSE 0 END), 0)
-		FROM finance_lines fl
+		FROM finance.finance_lines fl
 		LEFT JOIN LATERAL (
 			SELECT COALESCE(SUM(fla.amount), 0) AS adj_sum
-			FROM finance_line_adjustments fla
+			FROM finance.finance_line_adjustments fla
 			WHERE fla.line_id = fl.id
 		) adj ON true
 		WHERE fl.sheet_id = $1::uuid
@@ -772,8 +769,8 @@ func (s *Service) loadLine(ctx context.Context, sheetUUID, lineUUID string) (*Li
 				) FILTER (WHERE fla.id IS NOT NULL),
 				'[]'::json
 			) AS adjustments
-		FROM finance_lines fl
-		LEFT JOIN finance_line_adjustments fla ON fla.line_id = fl.id
+		FROM finance.finance_lines fl
+		LEFT JOIN finance.finance_line_adjustments fla ON fla.line_id = fl.id
 		WHERE fl.sheet_id = $1::uuid
 		  AND fl.id = $2::uuid
 		GROUP BY fl.id, fl.kind, fl.description, fl.category, fl.effective,
@@ -845,8 +842,8 @@ func (s *Service) loadLinesBySheetUUIDs(ctx context.Context, sheetUUIDs []string
 				) FILTER (WHERE fla.id IS NOT NULL),
 				'[]'::json
 			) AS adjustments
-		FROM finance_lines fl
-		LEFT JOIN finance_line_adjustments fla ON fla.line_id = fl.id
+		FROM finance.finance_lines fl
+		LEFT JOIN finance.finance_line_adjustments fla ON fla.line_id = fl.id
 		WHERE fl.sheet_id IN (%s)
 		GROUP BY fl.sheet_id, fl.id, fl.kind, fl.description, fl.category,
 		         fl.effective, fl.effective_date, fl.amount,
@@ -894,7 +891,7 @@ func (s *Service) loadLinesBySheetUUIDs(ctx context.Context, sheetUUIDs []string
 func (s *Service) loadSheetDetail(
 	ctx context.Context,
 	sheetUUID string,
-	clientLegacyID int,
+	coreTenantID string,
 	clientName string,
 	createdAt, updatedAt time.Time,
 ) (*SheetDetail, error) {
@@ -909,25 +906,25 @@ func (s *Service) loadSheetDetail(
 
 	var title, period, status, notes string
 	_ = s.pool.QueryRow(ctx, `
-		SELECT title, period, status, notes FROM finance_sheets WHERE id = $1::uuid
+		SELECT title, period, status, notes FROM finance.finance_sheets WHERE id = $1::uuid
 	`, sheetUUID).Scan(&title, &period, &status, &notes)
 
 	summary := computeSummary(entradas, saidas)
 
 	return &SheetDetail{
-		ID:         sheetUUID,
-		Title:      title,
-		Period:     period,
-		Status:     status,
-		Notes:      notes,
-		ClientID:   clientLegacyID,
-		ClientName: clientName,
-		Entradas:   entradas,
-		Saidas:     saidas,
-		Summary:    summary,
-		Preview:    buildPreview(period, summary),
-		CreatedAt:  createdAt,
-		UpdatedAt:  updatedAt,
+		ID:           sheetUUID,
+		Title:        title,
+		Period:       period,
+		Status:       status,
+		Notes:        notes,
+		CoreTenantID: coreTenantID,
+		ClientName:   clientName,
+		Entradas:     entradas,
+		Saidas:       saidas,
+		Summary:      summary,
+		Preview:      buildPreview(period, summary),
+		CreatedAt:    createdAt,
+		UpdatedAt:    updatedAt,
 	}, nil
 }
 
@@ -937,7 +934,7 @@ func insertLines(ctx context.Context, tx pgx.Tx, sheetUUID string, lines []LineI
 		effectiveDate := normalizeLineEffectiveDate(line)
 		lineID := normalizeUUID(line.ID)
 		err := tx.QueryRow(ctx, `
-			INSERT INTO finance_lines
+			INSERT INTO finance.finance_lines
 				(id, sheet_id, kind, description, category, effective, effective_date, amount, fixed_account_id, details, position)
 			VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text)::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::uuid, $10, $11)
 			RETURNING id
@@ -961,7 +958,7 @@ func insertLines(ctx context.Context, tx pgx.Tx, sheetUUID string, lines []LineI
 		for j, adj := range line.Adjustments {
 			adjustmentID := normalizeUUID(adj.ID)
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO finance_line_adjustments (id, line_id, amount, note, date, position)
+				INSERT INTO finance.finance_line_adjustments (id, line_id, amount, note, date, position)
 				VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text)::uuid, $2, $3, $4, $5, $6)
 			`,
 				adjustmentID,

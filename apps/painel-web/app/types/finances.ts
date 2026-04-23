@@ -34,7 +34,7 @@ export interface FinanceSheetListItem {
   period: string
   status: string
   notes: string
-  clientId: number
+  coreTenantId?: string
   clientName: string
   summary: FinanceSheetSummary
   preview: string
@@ -111,7 +111,7 @@ export interface FinanceFixedAccountConfig {
 }
 
 export interface FinanceConfigData {
-  clientId: number
+  coreTenantId?: string
   categories: FinanceCategoryConfig[]
   fixedAccounts: FinanceFixedAccountConfig[]
   recurringEntries: FinanceRecurringEntryConfig[]
@@ -124,7 +124,7 @@ export interface FinanceConfigResponse {
 }
 
 export interface FinanceRecurringEntryConfig {
-  sourceClientId: number
+  sourceCoreTenantId?: string
   adjustmentAmount: number
   notes: string
 }
@@ -136,7 +136,8 @@ export interface FinanceRecurringClientStore {
 }
 
 export interface FinanceRecurringClientEntry {
-  id: number
+  id: string
+  coreTenantId: string
   name: string
   amount: number
   dueDay: string

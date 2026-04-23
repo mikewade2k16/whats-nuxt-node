@@ -12,12 +12,19 @@ export interface SessionSimulationClientOption {
   moduleCodes?: string[]
 }
 
-interface AdminProfileResponse {
+interface AdminProfileSummaryResponse {
   status?: string
   data?: {
+    id?: string
+    email?: string
     level?: string
     userType?: string
     clientId?: number | null
+    clientName?: string
+    tenantId?: string
+    nick?: string | null
+    storeName?: string | null
+    profileImage?: string | null
     preferences?: unknown
     isPlatformAdmin?: boolean
     moduleCodes?: string[]
@@ -25,15 +32,12 @@ interface AdminProfileResponse {
   }
 }
 
-interface CoreTenantResponse {
-  id?: string
+interface CoreAdminClientResponse {
+  id?: number | null
   name?: string
-}
-
-interface CoreTenantModulesResponse {
-  items?: Array<{
+  moduleCodes?: string[]
+  modules?: Array<{
     code?: string
-    status?: string
   }>
 }
 
@@ -43,8 +47,12 @@ interface PersistedSimulationState {
   clientId?: unknown
 }
 
+interface RefreshClientOptionsOptions {
+  force?: boolean
+}
+
 const STORAGE_KEY = 'omni.session-simulation.v3'
-export const DEFAULT_ADMIN_CLIENT_ID = 1
+export const DEFAULT_ADMIN_CLIENT_ID = 106
 const UNASSIGNED_CLIENT_ID = 0
 const DEFAULT_CLIENT_OPTIONS: SessionSimulationClientOption[] = []
 
@@ -78,6 +86,26 @@ function normalizeModuleCodes(value: unknown) {
   }
 
   return output
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+function hasOwnField(source: object, field: string) {
+  return Object.prototype.hasOwnProperty.call(source, field)
+}
+
+function debugSessionSimulation(message: string, details?: Record<string, unknown>) {
+  if (!import.meta.dev || !import.meta.client) {
+    return
+  }
+
+  console.info('[session-simulation-debug]', message, details ?? {})
+}
+
+function resolveModuleScopedAtendimentoAccess(accessFlag: unknown, moduleCodes: string[]) {
+  return Boolean(accessFlag) && moduleCodes.includes('atendimento')
 }
 
 function normalizeCoreTenantId(value: unknown) {
@@ -181,12 +209,17 @@ export function buildSessionRequestHeaders(options: {
   userLevel: SessionSimulationUserLevel
   clientId: number
   effectiveClientId: number
+  effectiveCoreTenantId?: string
 }) {
   const headers: Record<string, string> = {}
   const effectiveClientId = normalizeOptionalClientId(options.effectiveClientId)
+  const effectiveCoreTenantId = normalizeCoreTenantId(options.effectiveCoreTenantId)
 
   if (effectiveClientId > 0) {
     headers['x-client-id'] = String(effectiveClientId)
+  }
+  if (effectiveCoreTenantId) {
+    headers['x-tenant-id'] = effectiveCoreTenantId
   }
 
   if (!options.canSimulate) {
@@ -227,12 +260,16 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
   const profileUserType = ref<SessionSimulationUserType>('client')
   const profileUserLevel = ref<SessionSimulationUserLevel>('marketing')
   const profileClientId = ref<number>(UNASSIGNED_CLIENT_ID)
+  const profileNick = ref('')
+  const profileStoreName = ref('')
+  const profileImage = ref('')
   const profilePreferences = ref('{}')
   const profileIsPlatformAdmin = ref(false)
   const profileModuleCodes = ref<string[]>([])
   const profileAtendimentoAccess = ref(false)
   const clientOptions = ref<SessionSimulationClientOption[]>(dedupeClientOptions(DEFAULT_CLIENT_OPTIONS))
   const lastClientOptionsSyncAt = ref('')
+  const clientOptionsSynced = computed(() => modulesHydrated.value && Boolean(lastClientOptionsSyncAt.value))
 
   const canSimulate = computed(() => profileIsPlatformAdmin.value
     && profileUserType.value === 'admin'
@@ -262,7 +299,8 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     userType: userType.value,
     userLevel: userLevel.value,
     clientId: clientId.value,
-    effectiveClientId: effectiveClientId.value
+    effectiveClientId: effectiveClientId.value,
+    effectiveCoreTenantId: activeClientCoreTenantId.value
   }))
   const activeClientLabel = computed(() => {
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
@@ -273,9 +311,23 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
     return normalizeCoreTenantId(found?.coreTenantId)
   })
+  const fallbackUserModuleCodes = computed(() => normalizeModuleCodes(useCoreAuthStore().user?.moduleCodes))
   const activeClientModuleCodes = computed(() => {
+    if (effectiveClientId.value <= 0) {
+      return modulesHydrated.value ? [] : fallbackUserModuleCodes.value
+    }
+
     const found = clientOptions.value.find(option => option.value === effectiveClientId.value)
-    return normalizeModuleCodes(found?.moduleCodes)
+    const clientModuleCodes = normalizeModuleCodes(found?.moduleCodes)
+    if (clientModuleCodes.length > 0) {
+      return clientModuleCodes
+    }
+
+    if (profileModuleCodes.value.length > 0) {
+      return profileModuleCodes.value
+    }
+
+    return modulesHydrated.value ? [] : fallbackUserModuleCodes.value
   })
   const requestContextHash = computed(() => [
     effectiveUserType.value,
@@ -284,9 +336,12 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     activeClientCoreTenantId.value,
     activeClientModuleCodes.value.join(','),
     profilePreferences.value,
-    profileModuleCodes.value.join(',')
+    profileModuleCodes.value.join(','),
+    profileAtendimentoAccess.value ? '1' : '0'
   ].join(':'))
   const effectiveAccessOverrides = computed(() => parseAdminPreferences(profilePreferences.value).adminAccess)
+  const effectiveAtendimentoAccess = computed(() => profileAtendimentoAccess.value && activeClientModuleCodes.value.includes('atendimento'))
+  let pendingClientOptionsRefresh: Promise<void> | null = null
 
   function persist() {
     if (!import.meta.client) return
@@ -385,6 +440,9 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     profileUserType.value = 'client'
     profileUserLevel.value = 'marketing'
     profileClientId.value = UNASSIGNED_CLIENT_ID
+    profileNick.value = ''
+    profileStoreName.value = ''
+    profileImage.value = ''
     profilePreferences.value = '{}'
     profileIsPlatformAdmin.value = false
     profileModuleCodes.value = []
@@ -396,6 +454,9 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
   }
 
   function clearAllSessions() {
+    debugSessionSimulation('clearAllSessions', {
+      path: import.meta.client ? window.location.pathname : null
+    })
     useCoreAuthStore().clearSession()
     clearLegacyAdminShadowStorage()
     reset()
@@ -417,14 +478,18 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
       const fallbackClientId = canSimulate.value
         ? normalizeSimulatedClientId(clientId.value)
         : normalizeOptionalClientId(effectiveClientId.value)
-      clientOptions.value = dedupeClientOptions([
-        {
-          value: fallbackClientId,
-          label: resolveClientLabel(fallbackClientId, activeClientLabel.value),
-          coreTenantId: activeClientCoreTenantId.value
-        }
-      ])
-      modulesHydrated.value = false
+
+      clientOptions.value = fallbackClientId > 0
+        ? dedupeClientOptions([
+            {
+              value: fallbackClientId,
+              label: resolveClientLabel(fallbackClientId, activeClientLabel.value),
+              coreTenantId: activeClientCoreTenantId.value,
+              moduleCodes: profileModuleCodes.value
+            }
+          ])
+        : []
+      modulesHydrated.value = true
       persist()
       return
     }
@@ -446,183 +511,254 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     lastClientOptionsSyncAt.value = new Date().toISOString()
   }
 
+  function finalizeClientOptionsFallback(option?: Partial<SessionSimulationClientOption>) {
+    if (clientOptions.value.length === 0) {
+      const fallbackClientId = canSimulate.value
+        ? normalizeSimulatedClientId(clientId.value)
+        : normalizeOptionalClientId(effectiveClientId.value)
+
+      if (fallbackClientId > 0) {
+        clientOptions.value = dedupeClientOptions([{
+          value: fallbackClientId,
+          label: resolveClientLabel(fallbackClientId, option?.label ?? activeClientLabel.value),
+          coreTenantId: normalizeCoreTenantId(option?.coreTenantId) || activeClientCoreTenantId.value,
+          moduleCodes: normalizeModuleCodes(option?.moduleCodes?.length ? option.moduleCodes : profileModuleCodes.value)
+        }])
+        persist()
+      }
+    }
+
+    markClientOptionsSynced()
+  }
+
+  function applyCoreAuthProfileFallback(coreAuth = useCoreAuthStore()) {
+    const coreUser = coreAuth.user
+    const fallbackModuleCodes = normalizeModuleCodes(coreUser?.moduleCodes)
+    const fallbackClientId = normalizeOptionalClientId(coreUser?.clientId)
+
+    profileIsPlatformAdmin.value = Boolean(coreUser?.isPlatformAdmin)
+    profileUserType.value = normalizeUserType(coreUser?.userType ?? (profileIsPlatformAdmin.value ? 'admin' : 'client'))
+    profileUserLevel.value = normalizeUserLevel(coreUser?.level ?? (profileIsPlatformAdmin.value ? 'admin' : 'marketing'))
+    profileClientId.value = fallbackClientId
+    profileModuleCodes.value = fallbackModuleCodes
+    profileAtendimentoAccess.value = resolveModuleScopedAtendimentoAccess(
+      coreUser?.atendimentoAccess,
+      fallbackModuleCodes
+    )
+
+    if (!canSimulate.value) {
+      userType.value = profileIsPlatformAdmin.value ? 'admin' : 'client'
+      userLevel.value = profileUserLevel.value
+      clientId.value = fallbackClientId
+    }
+
+    finalizeClientOptionsFallback({
+      value: fallbackClientId,
+      label: normalizeText(coreUser?.clientName),
+      coreTenantId: normalizeCoreTenantId(coreUser?.tenantId),
+      moduleCodes: fallbackModuleCodes
+    })
+  }
+
   function hasModule(moduleCode: unknown) {
     const normalized = normalizeModuleCode(moduleCode)
     if (!normalized) return false
     return activeClientModuleCodes.value.includes(normalized)
   }
 
-  async function refreshClientOptions() {
-    if (loadingClientOptions.value) return
+  async function refreshClientOptions(options: RefreshClientOptionsOptions = {}) {
+    if (pendingClientOptionsRefresh) {
+      return pendingClientOptionsRefresh
+    }
 
-    loadingClientOptions.value = true
-    try {
-      const coreAuth = useCoreAuthStore()
-      coreAuth.hydrate()
-      const coreToken = String(coreAuth.token ?? '').trim()
+    if (!options.force && clientOptionsSynced.value) {
+      return
+    }
 
-      if (!coreToken) {
-        return
-      }
-
-      let profileResponse: AdminProfileResponse | null = null
+    pendingClientOptionsRefresh = (async () => {
+      debugSessionSimulation('refreshClientOptions:start', {
+        force: Boolean(options.force),
+        clientOptionsSynced: clientOptionsSynced.value
+      })
+      loadingClientOptions.value = true
       try {
-        profileResponse = await $fetch<AdminProfileResponse>('/api/admin/profile', {
+        const coreAuth = useCoreAuthStore()
+        coreAuth.hydrate()
+        const coreToken = String(coreAuth.token ?? '').trim()
+
+        if (!coreToken) {
+          return
+        }
+
+        let profileResponse: AdminProfileSummaryResponse | null = null
+        try {
+          profileResponse = await $fetch<AdminProfileSummaryResponse>('/api/admin/profile/summary', {
+            headers: {
+              'x-core-token': coreToken
+            }
+          })
+        } catch (error) {
+          const statusCode = extractFetchStatusCode(error)
+          if (statusCode === 401 || statusCode === 403) {
+            clearAllSessions()
+            return
+          }
+          applyCoreAuthProfileFallback(coreAuth)
+          return
+        }
+
+        if (!profileResponse?.data) {
+          clearAllSessions()
+          return
+        }
+
+        const profileData = profileResponse.data
+        const resolvedProfileTenantId = normalizeCoreTenantId(hasOwnField(profileData, 'tenantId') ? profileData.tenantId : coreAuth.user?.tenantId)
+        profileUserType.value = normalizeUserType(profileData.userType ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'client'))
+        profileUserLevel.value = normalizeUserLevel(profileData.level ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'marketing'))
+        profileClientId.value = normalizeOptionalClientId(hasOwnField(profileData, 'clientId') ? profileData.clientId : coreAuth.user?.clientId)
+        profileNick.value = normalizeText(profileResponse?.data?.nick)
+        profileStoreName.value = normalizeText(profileResponse?.data?.storeName)
+        profileImage.value = normalizeText(profileResponse?.data?.profileImage)
+        profilePreferences.value = typeof profileResponse?.data?.preferences === 'string'
+          ? String(profileResponse?.data?.preferences ?? '{}')
+          : JSON.stringify(profileResponse?.data?.preferences ?? {})
+        profileIsPlatformAdmin.value = Boolean(profileResponse?.data?.isPlatformAdmin ?? coreAuth.user?.isPlatformAdmin)
+        profileModuleCodes.value = normalizeModuleCodes(profileResponse?.data?.moduleCodes)
+        profileAtendimentoAccess.value = resolveModuleScopedAtendimentoAccess(
+          profileResponse?.data?.atendimentoAccess,
+          profileModuleCodes.value
+        )
+
+        if (!canSimulate.value) {
+          userType.value = profileIsPlatformAdmin.value ? 'admin' : 'client'
+          userLevel.value = profileUserLevel.value
+          clientId.value = profileClientId.value
+        }
+
+        const isPlatformAdmin = Boolean(profileIsPlatformAdmin.value)
+        if (!isPlatformAdmin) {
+          let nextClientId = normalizeOptionalClientId(profileClientId.value)
+          let nextClientLabel = resolveClientLabel(
+            nextClientId,
+            profileResponse?.data?.clientName ?? coreAuth.user?.clientName
+          )
+          let nextModuleCodes = [...profileModuleCodes.value]
+
+          if (resolvedProfileTenantId && (nextClientId <= 0 || !nextClientLabel || nextModuleCodes.length === 0)) {
+            try {
+              const clientDetail = await $fetch<CoreAdminClientResponse>(
+                `/api/core-bff/core/admin/clients/${encodeURIComponent(resolvedProfileTenantId)}`,
+                {
+                  headers: {
+                    'x-core-token': coreToken
+                  }
+                }
+              )
+
+              nextClientId = normalizeOptionalClientId(clientDetail?.id ?? nextClientId)
+              nextClientLabel = resolveClientLabel(nextClientId, clientDetail?.name ?? nextClientLabel)
+              const clientModuleCodes = normalizeModuleCodes(
+                Array.isArray(clientDetail?.moduleCodes) && clientDetail.moduleCodes.length > 0
+                  ? clientDetail.moduleCodes
+                  : (clientDetail?.modules || []).map(module => module.code)
+              )
+
+              if (clientModuleCodes.length > 0) {
+                nextModuleCodes = clientModuleCodes
+              }
+            } catch (error) {
+              finalizeClientOptionsFallback({
+                value: nextClientId,
+                label: nextClientLabel,
+                coreTenantId: resolvedProfileTenantId,
+                moduleCodes: nextModuleCodes
+              })
+            }
+          }
+
+          profileClientId.value = nextClientId
+          if (nextModuleCodes.length > 0) {
+            profileModuleCodes.value = [...nextModuleCodes]
+          }
+          profileAtendimentoAccess.value = resolveModuleScopedAtendimentoAccess(
+            profileResponse?.data?.atendimentoAccess,
+            profileModuleCodes.value
+          )
+          if (!canSimulate.value) {
+            clientId.value = nextClientId
+          }
+
+          replaceClientOptions([{
+            value: nextClientId,
+            label: nextClientLabel,
+            coreTenantId: resolvedProfileTenantId,
+            moduleCodes: nextClientId > 0 ? nextModuleCodes : []
+          }])
+          markClientOptionsSynced()
+          return
+        }
+
+        const response = await $fetch<{
+          status: string
+          data: Array<{
+            id: number
+            name: string
+            coreTenantId?: string
+            modules?: Array<{ code?: string }>
+          }>
+        }>('/api/admin/clients', {
+          query: {
+            page: 1,
+            limit: 120,
+            status: 'active'
+          },
           headers: {
             'x-core-token': coreToken
           }
         })
-      } catch (error) {
-        const statusCode = extractFetchStatusCode(error)
-        if (statusCode === 401 || statusCode === 403) {
-          clearAllSessions()
-          return
-        }
-        return
-      }
 
-      if (!profileResponse?.data) {
-        clearAllSessions()
-        return
-      }
+        const mapped = (response.data || [])
+          .map(item => ({
+            value: normalizeOptionalClientId(item.id),
+            label: String(item.name ?? '').trim() || `Cliente #${item.id}`,
+            coreTenantId: normalizeCoreTenantId(item.coreTenantId),
+            moduleCodes: normalizeModuleCodes((item.modules || []).map(module => module.code))
+          }))
+          .filter(item => Number.isFinite(item.value) && item.value > 0)
 
-      profileUserType.value = normalizeUserType(profileResponse?.data?.userType ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'client'))
-      profileUserLevel.value = normalizeUserLevel(profileResponse?.data?.level ?? (coreAuth.user?.isPlatformAdmin ? 'admin' : 'marketing'))
-      profileClientId.value = normalizeOptionalClientId(profileResponse?.data?.clientId ?? coreAuth.user?.clientId)
-      profilePreferences.value = typeof profileResponse?.data?.preferences === 'string'
-        ? String(profileResponse?.data?.preferences ?? '{}')
-        : JSON.stringify(profileResponse?.data?.preferences ?? {})
-      profileIsPlatformAdmin.value = Boolean(profileResponse?.data?.isPlatformAdmin ?? coreAuth.user?.isPlatformAdmin)
-      profileModuleCodes.value = normalizeModuleCodes(profileResponse?.data?.moduleCodes)
-      profileAtendimentoAccess.value = Boolean(profileResponse?.data?.atendimentoAccess) || profileModuleCodes.value.includes('atendimento')
-
-      if (!canSimulate.value) {
-        userType.value = profileIsPlatformAdmin.value ? 'admin' : 'client'
-        userLevel.value = profileUserLevel.value
-        clientId.value = profileClientId.value
-      }
-
-      const isPlatformAdmin = Boolean(profileIsPlatformAdmin.value)
-      if (!isPlatformAdmin) {
-        const resolvedClientId = normalizeOptionalClientId(profileClientId.value)
-        const fallbackClientLabel = resolveClientLabel(resolvedClientId, coreAuth.user?.clientName)
-        const fallbackClientOptions: SessionSimulationClientOption[] = [{
-          value: resolvedClientId,
-          label: fallbackClientLabel,
-          coreTenantId: normalizeCoreTenantId(coreAuth.user?.tenantId),
-          moduleCodes: resolvedClientId > 0 ? profileModuleCodes.value : []
-        }]
-
-        if (resolvedClientId <= 0) {
-          replaceClientOptions(fallbackClientOptions)
-          markClientOptionsSynced()
-          return
-        }
-
-        const tenantId = String(coreAuth.user?.tenantId ?? '').trim()
-        if (!tenantId) {
-          replaceClientOptions(fallbackClientOptions)
-          markClientOptionsSynced()
-          return
-        }
-
-        let tenantResponse: CoreTenantResponse | null = null
-        let tenantModulesResponse: CoreTenantModulesResponse | null = null
-        try {
-          [tenantResponse, tenantModulesResponse] = await Promise.all([
-            $fetch<CoreTenantResponse>(`/api/core-bff/core/tenants/${tenantId}`, {
-              headers: {
-                'x-core-token': coreToken
-              }
-            }),
-            $fetch<CoreTenantModulesResponse>(`/api/core-bff/core/tenants/${tenantId}/modules`, {
-              headers: {
-                'x-core-token': coreToken
-              }
-            })
-          ])
-        } catch (error) {
-          const statusCode = extractFetchStatusCode(error)
-          if (statusCode === 401) {
-            clearAllSessions()
-            return
-          }
-
-          replaceClientOptions(fallbackClientOptions)
-          markClientOptionsSynced()
-          return
-        }
-
-        const resolvedTenantName = resolveClientLabel(resolvedClientId, tenantResponse?.name ?? fallbackClientLabel)
-        const moduleCodes = normalizeModuleCodes(
-          (tenantModulesResponse?.items || [])
-            .filter(module => String(module?.status ?? '').trim().toLowerCase() === 'active')
-            .map(module => module.code)
-        )
-
-        replaceClientOptions([{
-          value: resolvedClientId,
-          label: resolvedTenantName,
-          coreTenantId: normalizeCoreTenantId(tenantResponse?.id ?? tenantId),
-          moduleCodes: moduleCodes.length > 0 ? moduleCodes : profileModuleCodes.value
-        }])
+        replaceClientOptions(mapped)
         markClientOptionsSynced()
-        return
+      } catch (error) {
+        finalizeClientOptionsFallback()
+      } finally {
+        debugSessionSimulation('refreshClientOptions:done', {
+          force: Boolean(options.force),
+          clientOptionsSynced: clientOptionsSynced.value,
+          hasCoreToken: Boolean(useCoreAuthStore().token)
+        })
+        loadingClientOptions.value = false
+        pendingClientOptionsRefresh = null
       }
+    })()
 
-      const response = await $fetch<{
-        status: string
-        data: Array<{
-          id: number
-          name: string
-          coreTenantId?: string
-          modules?: Array<{ code?: string }>
-        }>
-      }>('/api/admin/clients', {
-        query: {
-          page: 1,
-          limit: 120,
-          status: 'active'
-        },
-        headers: {
-          'x-user-type': 'admin',
-          'x-user-level': 'admin',
-          'x-client-id': String(profileClientId.value > 0 ? profileClientId.value : DEFAULT_ADMIN_CLIENT_ID),
-          'x-core-token': coreToken
-        }
-      })
-
-      const mapped = (response.data || [])
-        .map(item => ({
-          value: normalizeOptionalClientId(item.id),
-          label: String(item.name ?? '').trim() || `Cliente #${item.id}`,
-          coreTenantId: normalizeCoreTenantId(item.coreTenantId),
-          moduleCodes: normalizeModuleCodes((item.modules || []).map(module => module.code))
-        }))
-        .filter(item => Number.isFinite(item.value) && item.value > 0)
-
-      replaceClientOptions(mapped)
-      markClientOptionsSynced()
-    } catch (error) {
-      const statusCode = extractFetchStatusCode(error)
-      if (statusCode === 401 || statusCode === 403) {
-        clearAllSessions()
-      }
-    } finally {
-      loadingClientOptions.value = false
-    }
+    return pendingClientOptionsRefresh
   }
 
   return {
     initialized,
     loadingClientOptions,
     modulesHydrated,
+    clientOptionsSynced,
     userType,
     userLevel,
     clientId,
     profileUserType,
     profileUserLevel,
     profileClientId,
+    profileNick,
+    profileStoreName,
+    profileImage,
     profilePreferences,
     profileIsPlatformAdmin,
     profileModuleCodes,
@@ -636,6 +772,7 @@ export const useSessionSimulationStore = defineStore('sessionSimulation', () => 
     effectiveUserLevel,
     effectiveClientId,
     effectiveAccessOverrides,
+    effectiveAtendimentoAccess,
     requestContextHash,
     requestHeaders,
     activeClientLabel,

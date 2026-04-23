@@ -7,6 +7,7 @@
 #   - remove exposição de portas que não devem ser públicas
 #   - força `painel-web` e `atendimento-online` a subir em modo produtivo, sem watch/HMR
 #   - remove bootstrap automático de schema do caminho de restart da produção
+#   - impede alterações automáticas no banco durante `up -d` de produção
 
 name: omnichannel-mvp
 
@@ -48,6 +49,8 @@ services:
     command: null
     environment:
       NODE_ENV: production
+      API_DB_BOOTSTRAP_ALWAYS: "false"
+      API_DB_SEED_ON_BOOT: "false"
     volumes: !reset []
     ports: !reset []
 
@@ -76,6 +79,8 @@ services:
   plataforma-api:
     ports: !reset []
     environment:
+      CORE_AUTO_MIGRATE: ${CORE_AUTO_MIGRATE:-false}
+      CORE_PERSISTENT_JWT_TTL_MINUTES: ${CORE_PERSISTENT_JWT_TTL_MINUTES:-43200}
       CORE_PASSWORD_RESET_TTL_MINUTES: ${CORE_PASSWORD_RESET_TTL_MINUTES:-15}
       CORE_SMTP_HOST: ${CORE_SMTP_HOST:-}
       CORE_SMTP_PORT: ${CORE_SMTP_PORT:-0}

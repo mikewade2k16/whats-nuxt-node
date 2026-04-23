@@ -1,6 +1,6 @@
 import { createError, getRouterParam, readBody } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
-import { resolveOwnedClientId } from '~~/server/utils/access-context'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 import type { FinanceSheetItem } from '~/types/finances'
 
@@ -20,9 +20,13 @@ export default defineEventHandler(async (event) => {
     entradas?: unknown
     saidas?: unknown
     clientId?: number
+    coreTenantId?: string
   }>(event)
 
-  const resolvedClientId = resolveOwnedClientId(access, body?.clientId)
+	const scope = resolveOwnedTenantScope(access, {
+		clientId: body?.clientId,
+		coreTenantId: body?.coreTenantId
+	})
 
   const response = await coreAdminFetch<{ item: FinanceSheetItem }>(
     event,
@@ -36,7 +40,7 @@ export default defineEventHandler(async (event) => {
         notes: body?.notes,
         entradas: body?.entradas,
         saidas: body?.saidas,
-        clientId: resolvedClientId > 0 ? resolvedClientId : undefined
+		coreTenantId: scope.coreTenantId || undefined
       }
     }
   )

@@ -49,10 +49,10 @@ export function registerTenantWhatsAppValidateRoute(protectedApp: FastifyInstanc
       });
     }
 
-    const apiKey = tenant.evolutionApiKey ?? env.EVOLUTION_API_KEY;
+    const apiKey = env.EVOLUTION_API_KEY;
     if (!apiKey) {
       return reply.code(400).send({
-        message: "Nenhuma API key da Evolution configurada (tenant ou ambiente)"
+        message: "Nenhuma API key global da Evolution configurada no ambiente"
       });
     }
 

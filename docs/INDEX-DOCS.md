@@ -238,6 +238,22 @@ Esse saneamento cobre duplicata por telefone e tambem "conversa sombra" (mesmo n
   - o limite de usuarios do modulo deve ser respeitado ao conceder acesso
 - Escopo operacional atual:
   - usuario sem `atendimentoAccess` nao entra nas rotas/API/socket do atendimento
+
+## Inspecao Completa do Banco (2026-04-13)
+
+- pacote novo em `docs/banco-inspecao/`
+- ponto de entrada:
+  - `docs/banco-inspecao/index.html`
+  - `docs/banco-inspecao/README.md`
+- entregaveis incluidos:
+  - catalogo completo de tabelas, campos e exemplos por schema
+  - fluxo de negocio derivado do banco atual
+  - diagramas ER por dominio e visao de integracao
+- schemas cobertos:
+  - `platform_core`
+  - `public` da `atendimento-online-api`
+  - `indicators`
+  - `fila_atendimento`
   - usuario com `atendimentoAccess` opera apenas no tenant dele
 - Tenant config do atendimento:
   - `/tenant` do modulo passa a ler do core os limites de `users` e `instances`

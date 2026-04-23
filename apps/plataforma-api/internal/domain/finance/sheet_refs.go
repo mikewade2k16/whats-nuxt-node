@@ -29,8 +29,8 @@ func (s *Service) sanitizeSheetFixedAccountRefs(ctx context.Context, tenantUUID 
 func (s *Service) loadTenantFixedAccountIDs(ctx context.Context, tenantUUID string) (map[string]struct{}, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT fa.id::text
-		FROM finance_fixed_accounts fa
-		JOIN finance_configs fc ON fc.id = fa.config_id
+		FROM finance.finance_fixed_accounts fa
+		JOIN finance.finance_configs fc ON fc.id = fa.config_id
 		WHERE fc.tenant_id = $1::uuid
 	`, tenantUUID)
 	if err != nil {

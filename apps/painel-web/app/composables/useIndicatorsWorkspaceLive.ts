@@ -278,9 +278,9 @@ export function useIndicatorsWorkspaceLive() {
   }
 
   async function exportEvaluations(request: IndicatorExportRequest) {
-    const unitId = String(request.unitId ?? 'all').trim()
-    const visibleEvaluations = unitId && unitId !== 'all'
-      ? evaluations.value.filter(item => item.unitId === unitId)
+    const storeId = String(request.unitId ?? 'all').trim()
+    const visibleEvaluations = storeId && storeId !== 'all'
+      ? evaluations.value.filter(item => item.unitId === storeId)
       : evaluations.value
 
     if (visibleEvaluations.length === 0) {
@@ -298,8 +298,8 @@ export function useIndicatorsWorkspaceLive() {
       endDate: appliedEnd.value
     })
 
-    if (unitId && unitId !== 'all') {
-      query.set('unitId', unitId)
+    if (storeId && storeId !== 'all') {
+      query.set('storeId', storeId)
     }
 
     try {
@@ -343,7 +343,7 @@ export function useIndicatorsWorkspaceLive() {
     try {
       await api.createEvaluation({
         evaluatorName: payload.evaluatorName,
-        unitExternalId: payload.unitId,
+        storeId: payload.unitId,
         unitName: unit?.label || payload.unitName,
         scopeMode: 'per_store',
         periodStart: payload.periodStart,

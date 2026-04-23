@@ -1,6 +1,6 @@
 import { createError, readBody } from 'h3'
 import { requireScopedFeatureAccess } from '~~/server/utils/admin-route-auth'
-import { resolveOwnedClientId } from '~~/server/utils/access-context'
+import { resolveOwnedTenantScope } from '~~/server/utils/access-context'
 import { coreAdminFetch } from '~~/server/utils/core-admin-fetch'
 import type { FinanceConfigData } from '~/types/finances'
 
@@ -9,13 +9,17 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody<{
     clientId?: number
+    coreTenantId?: string
     categories?: unknown
     fixedAccounts?: unknown
     recurringEntries?: unknown
   }>(event)
 
-  const clientId = resolveOwnedClientId(access, body?.clientId)
-  if (access.isClient && clientId <= 0) {
+	const scope = resolveOwnedTenantScope(access, {
+		clientId: body?.clientId,
+		coreTenantId: body?.coreTenantId
+	})
+	if (access.isClient && !scope.coreTenantId) {
     throw createError({ statusCode: 400, statusMessage: 'Cliente do usuario nao identificado.' })
   }
 
@@ -25,7 +29,7 @@ export default defineEventHandler(async (event) => {
     {
       method: 'PUT',
       body: {
-        clientId: clientId > 0 ? clientId : undefined,
+		coreTenantId: scope.coreTenantId || undefined,
         categories: body?.categories,
         fixedAccounts: body?.fixedAccounts,
         recurringEntries: body?.recurringEntries

@@ -11,22 +11,40 @@ import (
 
 const shellBridgeTokenPrefix = "ldv-shell-v1"
 
+type ShellBridgeStoreClaim struct {
+	ID   string `json:"id"`
+	Code string `json:"code,omitempty"`
+	Name string `json:"name"`
+	City string `json:"city,omitempty"`
+}
+
+type ShellBridgeConsultantClaim struct {
+	UserID             string `json:"userId"`
+	DisplayName        string `json:"name"`
+	Email              string `json:"email"`
+	StoreID            string `json:"storeId"`
+	RegistrationNumber string `json:"registrationNumber,omitempty"`
+}
+
 type ShellBridgeClaims struct {
-	Subject         string   `json:"sub"`
-	DisplayName     string   `json:"name"`
-	Email           string   `json:"email"`
-	UserType        string   `json:"userType"`
-	UserLevel       string   `json:"userLevel"`
-	BusinessRole    string   `json:"businessRole,omitempty"`
-	TenantID        string   `json:"tenantId,omitempty"`
-	TenantSlug      string   `json:"tenantSlug,omitempty"`
-	ClientID        int      `json:"clientId,omitempty"`
-	IsPlatformAdmin bool     `json:"isPlatformAdmin"`
-	ModuleCodes     []string `json:"moduleCodes,omitempty"`
-	StoreIDs        []string `json:"storeIds,omitempty"`
-	ScopeMode       string   `json:"scopeMode,omitempty"`
-	IssuedAt        int64    `json:"iat"`
-	ExpiresAt       int64    `json:"exp"`
+	Subject         string                       `json:"sub"`
+	DisplayName     string                       `json:"name"`
+	Email           string                       `json:"email"`
+	UserType        string                       `json:"userType"`
+	UserLevel       string                       `json:"userLevel"`
+	BusinessRole    string                       `json:"businessRole,omitempty"`
+	TenantID        string                       `json:"tenantId,omitempty"`
+	TenantSlug      string                       `json:"tenantSlug,omitempty"`
+	TenantName      string                       `json:"tenantName,omitempty"`
+	ClientID        int                          `json:"clientId,omitempty"`
+	IsPlatformAdmin bool                         `json:"isPlatformAdmin"`
+	ModuleCodes     []string                     `json:"moduleCodes,omitempty"`
+	StoreIDs        []string                     `json:"storeIds,omitempty"`
+	Stores          []ShellBridgeStoreClaim      `json:"stores,omitempty"`
+	Consultants     []ShellBridgeConsultantClaim `json:"consultants,omitempty"`
+	ScopeMode       string                       `json:"scopeMode,omitempty"`
+	IssuedAt        int64                        `json:"iat"`
+	ExpiresAt       int64                        `json:"exp"`
 }
 
 type ShellBridgeTokenManager struct {
@@ -78,8 +96,11 @@ func (manager *ShellBridgeTokenManager) Parse(token string) (ShellBridgeClaims, 
 	claims.BusinessRole = strings.ToLower(strings.TrimSpace(claims.BusinessRole))
 	claims.TenantID = strings.TrimSpace(claims.TenantID)
 	claims.TenantSlug = strings.ToLower(strings.TrimSpace(claims.TenantSlug))
+	claims.TenantName = strings.TrimSpace(claims.TenantName)
 	claims.ScopeMode = strings.ToLower(strings.TrimSpace(claims.ScopeMode))
 	claims.StoreIDs = normalizeShellBridgeStringList(claims.StoreIDs)
+	claims.Stores = normalizeShellBridgeStores(claims.Stores)
+	claims.Consultants = normalizeShellBridgeConsultants(claims.Consultants)
 
 	if claims.Subject == "" || claims.Email == "" {
 		return ShellBridgeClaims{}, ErrShellBridgeUnauthorized
@@ -106,6 +127,60 @@ func normalizeShellBridgeStringList(values []string) []string {
 		}
 		seen[trimmed] = struct{}{}
 		result = append(result, trimmed)
+	}
+
+	return result
+}
+
+func normalizeShellBridgeStores(values []ShellBridgeStoreClaim) []ShellBridgeStoreClaim {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]ShellBridgeStoreClaim, 0, len(values))
+	for _, value := range values {
+		storeID := strings.TrimSpace(value.ID)
+		storeName := strings.TrimSpace(value.Name)
+		if storeID == "" || storeName == "" {
+			continue
+		}
+		if _, ok := seen[storeID]; ok {
+			continue
+		}
+		seen[storeID] = struct{}{}
+		result = append(result, ShellBridgeStoreClaim{
+			ID:   storeID,
+			Code: strings.TrimSpace(value.Code),
+			Name: storeName,
+			City: strings.TrimSpace(value.City),
+		})
+	}
+
+	return result
+}
+
+func normalizeShellBridgeConsultants(values []ShellBridgeConsultantClaim) []ShellBridgeConsultantClaim {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]ShellBridgeConsultantClaim, 0, len(values))
+	for _, value := range values {
+		userID := strings.TrimSpace(value.UserID)
+		storeID := strings.TrimSpace(value.StoreID)
+		email := strings.ToLower(strings.TrimSpace(value.Email))
+		displayName := strings.TrimSpace(value.DisplayName)
+		if userID == "" || storeID == "" || email == "" || displayName == "" {
+			continue
+		}
+
+		key := userID + ":" + storeID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		result = append(result, ShellBridgeConsultantClaim{
+			UserID:             userID,
+			DisplayName:        displayName,
+			Email:              email,
+			StoreID:            storeID,
+			RegistrationNumber: strings.TrimSpace(value.RegistrationNumber),
+		})
 	}
 
 	return result

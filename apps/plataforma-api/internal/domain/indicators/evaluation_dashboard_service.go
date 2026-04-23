@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) ListEvaluations(ctx context.Context, input ListEvaluationsInput) ([]EvaluationListItem, int, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -34,8 +34,8 @@ func (s *Service) ListEvaluations(ctx context.Context, input ListEvaluationsInpu
 	}
 
 	conditions := []string{fmt.Sprintf("tenant_id = %s::uuid", arg(tenantUUID))}
-	if unitExternalID := strings.TrimSpace(input.UnitExternalID); unitExternalID != "" {
-		conditions = append(conditions, fmt.Sprintf("unit_external_id = %s", arg(unitExternalID)))
+	if storeID := strings.TrimSpace(input.StoreID); storeID != "" {
+		conditions = append(conditions, fmt.Sprintf("store_id::text = %s", arg(storeID)))
 	}
 	if status := strings.TrimSpace(input.Status); status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = %s", arg(normalizeEvaluationStatus(status))))
@@ -63,7 +63,7 @@ func (s *Service) ListEvaluations(ctx context.Context, input ListEvaluationsInpu
 		SELECT
 			e.id::text,
 			e.evaluator_name,
-			COALESCE(e.unit_external_id, ''),
+			COALESCE(e.store_id::text, ''),
 			COALESCE(e.unit_code, ''),
 			COALESCE(e.unit_name, ''),
 			e.scope_mode,
@@ -95,7 +95,7 @@ func (s *Service) ListEvaluations(ctx context.Context, input ListEvaluationsInpu
 		if err := rows.Scan(
 			&item.ID,
 			&item.EvaluatorName,
-			&item.UnitExternalID,
+			&item.StoreID,
 			&item.UnitCode,
 			&item.UnitName,
 			&item.ScopeMode,
@@ -120,7 +120,7 @@ func (s *Service) ListEvaluations(ctx context.Context, input ListEvaluationsInpu
 }
 
 func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (*EvaluationDetail, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (
 			profile_id::text,
 			target_set_id::text,
 			evaluator_name,
-			COALESCE(unit_external_id, ''),
+			COALESCE(store_id::text, ''),
 			COALESCE(unit_code, ''),
 			COALESCE(unit_name, ''),
 			scope_mode,
@@ -160,7 +160,7 @@ func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (
 		&detail.ProfileID,
 		&targetSetID,
 		&detail.EvaluatorName,
-		&detail.UnitExternalID,
+		&detail.StoreID,
 		&detail.UnitCode,
 		&detail.UnitName,
 		&detail.ScopeMode,
@@ -289,7 +289,7 @@ func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (
 	}
 
 	snapshotRows, err := s.pool.Query(ctx, `
-		SELECT id::text, provider_name, COALESCE(source_module, ''), metric_key, scope_mode, COALESCE(unit_external_id, ''), snapshot_at, value_numeric::float8, COALESCE(value_text, ''), value_json, metadata
+		SELECT id::text, provider_name, COALESCE(source_module, ''), metric_key, scope_mode, COALESCE(store_id::text, ''), snapshot_at, value_numeric::float8, COALESCE(value_text, ''), value_json, metadata
 		FROM indicators.indicator_metric_snapshots
 		WHERE evaluation_id = $1::uuid
 		ORDER BY snapshot_at DESC
@@ -303,7 +303,7 @@ func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (
 		var item MetricSnapshotView
 		var valueJSONRaw []byte
 		var itemMetadataRaw []byte
-		if err := snapshotRows.Scan(&item.RecordID, &item.ProviderName, &item.SourceModule, &item.MetricKey, &item.ScopeMode, &item.UnitExternalID, &item.SnapshotAt, &item.ValueNumeric, &item.ValueText, &valueJSONRaw, &itemMetadataRaw); err != nil {
+		if err := snapshotRows.Scan(&item.RecordID, &item.ProviderName, &item.SourceModule, &item.MetricKey, &item.ScopeMode, &item.StoreID, &item.SnapshotAt, &item.ValueNumeric, &item.ValueText, &valueJSONRaw, &itemMetadataRaw); err != nil {
 			return nil, err
 		}
 		item.ValueJSON = decodeJSONMap(valueJSONRaw)
@@ -342,7 +342,7 @@ func (s *Service) GetEvaluation(ctx context.Context, input GetEvaluationInput) (
 }
 
 func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationInput) (*EvaluationDetail, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +378,25 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 		}
 	}
 
+	storeID := strings.TrimSpace(input.StoreID)
+	storeCode := normalizeText(input.UnitCode, 80)
+	storeName := normalizeText(input.UnitName, 160)
+	if storeID != "" {
+		stores, err := s.loadTenantStoreSnapshots(ctx, tenantUUID)
+		if err != nil {
+			return nil, err
+		}
+		store, ok := stores[storeID]
+		if !ok {
+			return nil, ErrInvalidInput
+		}
+		storeCode = normalizeText(stringOrFallback(storeCode, store.Code), 80)
+		storeName = normalizeText(stringOrFallback(storeName, store.Name), 160)
+	}
+	if normalizeScopeMode(input.ScopeMode) == "per_store" && storeID == "" {
+		return nil, ErrInvalidInput
+	}
+
 	overallScore, totalWeight := evaluationScoreFromIndicators(input.Indicators)
 	configSnapshot := input.ConfigSnapshot
 	if configSnapshot == nil {
@@ -402,7 +421,7 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 			target_set_id,
 			evaluator_user_id,
 			evaluator_name,
-			unit_external_id,
+			store_id,
 			unit_code,
 			unit_name,
 			scope_mode,
@@ -421,7 +440,7 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 			$3::uuid,
 			$4::uuid,
 			$5,
-			NULLIF($6, ''),
+			NULLIF($6, '')::uuid,
 			NULLIF($7, ''),
 			NULLIF($8, ''),
 			$9,
@@ -441,9 +460,9 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 		nullableUUIDArg(targetSetID),
 		nullableUUIDArg(input.UserID),
 		normalizeText(stringOrFallback(input.EvaluatorName, "Sistema"), 160),
-		strings.TrimSpace(input.UnitExternalID),
-		normalizeText(input.UnitCode, 80),
-		normalizeText(input.UnitName, 160),
+		storeID,
+		storeCode,
+		storeName,
 		normalizeScopeMode(input.ScopeMode),
 		periodStart,
 		periodEnd,
@@ -576,15 +595,15 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 				source_module,
 				metric_key,
 				scope_mode,
-				unit_external_id,
+				store_id,
 				snapshot_at,
 				value_numeric,
 				value_text,
 				value_json,
 				metadata
 			)
-			VALUES ($1::uuid, $2::uuid, $3, NULLIF($4, ''), $5, $6, NULLIF($7, ''), COALESCE($8::timestamptz, now()), $9, NULLIF($10, ''), $11::jsonb, $12::jsonb)
-		`, evaluationID, nullableUUIDArg(snapshot.ProfileIndicatorID), normalizeText(stringOrFallback(metadataString(snapshot.Metadata, "providerName"), "manual"), 80), normalizeText(metadataString(snapshot.Metadata, "sourceModule"), 80), normalizeText(snapshot.MetricKey, 120), normalizeScopeMode(snapshot.ScopeMode), strings.TrimSpace(snapshot.UnitExternalID), snapshotAt, snapshot.ValueNumeric, snapshot.ValueText, mustJSONMap(snapshot.ValueJSON), mustJSONMap(snapshot.Metadata)); err != nil {
+			VALUES ($1::uuid, $2::uuid, $3, NULLIF($4, ''), $5, $6, NULLIF($7, '')::uuid, COALESCE($8::timestamptz, now()), $9, NULLIF($10, ''), $11::jsonb, $12::jsonb)
+		`, evaluationID, nullableUUIDArg(snapshot.ProfileIndicatorID), normalizeText(stringOrFallback(metadataString(snapshot.Metadata, "providerName"), "manual"), 80), normalizeText(metadataString(snapshot.Metadata, "sourceModule"), 80), normalizeText(snapshot.MetricKey, 120), normalizeScopeMode(snapshot.ScopeMode), strings.TrimSpace(snapshot.StoreID), snapshotAt, snapshot.ValueNumeric, snapshot.ValueText, mustJSONMap(snapshot.ValueJSON), mustJSONMap(snapshot.Metadata)); err != nil {
 			return nil, err
 		}
 	}
@@ -602,7 +621,7 @@ func (s *Service) CreateEvaluation(ctx context.Context, input CreateEvaluationIn
 }
 
 func (s *Service) DeleteEvaluation(ctx context.Context, input DeleteEvaluationInput) error {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return err
 	}
@@ -625,7 +644,7 @@ func (s *Service) DeleteEvaluation(ctx context.Context, input DeleteEvaluationIn
 }
 
 func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*DashboardResponse, error) {
-	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, clientName, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -660,8 +679,8 @@ func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*D
 	if endDate != "" {
 		conditions = append(conditions, fmt.Sprintf("e.period_start <= %s::date", arg(endDate)))
 	}
-	if unitExternalID := strings.TrimSpace(input.UnitExternalID); unitExternalID != "" {
-		conditions = append(conditions, fmt.Sprintf("e.unit_external_id = %s", arg(unitExternalID)))
+	if storeID := strings.TrimSpace(input.StoreID); storeID != "" {
+		conditions = append(conditions, fmt.Sprintf("e.store_id::text = %s", arg(storeID)))
 	}
 	whereClause := strings.Join(conditions, " AND ")
 
@@ -710,10 +729,10 @@ func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*D
 	}
 
 	storeRows, err := s.pool.Query(ctx, fmt.Sprintf(`
-		SELECT COALESCE(e.unit_external_id, ''), COALESCE(e.unit_code, ''), COALESCE(e.unit_name, ''), COALESCE(AVG(COALESCE(e.overall_score, 0))::float8, 0), COALESCE(AVG(COALESCE(e.total_weight, 0))::float8, 0), COUNT(*)
+		SELECT COALESCE(e.store_id::text, ''), COALESCE(e.unit_code, ''), COALESCE(e.unit_name, ''), COALESCE(AVG(COALESCE(e.overall_score, 0))::float8, 0), COALESCE(AVG(COALESCE(e.total_weight, 0))::float8, 0), COUNT(*)
 		FROM indicators.indicator_evaluations e
-		WHERE %s AND COALESCE(e.unit_external_id, '') <> ''
-		GROUP BY COALESCE(e.unit_external_id, ''), COALESCE(e.unit_code, ''), COALESCE(e.unit_name, '')
+		WHERE %s AND e.store_id IS NOT NULL
+		GROUP BY COALESCE(e.store_id::text, ''), COALESCE(e.unit_code, ''), COALESCE(e.unit_name, '')
 		ORDER BY COALESCE(AVG(COALESCE(e.overall_score, 0))::float8, 0) DESC, COALESCE(e.unit_name, '')
 	`, whereClause), args...)
 	if err != nil {
@@ -725,7 +744,7 @@ func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*D
 	storeOrder := []string{}
 	for storeRows.Next() {
 		var item DashboardStore
-		if err := storeRows.Scan(&item.UnitExternalID, &item.UnitCode, &item.UnitName, &item.Score, &item.UsedWeight, &item.EvaluationsCount); err != nil {
+		if err := storeRows.Scan(&item.StoreID, &item.UnitCode, &item.UnitName, &item.Score, &item.UsedWeight, &item.EvaluationsCount); err != nil {
 			return nil, err
 		}
 		item.Score = roundFloat(item.Score, 2)
@@ -734,20 +753,20 @@ func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*D
 		item.Tone = scoreTone(item.Score)
 		item.Indicators = []DashboardIndicatorScore{}
 		response.Stores = append(response.Stores, item)
-		storeByID[item.UnitExternalID] = &response.Stores[len(response.Stores)-1]
-		storeOrder = append(storeOrder, item.UnitExternalID)
+		storeByID[item.StoreID] = &response.Stores[len(response.Stores)-1]
+		storeOrder = append(storeOrder, item.StoreID)
 	}
 	if storeRows.Err() != nil {
 		return nil, storeRows.Err()
 	}
 
 	storeIndicatorRows, err := s.pool.Query(ctx, fmt.Sprintf(`
-		SELECT COALESCE(e.unit_external_id, ''), ei.code, ei.name, COALESCE(AVG(COALESCE(ei.score, 0))::float8, 0), COUNT(*), COALESCE(AVG(COALESCE(ei.weight, 0))::float8, 0)
+		SELECT COALESCE(e.store_id::text, ''), ei.code, ei.name, COALESCE(AVG(COALESCE(ei.score, 0))::float8, 0), COUNT(*), COALESCE(AVG(COALESCE(ei.weight, 0))::float8, 0)
 		FROM indicators.indicator_evaluations e
 		JOIN indicators.indicator_evaluation_indicators ei ON ei.evaluation_id = e.id
-		WHERE %s AND COALESCE(e.unit_external_id, '') <> ''
-		GROUP BY COALESCE(e.unit_external_id, ''), ei.code, ei.name
-		ORDER BY COALESCE(e.unit_external_id, ''), ei.code
+		WHERE %s AND e.store_id IS NOT NULL
+		GROUP BY COALESCE(e.store_id::text, ''), ei.code, ei.name
+		ORDER BY COALESCE(e.store_id::text, ''), ei.code
 	`, whereClause), args...)
 	if err != nil {
 		return nil, err
@@ -790,7 +809,7 @@ func (s *Service) GetDashboard(ctx context.Context, input GetDashboardInput) (*D
 }
 
 func (s *Service) ReplaceTargets(ctx context.Context, input ReplaceTargetsInput) ([]TargetSetView, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -799,6 +818,10 @@ func (s *Service) ReplaceTargets(ctx context.Context, input ReplaceTargetsInput)
 		return nil, err
 	}
 	_, businessIDs, _, err := s.loadProfileIndicators(ctx, profile.RecordID)
+	if err != nil {
+		return nil, err
+	}
+	storeSnapshots, err := s.loadTenantStoreSnapshots(ctx, tenantUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -838,12 +861,18 @@ func (s *Service) ReplaceTargets(ctx context.Context, input ReplaceTargetsInput)
 			if resolved := businessIDs[profileIndicatorID]; resolved != "" {
 				profileIndicatorID = resolved
 			}
+			storeID := strings.TrimSpace(item.StoreID)
+			if storeID != "" {
+				if _, ok := storeSnapshots[storeID]; !ok {
+					return nil, ErrInvalidInput
+				}
+			}
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO indicators.indicator_target_items (
 					target_set_id,
 					profile_indicator_id,
 					category_code,
-					unit_external_id,
+					store_id,
 					target_value_numeric,
 					target_value_text,
 					target_value_json,
@@ -851,8 +880,8 @@ func (s *Service) ReplaceTargets(ctx context.Context, input ReplaceTargetsInput)
 					weight,
 					metadata
 				)
-				VALUES ($1::uuid, $2::uuid, NULLIF($3, ''), NULLIF($4, ''), $5, NULLIF($6, ''), $7::jsonb, $8, $9, $10::jsonb)
-			`, targetSetID, nullableUUIDArg(profileIndicatorID), normalizeText(item.CategoryCode, 80), strings.TrimSpace(item.UnitExternalID), item.TargetValueNumeric, item.TargetValueText, mustJSONMap(item.TargetValueJSON), normalizeComparator(item.Comparator), item.Weight, mustJSONMap(item.Metadata)); err != nil {
+				VALUES ($1::uuid, $2::uuid, NULLIF($3, ''), NULLIF($4, '')::uuid, $5, NULLIF($6, ''), $7::jsonb, $8, $9, $10::jsonb)
+			`, targetSetID, nullableUUIDArg(profileIndicatorID), normalizeText(item.CategoryCode, 80), storeID, item.TargetValueNumeric, item.TargetValueText, mustJSONMap(item.TargetValueJSON), normalizeComparator(item.Comparator), item.Weight, mustJSONMap(item.Metadata)); err != nil {
 				return nil, err
 			}
 		}
@@ -866,7 +895,7 @@ func (s *Service) ReplaceTargets(ctx context.Context, input ReplaceTargetsInput)
 }
 
 func (s *Service) GetTargets(ctx context.Context, input GetActiveProfileInput) ([]TargetSetView, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -882,7 +911,7 @@ func (s *Service) GetTargets(ctx context.Context, input GetActiveProfileInput) (
 }
 
 func (s *Service) IngestProviderSnapshots(ctx context.Context, input IngestProviderSnapshotsInput) ([]ProviderHealth, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -891,6 +920,10 @@ func (s *Service) IngestProviderSnapshots(ctx context.Context, input IngestProvi
 		return nil, err
 	}
 	indicators, businessIDs, _, err := s.loadProfileIndicators(ctx, profile.RecordID)
+	if err != nil {
+		return nil, err
+	}
+	storeSnapshots, err := s.loadTenantStoreSnapshots(ctx, tenantUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -919,6 +952,12 @@ func (s *Service) IngestProviderSnapshots(ctx context.Context, input IngestProvi
 			profileIndicatorID = resolved
 		}
 		indicator := indicatorByRecordID[profileIndicatorID]
+		storeID := strings.TrimSpace(snapshot.StoreID)
+		if storeID != "" {
+			if _, ok := storeSnapshots[storeID]; !ok {
+				return nil, ErrInvalidInput
+			}
+		}
 
 		snapshotAt, err := parseOptionalTimestamp(snapshot.SnapshotAt)
 		if err != nil {
@@ -933,15 +972,15 @@ func (s *Service) IngestProviderSnapshots(ctx context.Context, input IngestProvi
 				source_module,
 				metric_key,
 				scope_mode,
-				unit_external_id,
+				store_id,
 				snapshot_at,
 				value_numeric,
 				value_text,
 				value_json,
 				metadata
 			)
-			VALUES ($1::uuid, $2::uuid, $3, NULLIF($4, ''), $5, $6, NULLIF($7, ''), COALESCE($8::timestamptz, now()), $9, NULLIF($10, ''), $11::jsonb, $12::jsonb)
-		`, nullableUUIDArg(evaluationID), nullableUUIDArg(profileIndicatorID), normalizeText(input.ProviderName, 80), normalizeText(stringOrFallback(input.SourceModule, indicator.SourceModule), 80), normalizeText(snapshot.MetricKey, 120), normalizeScopeMode(stringOrFallback(snapshot.ScopeMode, indicator.ScopeMode)), strings.TrimSpace(snapshot.UnitExternalID), snapshotAt, snapshot.ValueNumeric, snapshot.ValueText, mustJSONMap(snapshot.ValueJSON), mustJSONMap(snapshot.Metadata)); err != nil {
+			VALUES ($1::uuid, $2::uuid, $3, NULLIF($4, ''), $5, $6, NULLIF($7, '')::uuid, COALESCE($8::timestamptz, now()), $9, NULLIF($10, ''), $11::jsonb, $12::jsonb)
+		`, nullableUUIDArg(evaluationID), nullableUUIDArg(profileIndicatorID), normalizeText(input.ProviderName, 80), normalizeText(stringOrFallback(input.SourceModule, indicator.SourceModule), 80), normalizeText(snapshot.MetricKey, 120), normalizeScopeMode(stringOrFallback(snapshot.ScopeMode, indicator.ScopeMode)), storeID, snapshotAt, snapshot.ValueNumeric, snapshot.ValueText, mustJSONMap(snapshot.ValueJSON), mustJSONMap(snapshot.Metadata)); err != nil {
 			return nil, err
 		}
 	}
@@ -954,7 +993,7 @@ func (s *Service) IngestProviderSnapshots(ctx context.Context, input IngestProvi
 }
 
 func (s *Service) CreateAssetUploadIntent(ctx context.Context, input CreateAssetUploadIntentInput) (*AssetUploadIntent, error) {
-	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.ClientID)
+	tenantUUID, _, _, err := s.resolveTenant(ctx, input.TenantID, input.IsPlatformAdmin, input.CoreTenantID, input.ClientID)
 	if err != nil {
 		return nil, err
 	}

@@ -21,6 +21,7 @@ import { requireConversationWrite } from "../../lib/guards.js";
 import { outboundQueue, outboundRetryJobOptions } from "../../queue.js";
 import { recordAuditEvent } from "../../services/audit-log.js";
 import type { EvolutionClient } from "../../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import { validateOutboundUpload } from "../../services/upload-policy.js";
 import { asRecord } from "./object-utils.js";
 import {
@@ -114,16 +115,9 @@ export function registerConversationSendMessageRoute(protectedApp: FastifyInstan
       const messageCorrelationId = deriveMessageCorrelationId(request.correlationId);
 
       if (body.data.type !== MessageType.TEXT) {
-        const tenantLimits = await prisma.tenant.findUnique({
-          where: { id: request.authUser.tenantId },
-          select: {
-            maxUploadMb: true
-          }
+        const tenantLimits = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+          accessToken: request.coreAccessToken
         });
-
-        if (!tenantLimits) {
-          return reply.code(404).send({ message: "Tenant nao encontrado" });
-        }
 
         const uploadValidation = validateOutboundUpload(tenantLimits, {
           messageType: body.data.type,
@@ -159,30 +153,14 @@ export function registerConversationSendMessageRoute(protectedApp: FastifyInstan
 
       const message = await prisma.message.create({
         data: {
-          tenant: {
-            connect: {
-              id: request.authUser.tenantId
-            }
-          },
+          tenantId: request.authUser.tenantId,
           ...(conversation.instanceId
             ? {
-                instance: {
-                  connect: {
-                    id: conversation.instanceId
-                  }
-                }
+                instanceId: conversation.instanceId
               }
             : {}),
-          conversation: {
-            connect: {
-              id: conversation.id
-            }
-          },
-          senderUser: {
-            connect: {
-              id: request.authUser.sub
-            }
-          },
+          conversationId: conversation.id,
+          senderUserId: request.authUser.sub,
           direction: MessageDirection.OUTBOUND,
           messageType: body.data.type,
           instanceScopeKey: conversation.instanceScopeKey,

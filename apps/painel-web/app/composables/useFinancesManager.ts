@@ -15,7 +15,7 @@ import {
 
 interface FinancesFetchOptions {
   q?: string
-  clientId?: number
+  coreTenantId?: string
   period?: string
 }
 
@@ -26,8 +26,7 @@ interface FinanceCreatePayload {
   notes?: string
   entradas?: FinanceLineItem[]
   saidas?: FinanceLineItem[]
-  clientId?: number
-  clientName?: string
+  coreTenantId?: string
 }
 
 interface FinanceUpdatePayload {
@@ -37,8 +36,7 @@ interface FinanceUpdatePayload {
   notes?: string
   entradas?: FinanceLineItem[]
   saidas?: FinanceLineItem[]
-  clientId?: number
-  clientName?: string
+  coreTenantId?: string
 }
 
 interface FinanceLinePatchPayload {
@@ -59,10 +57,8 @@ function normalizePeriod(value: unknown) {
   return /^\d{4}-\d{2}$/.test(raw) ? raw : ''
 }
 
-function normalizeClientId(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0
-  return parsed
+function normalizeCoreTenantId(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
 }
 
 function normalizeDate(value: unknown) {
@@ -196,7 +192,7 @@ export function useFinancesManager() {
       period: payload.period,
       status: payload.status,
       notes: payload.notes,
-      clientId: payload.clientId,
+      coreTenantId: payload.coreTenantId,
       clientName: payload.clientName,
       summary: payload.summary,
       preview: payload.preview,
@@ -277,7 +273,7 @@ export function useFinancesManager() {
     errorMessage.value = ''
     setSaving(keyFor(COLLECTION_KEY, 'fetch'), true)
 
-    const scopedClientId = normalizeClientId(options.clientId || sessionSimulation.effectiveClientId)
+		const scopedCoreTenantId = normalizeCoreTenantId(options.coreTenantId || sessionSimulation.activeClientCoreTenantId)
 
     try {
       const response = await bffFetch<FinancesListResponse>(FINANCE_SHEETS_API_BASE, {
@@ -285,7 +281,7 @@ export function useFinancesManager() {
           page: 1,
           limit: DEFAULT_FETCH_LIMIT,
           q: normalizeText(options.q, 120),
-          clientId: scopedClientId,
+          coreTenantId: scopedCoreTenantId || undefined,
           period: normalizePeriod(options.period)
         }
       })
@@ -316,8 +312,7 @@ export function useFinancesManager() {
           notes: normalizeText(payload.notes, 12000),
           entradas: normalizeRows(payload.entradas, 'entrada'),
           saidas: normalizeRows(payload.saidas, 'saida'),
-          clientId: normalizeClientId(payload.clientId),
-          clientName: normalizeText(payload.clientName, 120)
+          coreTenantId: normalizeCoreTenantId(payload.coreTenantId || sessionSimulation.activeClientCoreTenantId) || undefined
         }
       })
 
@@ -350,8 +345,7 @@ export function useFinancesManager() {
           notes: normalizeText(payload.notes, 12000),
           entradas: normalizeRows(payload.entradas, 'entrada') || [],
           saidas: normalizeRows(payload.saidas, 'saida') || [],
-          clientId: normalizeClientId(payload.clientId),
-          clientName: normalizeText(payload.clientName, 120)
+          coreTenantId: normalizeCoreTenantId(payload.coreTenantId || sessionSimulation.activeClientCoreTenantId) || undefined
         }
       })
 

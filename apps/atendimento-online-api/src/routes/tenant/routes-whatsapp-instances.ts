@@ -1,58 +1,33 @@
 import type { FastifyInstance } from "fastify";
+import { env } from "../../config.js";
 import { prisma } from "../../db.js";
 import { requireAdmin } from "../../lib/guards.js";
-import { normalizeEvolutionApiKey } from "./helpers.js";
 import {
-  assignUsersToWhatsAppInstance,
   buildAutomaticWhatsAppInstanceName,
   ensureTenantWhatsAppRegistry,
   resolveAccessibleWhatsAppInstances,
   resolveTenantInstanceById
 } from "../../services/whatsapp-instances.js";
-import { resolveCoreAtendimentoAccessByEmail } from "../../services/core-atendimento-access.js";
+import { listTenantDirectoryUsers } from "../../services/core-tenant-directory.js";
 import {
   resolveAdminClientByCoreTenantId,
-  resolveAtendimentoSnapshot,
-  resolveCurrentCoreTenant
+  resolveAtendimentoSnapshot
 } from "./atendimento-snapshot.js";
 import {
   createWhatsAppInstanceSchema,
   updateWhatsAppInstanceSchema,
-  updateWhatsAppInstanceUsersSchema,
   whatsappInstanceParamsSchema
 } from "./schemas.js";
+import { resolveTenantRuntimeContextForAuth } from "../../services/tenant-runtime.js";
 
 async function loadEligibleTenantUsers(
   tenantId: string,
   options: { accessToken?: string | null; clientId?: number | null } = {}
 ) {
-  const users = await prisma.user.findMany({
-    where: {
-      tenantId
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true
-    },
-    orderBy: [
-      { role: "asc" },
-      { name: "asc" }
-    ]
+  return listTenantDirectoryUsers(tenantId, {
+    accessToken: options.accessToken,
+    clientId: options.clientId ?? null
   });
-
-  const accessEntries = await Promise.all(
-    users.map(async (user) => {
-      const coreAccess = await resolveCoreAtendimentoAccessByEmail(user.email, options);
-      return {
-        ...user,
-        atendimentoAccess: coreAccess.atendimentoAccess
-      };
-    })
-  );
-
-  return accessEntries;
 }
 
 function mapInstancePayload(instance: Awaited<ReturnType<typeof ensureTenantWhatsAppRegistry>>[number]) {
@@ -63,14 +38,14 @@ function mapInstancePayload(instance: Awaited<ReturnType<typeof ensureTenantWhat
     displayName: instance.displayName,
     phoneNumber: instance.phoneNumber,
     queueLabel: instance.queueLabel ?? null,
-    userScopePolicy: instance.userScopePolicy,
+    userScopePolicy: "MULTI_INSTANCE" as const,
     responsibleUserId: instance.responsibleUserId ?? null,
     responsibleUserName: instance.responsibleUser?.name ?? null,
     responsibleUserEmail: instance.responsibleUser?.email ?? null,
     isDefault: instance.isDefault,
     isActive: instance.isActive,
-    hasEvolutionApiKey: Boolean(instance.evolutionApiKey),
-    assignedUserIds: instance.userAccesses.map((access) => access.userId),
+    hasEvolutionApiKey: Boolean(env.EVOLUTION_API_KEY),
+    assignedUserIds: [] as string[],
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt
   };
@@ -111,7 +86,6 @@ async function findInstanceNameConflict(params: {
 }
 
 async function resolveNextAutomaticInstanceName(params: {
-  tenantId: string;
   tenantName: string;
   tenantSlug: string;
   excludeInstanceId?: string | null;
@@ -156,49 +130,25 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
       return;
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: {
-        id: request.authUser.tenantId
-      },
-      select: {
-        id: true,
-        coreTenantId: true,
-        slug: true,
-        name: true,
-        whatsappInstance: true,
-        evolutionApiKey: true,
-        maxChannels: true
-      }
+    const tenant = await resolveTenantRuntimeContextForAuth(request.authUser, {
+      accessToken: request.coreAccessToken
     });
 
     if (!tenant) {
       return reply.code(404).send({ message: "Tenant nao encontrado" });
     }
 
-    const coreTenant = await resolveCurrentCoreTenant({
-      coreTenantId: tenant.coreTenantId,
-      slug: tenant.slug,
-      name: tenant.name
-    }, {
+    const adminClient = await resolveAdminClientByCoreTenantId(tenant.coreTenantId, {
       accessToken: request.coreAccessToken
     });
-    const adminClient = coreTenant
-      ? await resolveAdminClientByCoreTenantId(coreTenant.id, {
-          accessToken: request.coreAccessToken
-        })
-      : null;
-    const atendimentoSnapshot = coreTenant
-      ? await resolveAtendimentoSnapshot({
-          coreTenantId: coreTenant.id,
-          adminClient,
-          fallbackMaxUsers: 3,
-          fallbackMaxChannels: tenant.maxChannels,
-          fallbackCurrentUsers: 0,
-          accessToken: request.coreAccessToken
-        })
-      : {
-          maxChannels: tenant.maxChannels
-        };
+    const atendimentoSnapshot = await resolveAtendimentoSnapshot({
+      coreTenantId: tenant.coreTenantId,
+      adminClient,
+      fallbackMaxUsers: 3,
+      fallbackMaxChannels: 1,
+      fallbackCurrentUsers: 0,
+      accessToken: request.coreAccessToken
+    });
 
     const [instances, users] = await Promise.all([
       ensureTenantWhatsAppRegistry(tenant),
@@ -229,53 +179,28 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
       });
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: {
-        id: request.authUser.tenantId
-      },
-      select: {
-        id: true,
-        coreTenantId: true,
-        slug: true,
-        name: true,
-        whatsappInstance: true,
-        evolutionApiKey: true,
-        maxChannels: true
-      }
+    const tenant = await resolveTenantRuntimeContextForAuth(request.authUser, {
+      accessToken: request.coreAccessToken
     });
 
     if (!tenant) {
       return reply.code(404).send({ message: "Tenant nao encontrado" });
     }
 
-    const coreTenant = await resolveCurrentCoreTenant({
-      coreTenantId: tenant.coreTenantId,
-      slug: tenant.slug,
-      name: tenant.name
-    }, {
+    const adminClient = await resolveAdminClientByCoreTenantId(tenant.coreTenantId, {
       accessToken: request.coreAccessToken
     });
-    const adminClient = coreTenant
-      ? await resolveAdminClientByCoreTenantId(coreTenant.id, {
-          accessToken: request.coreAccessToken
-        })
-      : null;
-    const atendimentoSnapshot = coreTenant
-      ? await resolveAtendimentoSnapshot({
-          coreTenantId: coreTenant.id,
-          adminClient,
-          fallbackMaxUsers: 3,
-          fallbackMaxChannels: tenant.maxChannels,
-          fallbackCurrentUsers: 0,
-          accessToken: request.coreAccessToken
-        })
-      : {
-          maxChannels: tenant.maxChannels
-        };
+    const atendimentoSnapshot = await resolveAtendimentoSnapshot({
+      coreTenantId: tenant.coreTenantId,
+      adminClient,
+      fallbackMaxUsers: 3,
+      fallbackMaxChannels: 1,
+      fallbackCurrentUsers: 0,
+      accessToken: request.coreAccessToken
+    });
 
     const instances = await ensureTenantWhatsAppRegistry(tenant);
     const normalizedInstanceName = await resolveNextAutomaticInstanceName({
-      tenantId: tenant.id,
       tenantName: tenant.name,
       tenantSlug: tenant.slug
     });
@@ -323,36 +248,34 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
         instanceName: normalizedInstanceName,
         displayName: parsed.data.displayName?.trim() || null,
         phoneNumber: parsed.data.phoneNumber?.trim() || null,
-        evolutionApiKey: normalizeEvolutionApiKey(parsed.data.evolutionApiKey) ?? null,
         queueLabel: normalizeOptionalText(parsed.data.queueLabel),
         responsibleUserId,
-        userScopePolicy: parsed.data.userScopePolicy,
         isDefault: parsed.data.isDefault || instances.length < 1,
         isActive: parsed.data.isActive,
         createdByUserId: request.authUser.sub
       }
     });
 
-    if (created.isDefault || !tenant.whatsappInstance) {
-      await prisma.tenant.update({
-        where: {
-          id: tenant.id
-        },
-        data: {
-          whatsappInstance: created.instanceName
-        }
-      });
-    }
-
     const refreshed = await ensureTenantWhatsAppRegistry(tenant.id);
     const instance = refreshed.find((entry) => entry.id === created.id);
-    return reply.code(201).send(instance ? mapInstancePayload(instance) : mapInstancePayload({
-      ...created,
+    return reply.code(201).send(instance ? mapInstancePayload(instance) : {
+      id: created.id,
+      tenantId: created.tenantId,
+      instanceName: created.instanceName,
+      displayName: created.displayName,
+      phoneNumber: created.phoneNumber,
       queueLabel: created.queueLabel ?? null,
+      userScopePolicy: "MULTI_INSTANCE" as const,
       responsibleUserId: created.responsibleUserId ?? null,
-      responsibleUser: null,
-      userAccesses: []
-    }));
+      responsibleUserName: null,
+      responsibleUserEmail: null,
+      isDefault: created.isDefault,
+      isActive: created.isActive,
+      hasEvolutionApiKey: Boolean(env.EVOLUTION_API_KEY),
+      assignedUserIds: [],
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt
+    });
   });
 
   protectedApp.patch("/tenant/whatsapp/instances/:instanceId", async (request, reply) => {
@@ -370,49 +293,25 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
       });
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: {
-        id: request.authUser.tenantId
-      },
-      select: {
-        id: true,
-        coreTenantId: true,
-        slug: true,
-        name: true,
-        whatsappInstance: true,
-        evolutionApiKey: true,
-        maxChannels: true
-      }
+    const tenant = await resolveTenantRuntimeContextForAuth(request.authUser, {
+      accessToken: request.coreAccessToken
     });
 
     if (!tenant) {
       return reply.code(404).send({ message: "Tenant nao encontrado" });
     }
 
-    const coreTenant = await resolveCurrentCoreTenant({
-      coreTenantId: tenant.coreTenantId,
-      slug: tenant.slug,
-      name: tenant.name
-    }, {
+    const adminClient = await resolveAdminClientByCoreTenantId(tenant.coreTenantId, {
       accessToken: request.coreAccessToken
     });
-    const adminClient = coreTenant
-      ? await resolveAdminClientByCoreTenantId(coreTenant.id, {
-          accessToken: request.coreAccessToken
-        })
-      : null;
-    const atendimentoSnapshot = coreTenant
-      ? await resolveAtendimentoSnapshot({
-          coreTenantId: coreTenant.id,
-          adminClient,
-          fallbackMaxUsers: 3,
-          fallbackMaxChannels: tenant.maxChannels,
-          fallbackCurrentUsers: 0,
-          accessToken: request.coreAccessToken
-        })
-      : {
-          maxChannels: tenant.maxChannels
-        };
+    const atendimentoSnapshot = await resolveAtendimentoSnapshot({
+      coreTenantId: tenant.coreTenantId,
+      adminClient,
+      fallbackMaxUsers: 3,
+      fallbackMaxChannels: 1,
+      fallbackCurrentUsers: 0,
+      accessToken: request.coreAccessToken
+    });
 
     const instance = await resolveTenantInstanceById({
       tenantId: tenant.id,
@@ -423,8 +322,6 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
     if (!instance) {
       return reply.code(404).send({ message: "Instancia WhatsApp nao encontrada" });
     }
-
-    const normalizedNextName = instance.instanceName;
 
     const tenantUsers = await loadEligibleTenantUsers(tenant.id, {
       accessToken: request.coreAccessToken,
@@ -475,41 +372,35 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
         id: instance.id
       },
       data: {
-        instanceName: normalizedNextName,
         displayName: body.data.displayName === undefined ? undefined : body.data.displayName.trim() || null,
         phoneNumber: body.data.phoneNumber === undefined ? undefined : body.data.phoneNumber.trim() || null,
-        evolutionApiKey: body.data.evolutionApiKey === undefined
-          ? undefined
-          : normalizeEvolutionApiKey(body.data.evolutionApiKey) ?? null,
         queueLabel: body.data.queueLabel === undefined ? undefined : normalizeOptionalText(body.data.queueLabel),
         responsibleUserId,
-        userScopePolicy: body.data.userScopePolicy,
         isActive: body.data.isActive,
         isDefault: body.data.isDefault
       }
     });
 
-    if (updated.isDefault || tenant.whatsappInstance === instance.instanceName) {
-      await prisma.tenant.update({
-        where: {
-          id: tenant.id
-        },
-        data: {
-          whatsappInstance: updated.instanceName,
-          evolutionApiKey: updated.evolutionApiKey ?? tenant.evolutionApiKey
-        }
-      });
-    }
-
     const refreshed = await ensureTenantWhatsAppRegistry(tenant.id);
     const refreshedInstance = refreshed.find((entry) => entry.id === instance.id);
-    return refreshedInstance ? mapInstancePayload(refreshedInstance) : mapInstancePayload({
-      ...updated,
+    return refreshedInstance ? mapInstancePayload(refreshedInstance) : {
+      id: updated.id,
+      tenantId: updated.tenantId,
+      instanceName: updated.instanceName,
+      displayName: updated.displayName,
+      phoneNumber: updated.phoneNumber,
       queueLabel: updated.queueLabel ?? null,
+      userScopePolicy: "MULTI_INSTANCE" as const,
       responsibleUserId: updated.responsibleUserId ?? null,
-      responsibleUser: null,
-      userAccesses: []
-    });
+      responsibleUserName: null,
+      responsibleUserEmail: null,
+      isDefault: updated.isDefault,
+      isActive: updated.isActive,
+      hasEvolutionApiKey: Boolean(env.EVOLUTION_API_KEY),
+      assignedUserIds: [],
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt
+    };
   });
 
   protectedApp.put("/tenant/whatsapp/instances/:instanceId/users", async (request, reply) => {
@@ -517,77 +408,8 @@ export function registerTenantWhatsAppInstancesRoutes(protectedApp: FastifyInsta
       return;
     }
 
-    const params = whatsappInstanceParamsSchema.safeParse(request.params);
-    const body = updateWhatsAppInstanceUsersSchema.safeParse(request.body ?? {});
-
-    if (!params.success || !body.success) {
-      return reply.code(400).send({
-        message: "Payload invalido",
-        errors: body.success ? undefined : body.error.flatten()
-      });
-    }
-
-    const instance = await resolveTenantInstanceById({
-      tenantId: request.authUser.tenantId,
-      instanceId: params.data.instanceId,
-      includeInactive: true
+    return reply.code(410).send({
+      message: "A elegibilidade por instancia foi removida. Quem pode acessar o atendimento agora vem do platform_core."
     });
-
-    if (!instance) {
-      return reply.code(404).send({ message: "Instancia WhatsApp nao encontrada" });
-    }
-
-    const adminClient = request.authUser.coreTenantId
-      ? await resolveAdminClientByCoreTenantId(request.authUser.coreTenantId, {
-          accessToken: request.coreAccessToken
-        })
-      : null;
-    const tenantUsers = await loadEligibleTenantUsers(request.authUser.tenantId, {
-      accessToken: request.coreAccessToken,
-      clientId: adminClient?.id ?? null
-    });
-    const allowedUsers = new Set(
-      tenantUsers
-        .filter((entry) => entry.atendimentoAccess)
-        .map((entry) => entry.id)
-    );
-
-    const invalidUserIds = body.data.userIds.filter((entry) => !allowedUsers.has(entry));
-    if (invalidUserIds.length > 0) {
-      return reply.code(409).send({
-        message: "Alguns usuarios selecionados ainda nao possuem acesso ao modulo atendimento.",
-        details: {
-          invalidUserIds
-        }
-      });
-    }
-
-    let updated;
-    try {
-      updated = await assignUsersToWhatsAppInstance({
-        tenantId: request.authUser.tenantId,
-        instanceId: instance.id,
-        userIds: body.data.userIds
-      });
-    } catch (error) {
-      const conflictError = error as Error & { code?: string; details?: unknown };
-      if (conflictError.code === "WHATSAPP_INSTANCE_USER_SCOPE_CONFLICT") {
-        return reply.code(409).send({
-          message: conflictError.message,
-          details: conflictError.details
-        });
-      }
-
-      throw error;
-    }
-
-    if (!updated) {
-      return reply.code(404).send({ message: "Instancia WhatsApp nao encontrada" });
-    }
-
-    return {
-      ...mapInstancePayload(updated),
-      users: tenantUsers
-    };
   });
 }

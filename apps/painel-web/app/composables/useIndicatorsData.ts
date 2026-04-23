@@ -197,7 +197,7 @@ interface ApiTargetItemView {
   recordId?: string
   indicatorId?: string
   categoryCode?: string
-  unitExternalId?: string
+  storeId?: string
   targetValueNumeric?: number
   targetValueText?: string
   comparator?: string
@@ -248,7 +248,7 @@ interface ApiDashboardIndicatorScore {
 }
 
 interface ApiDashboardStore {
-  unitExternalId: string
+  storeId: string
   unitCode?: string
   unitName: string
   accentColor?: string
@@ -282,7 +282,7 @@ export interface ApiDashboardResponse {
 interface ApiEvaluationListItem {
   id: string
   evaluatorName: string
-  unitExternalId?: string
+  storeId?: string
   unitCode?: string
   unitName?: string
   scopeMode: string
@@ -340,7 +340,7 @@ export interface ApiEvaluationDetail {
   id: string
   profileId: string
   evaluatorName: string
-  unitExternalId?: string
+  storeId?: string
   unitCode?: string
   unitName?: string
   scopeMode: string
@@ -1146,11 +1146,11 @@ export function buildDashboardModel(
       }
     ],
     ranking: (dashboard?.ranking || []).map(store => ({
-      id: store.unitExternalId,
+      id: store.storeId,
       unitName: store.unitName,
       score: asNumber(store.score),
       usedWeight: asNumber(store.usedWeight),
-      accentColor: resolveAccentColor(store.unitExternalId, store.accentColor),
+      accentColor: resolveAccentColor(store.storeId, store.accentColor),
       helper: `${formatCount(store.evaluationsCount)} avaliacao(oes) • ${formatScopeLabel(toScopeMode(store.scopeMode))}`
     }))
   }
@@ -1160,7 +1160,7 @@ export function mapEvaluationRecord(item: ApiEvaluationListItem): IndicatorEvalu
   return {
     id: asString(item.id),
     evaluatorName: asString(item.evaluatorName, 'Nao informado'),
-    unitId: asString(item.unitExternalId, 'client-global'),
+    unitId: asString(item.storeId, 'client-global'),
     unitName: asString(item.unitName, 'Cliente global'),
     periodStart: asString(item.periodStart),
     periodEnd: asString(item.periodEnd),
@@ -1309,9 +1309,9 @@ export function buildIndicatorSections(
   dashboard: ApiDashboardResponse | null,
   details: ApiEvaluationDetail[]
 ): IndicatorSectionModel[] {
-  const dashboardStoreById = new Map((dashboard?.stores || []).map(store => [store.unitExternalId, store]))
+  const dashboardStoreById = new Map((dashboard?.stores || []).map(store => [store.storeId, store]))
   const detailsByStore = details.reduce<Record<string, ApiEvaluationDetail[]>>((accumulator, detail) => {
-    const storeId = asString(detail.unitExternalId, 'client-global')
+    const storeId = asString(detail.storeId, 'client-global')
     accumulator[storeId] = accumulator[storeId] || []
     accumulator[storeId]?.push(detail)
     return accumulator
@@ -1741,15 +1741,26 @@ export function useIndicatorsApi() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
   }
 
+  function scopedCoreTenantId() {
+    const normalized = String(sessionSimulation.activeClientCoreTenantId || '').trim()
+    return normalized || ''
+  }
+
   async function request<T>(
     path: string,
     options: Record<string, unknown> = {},
     config: { scoped?: boolean } = {}
   ) {
     const query = asMap(options.query)
-    const resolvedQuery = config.scoped === false || scopedClientId() <= 0
+    const clientId = scopedClientId()
+    const coreTenantId = scopedCoreTenantId()
+    const resolvedQuery = config.scoped === false || (clientId <= 0 && !coreTenantId)
       ? query
-      : { ...query, clientId: scopedClientId() }
+      : {
+          ...query,
+          clientId: clientId > 0 ? clientId : query.clientId,
+          coreTenantId: coreTenantId || query.coreTenantId
+        }
 
     return coreApiFetch<T>(`${INDICATORS_API_BASE}${path}`, {
       ...options,

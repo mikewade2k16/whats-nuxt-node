@@ -36,6 +36,28 @@ app/pages/admin/fila-atendimento/index.vue -> entrada principal do modulo no pai
 - nenhum fluxo novo deve recriar shadow local de token/usuario para compatibilidade
 - `/api/bff/*` nao pode mais ser usado para login do painel nem para gestao de sessao administrativa
 
+## Auth, login e hidratação do shell
+
+- `app/stores/core-auth.ts` é a única fonte canônica de sessão autenticada no browser; telas, middlewares e composables não devem manter token/usuário paralelo.
+- `app/composables/useAdminSession.ts` centraliza restauração por cookie, validação, logout, expiração e redirect para `/admin/login`.
+- `app/stores/session-simulation.ts` centraliza apenas o contexto administrativo efetivo: perfil, cliente selecionado, `coreTenantId`, módulos e headers de escopo.
+- Hidratação automática do contexto deve ser idempotente: callers de startup, middleware, layout e `ensureSessionScopeReady()` devem chamar `refreshClientOptions()` sem `force` e respeitar `clientOptionsSynced`.
+- `refreshClientOptions({ force: true })` fica reservado para ação explícita do usuário, mudança realtime confirmada de `clients/users` ou outro evento que realmente invalide o catálogo.
+- Watcher de `requestContextHash` nunca deve chamar `refreshClientOptions()`; ele pode recarregar dados da tela ou reavaliar acesso depois que `clientOptionsSynced=true`.
+- Lista secundária de clientes vazia ou falha não pode reabrir estado de hidratação pendente indefinidamente; depois de tentativa concluída, marcar sync concluída ou manter fallback explícito.
+- Usuário sem cliente efetivo (`clientId <= 0`) não pode ganhar acesso a módulo usando `moduleCodes` de perfil como fallback depois da sync inicial.
+- Falha transiente em `/api/admin/profile/summary`, `/api/admin/clients` ou catálogos auxiliares não deve limpar sessão inteira; limpar sessão apenas em 401/403 de auth real ou payload de perfil inválido.
+- `/admin` e redirects pós-login só podem redirecionar após `clientOptionsSynced=true`, para evitar ping-pong entre home, rota de módulo e access-denied.
+
+## Incidente auth loop 2026-04-23
+
+- Sintoma confirmado em browser real: `/admin/login` entrava em loop entre restore de sessao, `/api/admin/profile/summary`, `/api/admin/clients` e redirect para o shell, impedindo login estavel e ate o uso do toggle de senha.
+- Causa raiz confirmada: sessao lembrada com expiracao longa nao pode ser agendada direto em `setTimeout(ttlMs)` quando `ttlMs > 2147483647`. Em browser o timer estoura, volta quase imediato e reabre o ciclo de hidratar, validar e redirecionar.
+- Regra obrigatoria: expiracao longa deve ser quebrada em fatias seguras `<= 2147483647ms`, recalculando o TTL restante antes de agendar a proxima espera.
+- Regra obrigatoria: timer, restore, validacao e qualquer request async de auth so podem limpar sessao quando ainda correspondem ao mesmo `token` e a mesma `revision` da sessao atual. Resultado velho deve ser ignorado.
+- Regra obrigatoria: restore pendente, validacao antiga ou timer velho nunca podem sobrescrever login manual mais novo nem limpar sessao autenticada atual.
+- Ao editar `useAdminSession`, `core-auth` ou middleware admin, validar sempre estes cenarios: sessao lembrada de longo prazo, login manual com restore pendente e refresh de rota com shell ja autenticado.
+
 ## Regras obrigatorias
 
 - componente Vue nao chama backend externo diretamente; usar composable/store/BFF

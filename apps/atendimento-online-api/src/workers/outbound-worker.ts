@@ -13,6 +13,7 @@ import {
 import { outboundQueue, outboundQueueMaxAttempts, outboundQueueName, outboundRetryJobOptions } from "../queue.js";
 import { redisOptions, redisPublisher } from "../redis.js";
 import { recordAuditEvent } from "../services/audit-log.js";
+import { getTenantRuntimeOrFail } from "../services/tenant-runtime.js";
 import { resolveConversationInstanceRouting } from "../services/whatsapp-instances.js";
 import {
   extractExternalMessageId,
@@ -311,7 +312,6 @@ const worker = new Worker(
       where: { id: messageId },
       include: {
         conversation: true,
-        tenant: true,
         instance: true
       }
     });
@@ -334,6 +334,7 @@ const worker = new Worker(
     }
 
     try {
+      const tenant = await getTenantRuntimeOrFail(message.tenantId);
       const routedInstance = await resolveConversationInstanceRouting({
         tenantId: message.tenantId,
         conversation: {
@@ -344,7 +345,7 @@ const worker = new Worker(
       const instanceName =
         routedInstance?.instanceName ||
         message.instance?.instanceName ||
-        message.tenant.whatsappInstance ||
+        tenant.whatsappInstance ||
         env.EVOLUTION_DEFAULT_INSTANCE;
       const { textUrl, mediaUrl, audioUrl, contactUrl, stickerUrl } = getEvolutionUrls(instanceName ?? "");
 
@@ -370,7 +371,10 @@ const worker = new Worker(
       }
 
       const recipient = normalizeRecipient(message.conversation.externalId);
-      const apiKey = message.tenant.evolutionApiKey ?? env.EVOLUTION_API_KEY;
+      const apiKey = env.EVOLUTION_API_KEY;
+      if (!apiKey) {
+        throw new Error("Nenhuma API key global da Evolution configurada no ambiente");
+      }
 
       const isMediaMessage = isMediaType(message.messageType);
       const caption = message.mediaCaption ?? (isPlaceholderContent(message.content) ? null : message.content);

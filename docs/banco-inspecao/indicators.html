@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schema indicators</title>
+  <link rel="stylesheet" href="schema-pages.css" />
+</head>
+<body class="theme-indicators">
+  <main class="shell">
+    <nav class="topbar">
+      <a class="back-link" href="index.html">Voltar ao hub do banco</a>
+      <div class="schema-nav">
+        <a href="platform-core.html">platform_core</a>
+        <a href="finance.html">finance</a>
+        <a href="public-atendimento-online.html">atendimento_online</a>
+        <a class="active" href="indicators.html">indicators</a>
+        <a href="fila-atendimento.html">fila_atendimento</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">Módulo Analítico</div>
+      <h1>O schema `indicators` é o mais modular do banco, mas depende de referências lógicas ao shell</h1>
+      <p class="lead">Aqui o desenho é mais limpo: template, perfil, meta, avaliação, snapshot e evidência foram separados com rigor. A dívida principal não é de modelagem interna, e sim de integração, porque o schema depende de `tenant_id`, `user_id` e `unit_external_id` sem integridade cruzada com o shell.</p>
+      <div class="chip-row">
+        <span class="chip">20 tabelas</span>
+        <span class="chip">5 de taxonomia</span>
+        <span class="chip">5 de customização</span>
+        <span class="chip">8 de execução e evidência</span>
+        <span class="chip">2 de governança</span>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <article class="panel">
+        <p class="metric-value">0</p>
+        <div class="metric-label">tabelas claramente shadow ou legadas</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">3</p>
+        <div class="metric-label">referências lógicas críticas: `tenant_id`, `evaluator_user_id`, `uploaded_by_user_id`</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">1</p>
+        <div class="metric-label">área de maior risco: contrato de provider e resolução de unidade</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">20</p>
+        <div class="metric-label">tabelas que já obedecem um desenho modular consistente</div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Mapa visual do schema</h2>
+        <p class="subhead">A força de `indicators` está na separação clara entre definição, customização, execução e governança. Esse schema não parece legado; ele parece novo, mas ainda depende do shell de forma lógica.</p>
+        <div class="cluster-grid">
+          <section class="cluster">
+            <div class="cluster-kicker">Taxonomia</div>
+            <h3>Template e versão</h3>
+            <p class="copy">Camada mestre que define categorias, indicadores e itens de coleta.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">indicator_templates</span>
+              <span class="entity-pill">indicator_template_versions</span>
+              <span class="entity-pill">indicator_template_categories</span>
+              <span class="entity-pill">indicator_template_indicators</span>
+              <span class="entity-pill">indicator_template_indicator_items</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Tenantização</div>
+            <h3>Perfil e override</h3>
+            <p class="copy">Camada onde o tenant customiza a taxonomia e ajusta o que muda por indicador, item e unidade.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">indicator_profiles</span>
+              <span class="entity-pill">indicator_profile_indicator_overrides</span>
+              <span class="entity-pill">indicator_profile_indicator_items</span>
+              <span class="entity-pill">indicator_profile_store_overrides</span>
+              <span class="entity-pill">indicator_provider_bindings</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Execução</div>
+            <h3>Meta, avaliação e evidência</h3>
+            <p class="copy">Camada operacional que grava alvo, avaliação, snapshots, itens e evidências do ciclo.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">indicator_target_sets</span>
+              <span class="entity-pill">indicator_target_items</span>
+              <span class="entity-pill">indicator_evaluations</span>
+              <span class="entity-pill">indicator_evaluation_categories</span>
+              <span class="entity-pill">indicator_evaluation_indicators</span>
+              <span class="entity-pill">indicator_evaluation_items</span>
+              <span class="entity-pill">indicator_metric_snapshots</span>
+              <span class="entity-pill">indicator_assets</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Governança</div>
+            <h3>Política e roadmap</h3>
+            <p class="copy">Camada de decisão do módulo, útil para manter contrato e rollout sob controle.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">indicator_governance_policies</span>
+              <span class="entity-pill">indicator_governance_roadmap_items</span>
+            </div>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Fluxo visual do schema</h2>
+        <div class="flowline">
+          <article class="flow-step">
+            <div class="step-index">1</div>
+            <h3>Template nasce</h3>
+            <p>`indicator_templates` e `indicator_template_versions` congelam a taxonomia canônica do módulo.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">2</div>
+            <h3>Tenant ativa um perfil</h3>
+            <p>`indicator_profiles` cria a instância operável do tenant em cima do template.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">3</div>
+            <h3>Override e binding</h3>
+            <p>`indicator_profile_indicator_overrides` e `indicator_provider_bindings` ajustam a lógica ao contexto do cliente.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">4</div>
+            <h3>Meta é publicada</h3>
+            <p>`indicator_target_sets` e `indicator_target_items` definem o alvo do período.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">5</div>
+            <h3>Avaliação acontece</h3>
+            <p>`indicator_evaluations`, itens, snapshots e assets registram a execução real.</p>
+          </article>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid decision-grid">
+      <article class="decision">
+        <div class="decision-kicker">Canônico</div>
+        <h3>O que está bem resolvido aqui</h3>
+        <ul class="simple-list">
+          <li>estrutura de template, versão, categoria, indicador e item.</li>
+          <li>separação entre perfil do tenant e definição base.</li>
+          <li>execução e evidência desacopladas da taxonomia.</li>
+          <li>governança visível dentro do próprio schema.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Ponte lógica</div>
+        <h3>O que depende do shell sem FK</h3>
+        <ul class="simple-list">
+          <li>`tenant_id` em perfis, metas, avaliações e assets.</li>
+          <li>`evaluator_user_id` e `uploaded_by_user_id`.</li>
+          <li>`unit_external_id` como referência de loja/unidade.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">O que revisar</div>
+        <h3>Alvos de melhoria sem remoção imediata</h3>
+        <ul class="simple-list">
+          <li>padronizar o contrato de provider e `metric_key`.</li>
+          <li>substituir `unit_external_id` livre por uma loja global consolidada do shell.</li>
+          <li>definir até onde a integração lógica é aceitável antes de exigir referência forte.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid risk-grid">
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Referência lógica em vez de FK</h3>
+        <p class="copy">Este schema assume que a camada de serviço sempre vai resolver tenant, usuário e unidade corretamente. Isso funciona, mas exige disciplina alta.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Binding flexível demais</h3>
+        <p class="copy">`indicator_provider_bindings` é poderoso, mas sem contrato firme de provider ele pode virar acoplamento informal e difícil de auditar.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Loja/unidade ainda não é canônica</h3>
+        <p class="copy">`unit_external_id` é útil para começar, mas ainda não resolve o problema estrutural de unidade global compartilhada na plataforma.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Tabelas detalhadas</h2>
+        <p class="subhead">A leitura abaixo cobre todas as 20 tabelas do schema e ajuda a enxergar o módulo como produto, não só como banco.</p>
+
+        <div class="table-groups">
+          <section class="group-card">
+            <h3>Taxonomia do template</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">indicator_templates</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Template mestre do módulo.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `code` unique; `name`</li>
+                  <li>`description`, `status`, `taxonomy_version`, `is_system`</li>
+                  <li>`default_scope_mode`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "indicators_default",
+  "name": "Template padrao de indicadores",
+  "status": "active",
+  "default_scope_mode": "per_store"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_template_versions</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Versão publicada ou draft do template.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `template_id` FK</li>
+                  <li>`version_number`, `status`, `published_at`, `notes`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "template": "indicators_default",
+  "version_number": 1,
+  "status": "published"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_template_categories</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Categoria macro da taxonomia.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `template_version_id` FK</li>
+                  <li>`code`, `name`, `description`, `sort_order`, `weight`</li>
+                  <li>`scope_mode`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "ambiente_aconchegante",
+  "name": "Ambiente Aconchegante",
+  "weight": 15,
+  "scope_mode": "per_store"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_template_indicators</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Indicador de alto nível ligado à categoria.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `template_version_id` FK; `category_id` FK</li>
+                  <li>`code`, `name`, `description`</li>
+                  <li>`indicator_kind`, `source_kind`, `source_module`, `source_metric_key`</li>
+                  <li>`scope_mode`, `aggregation_mode`, `value_type`, `evidence_policy`</li>
+                  <li>`weight`, `is_required`, `supports_store_breakdown`</li>
+                  <li>`settings_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "time_especialistas",
+  "indicator_kind": "composite",
+  "source_kind": "hybrid",
+  "source_module": "people_analytics",
+  "source_metric_key": "team_health"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_template_indicator_items</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Item de coleta do indicador no template.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `template_indicator_id` FK</li>
+                  <li>`code`, `label`, `description`</li>
+                  <li>`input_type`, `evidence_policy`, `source_metric_key`</li>
+                  <li>`select_options_json`, `weight`, `is_required`, `config_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "reposicao_cafe",
+  "label": "Reposicao de cafe",
+  "input_type": "boolean",
+  "weight": 25
+}</pre>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Perfil do tenant e customização</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">indicator_profiles</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Perfil operacional do tenant baseado no template.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` lógico</li>
+                  <li>`template_id`, `template_version_id`, `code`, `name`, `description`</li>
+                  <li>`status`, `scope_mode`, `store_breakdown_enabled`, `provider_sync_enabled`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant_id": "uuid-do-tenant-shell",
+  "code": "perfil-varejo-padrao",
+  "name": "Perfil Varejo Padrão",
+  "status": "active"
+}</pre>
+                <p class="table-notes">`tenant_id` não é FK para `platform_core.tenants`.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_profile_indicator_overrides</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Override do indicador dentro do perfil do tenant.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `profile_id` FK; `template_indicator_id` FK nullable</li>
+                  <li>`category_code`, `category_name`, `code`, `name`, `description`</li>
+                  <li>`indicator_kind`, `source_kind`, `source_module`, `source_metric_key`</li>
+                  <li>`scope_mode`, `aggregation_mode`, `value_type`, `evidence_policy`</li>
+                  <li>`weight`, `is_enabled`, `is_required`, `is_custom`, `supports_store_breakdown`</li>
+                  <li>`settings_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "profile": "perfil-varejo-padrao",
+  "code": "indicadores_resultado",
+  "is_enabled": true,
+  "is_custom": false
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_profile_indicator_items</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Item customizado dentro do indicador do perfil.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `profile_indicator_id` FK; `template_item_id` FK nullable</li>
+                  <li>`code`, `label`, `description`, `input_type`, `evidence_policy`, `source_metric_key`</li>
+                  <li>`select_options_json`, `weight`, `is_enabled`, `is_required`, `config_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "profile_indicator": "indicadores_resultado",
+  "code": "meta_batida",
+  "input_type": "percent",
+  "is_enabled": true
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_profile_store_overrides</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Override do indicador por unidade ou loja.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `profile_id` FK; `profile_indicator_id` FK</li>
+                  <li>`unit_external_id`, `unit_code`, `unit_name`</li>
+                  <li>`scope_mode`, `weight`, `is_enabled`, `settings_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "profile": "perfil-varejo-padrao",
+  "profile_indicator": "time_especialistas",
+  "unit_external_id": "loja-jardins",
+  "is_enabled": true
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_provider_bindings</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Binding de provider externo com indicador de template ou perfil.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK</li>
+                  <li>`binding_scope`, `provider_name`, `source_module`, `metric_key`</li>
+                  <li>`template_indicator_id` nullable; `profile_indicator_id` nullable</li>
+                  <li>`config_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "binding_scope": "profile",
+  "provider_name": "sales",
+  "source_module": "sales",
+  "metric_key": "avg_ticket"
+}</pre>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Metas, avaliação, snapshot e assets</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">indicator_target_sets</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Conjunto de metas do tenant para um período.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` lógico; `profile_id` FK</li>
+                  <li>`name`, `period_kind`, `starts_at`, `ends_at`, `scope_mode`, `status`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant_id": "uuid-do-tenant-shell",
+  "name": "Metas Abril 2026",
+  "period_kind": "monthly",
+  "status": "active"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_target_items</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Meta detalhada por indicador ou unidade.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `target_set_id` FK; `profile_indicator_id` FK nullable</li>
+                  <li>`category_code`, `unit_external_id`</li>
+                  <li>`target_value_numeric`, `target_value_text`, `target_value_json`</li>
+                  <li>`comparator`, `weight`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "target_set": "Metas Abril 2026",
+  "profile_indicator": "meta_batida",
+  "unit_external_id": "loja-jardins",
+  "target_value_numeric": 100.0,
+  "comparator": "gte"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_evaluations</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Avaliação consolidada do período.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` lógico; `profile_id` FK; `target_set_id` FK nullable</li>
+                  <li>`evaluator_user_id`, `evaluator_name`</li>
+                  <li>`unit_external_id`, `unit_code`, `unit_name`</li>
+                  <li>`scope_mode`, `period_start`, `period_end`, `status`</li>
+                  <li>`overall_score`, `total_weight`, `notes`, `config_snapshot`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant_id": "uuid-do-tenant-shell",
+  "profile": "perfil-varejo-padrao",
+  "unit_external_id": "loja-jardins",
+  "period_start": "2026-04-01",
+  "period_end": "2026-04-30",
+  "status": "completed"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_evaluation_categories</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Subtotal por categoria dentro da avaliação.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `evaluation_id` FK</li>
+                  <li>`category_code`, `category_name`, `score`, `weight`</li>
+                  <li>`summary_json`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "evaluation": "abr-2026-loja-jardins",
+  "category_code": "ambiente_aconchegante",
+  "score": 8.75
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_evaluation_indicators</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Resultado do indicador na avaliação.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `evaluation_id` FK; `evaluation_category_id` FK nullable; `profile_indicator_id` FK nullable</li>
+                  <li>`code`, `name`, `source_kind`, `source_module`</li>
+                  <li>`scope_mode`, `aggregation_mode`, `value_type`, `evidence_policy`</li>
+                  <li>`score`, `raw_value_numeric`, `weight`, `config_snapshot`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "evaluation": "abr-2026-loja-jardins",
+  "code": "indicadores_resultado",
+  "score": 9.2,
+  "raw_value_numeric": 102.0
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_evaluation_items</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Resposta ou nota do item avaliado.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `evaluation_indicator_id` FK; `profile_item_id` FK nullable</li>
+                  <li>`code`, `label`, `input_type`, `evidence_policy`</li>
+                  <li>`value_text`, `value_numeric`, `value_boolean`, `value_json`</li>
+                  <li>`weight`, `score`, `notes`, `config_snapshot`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "evaluation_indicator": "ambiente_aconchegante",
+  "code": "reposicao_cafe",
+  "value_boolean": true,
+  "score": 10.0
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_metric_snapshots</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Snapshot da métrica externa usada na avaliação.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `evaluation_id` FK nullable; `profile_indicator_id` FK nullable</li>
+                  <li>`provider_name`, `source_module`, `metric_key`</li>
+                  <li>`scope_mode`, `unit_external_id`, `snapshot_at`</li>
+                  <li>`value_numeric`, `value_text`, `value_json`, `metadata`</li>
+                </ul>
+                <pre>{
+  "provider_name": "sales",
+  "metric_key": "avg_ticket",
+  "unit_external_id": "loja-jardins",
+  "value_numeric": 4830.55
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_assets</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Evidência anexada à avaliação.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` lógico</li>
+                  <li>`evaluation_id`, `evaluation_indicator_id`, `evaluation_item_id` nullable</li>
+                  <li>`asset_kind`, `storage_provider`, `storage_bucket`, `storage_key`, `file_name`, `content_type`</li>
+                  <li>`file_size_bytes`, `uploaded_by_user_id`, `uploaded_at`, `metadata`, `created_at`</li>
+                </ul>
+                <pre>{
+  "tenant_id": "uuid-do-tenant-shell",
+  "asset_kind": "image",
+  "storage_key": "indicators/2026/04/loja-jardins/foto-vitrine-01.jpg"
+}</pre>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Governança</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">indicator_governance_policies</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Políticas do módulo de indicadores.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `code` unique; `title`, `description`</li>
+                  <li>`state`, `value`, `affected_area`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "scope-default",
+  "title": "Escopo default do onboarding",
+  "state": "recommended",
+  "value": "client_global"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">indicator_governance_roadmap_items</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Roadmap de evolução do módulo.</p>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `code` unique; `title`, `description`</li>
+                  <li>`stage`, `owner_name`, `dependencies`, `sort_order`, `is_active`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "code": "roadmap-history",
+  "title": "Historico e auditoria final",
+  "stage": "later",
+  "owner_name": "Backend / auditoria"
+}</pre>
+              </div>
+            </details>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <p class="footer-note">Síntese: `indicators` parece o schema mais saudável do repositório. O maior trabalho aqui não é reescrever o módulo, e sim garantir que tenant, usuário e unidade passem a ter referências mais estáveis vindas do shell.</p>
+  </main>
+</body>
+</html>

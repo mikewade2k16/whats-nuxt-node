@@ -14,7 +14,7 @@
 
 .fila-admin-app .workspace {
   /*width: min(100%, 1180px); */
-  margin: 0 auto;
+  /*margin: 0 auto;*/
   padding: 16px;
 }
 
@@ -49,13 +49,27 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   align-items: stretch;
   overflow: hidden;
 }
 
-.fila-admin-app .queue-column {
+.fila-admin-app .operation-queue-columns {
   min-height: 0;
+  display: flex;
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fila-admin-app .queue-column {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto auto 1fr;
@@ -65,24 +79,27 @@
 }
 
 .fila-admin-app .queue-column__header {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
 .fila-admin-app .queue-column__action-bar {
-  padding: 6px 8px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--line-soft);
   background: rgba(13, 18, 29, 0.96);
 }
 
 .fila-admin-app .queue-column__body {
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .fila-admin-app .queue-card,
@@ -96,9 +113,9 @@
 .fila-admin-app .queue-card {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--line-soft);
 }
 
@@ -136,6 +153,15 @@
 .fila-admin-app .queue-card__avatar--large {
   width: 58px;
   height: 58px;
+}
+
+.fila-admin-app .queue-card__avatar-img,
+.fila-admin-app .employee__avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .fila-admin-app .queue-card__content,
@@ -284,10 +310,10 @@
 
 .fila-admin-app .column-action {
   width: 100%;
-  min-height: 42px;
+  min-height: 38px;
   border: 0;
-  border-radius: 14px;
-  font-size: 0.86rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -302,11 +328,11 @@
 }
 
 .fila-admin-app .queue-empty {
-  min-height: 180px;
+  min-height: 140px;
   display: grid;
   place-items: center;
   gap: 8px;
-  padding: 18px;
+  padding: 14px;
   text-align: center;
 }
 
@@ -327,12 +353,13 @@
 
 .fila-admin-app .employee-strip {
   display: grid;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: 18px;
-  background: rgba(13, 18, 29, 0.9);
+  flex: 0 0 auto;
+  gap: 0;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .fila-admin-app .employee-strip__header {
@@ -354,21 +381,27 @@
 
 .fila-admin-app .employee-strip__list {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  overflow-y: hidden;
+  padding-bottom: 0;
 }
 
 .fila-admin-app .employee {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 7px;
+  padding: 5px 8px;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: 10px;
   background: #0d121d;
   color: var(--text-main);
   flex-shrink: 0;
+}
+
+.fila-admin-app .employee__avatar {
+  width: 38px;
+  height: 38px;
 }
 
 .fila-admin-app .employee--queue {
@@ -389,11 +422,11 @@
 .fila-admin-app .employee__info {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
 }
 
 .fila-admin-app .employee__name {
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -401,7 +434,7 @@
 .fila-admin-app .employee__status,
 .fila-admin-app .employee__pause-reason {
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   white-space: nowrap;
 }
 
@@ -411,7 +444,7 @@
 }
 
 .fila-admin-app .employee__pause-reason {
-  max-width: 120px;
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -463,21 +496,24 @@
 }
 
 .fila-admin-app .module-shell__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, max-content);
+  gap: 1rem 1.25rem;
   align-items: flex-start;
-  flex-wrap: wrap;
+  min-block-size: 7.25rem;
 }
 
 .fila-admin-app .module-shell__copy,
 .fila-admin-app .module-shell__meta {
   display: grid;
   gap: 0.5rem;
+  align-content: start;
+  min-block-size: 5.75rem;
 }
 
 .fila-admin-app .module-shell__meta {
   justify-items: end;
+  min-width: min(100%, 18rem);
 }
 
 .fila-admin-app .module-shell__field {
@@ -518,15 +554,19 @@
 
 .fila-admin-app .fila-module-nav {
   display: flex;
+  align-items: center;
   gap: 0.55rem;
   overflow-x: auto;
+  min-height: 2.95rem;
   padding-bottom: 0.2rem;
+  scrollbar-gutter: stable both-edges;
 }
 
 .fila-admin-app .fila-module-nav__item {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 2.7rem;
   padding: 0.7rem 0.9rem;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -603,6 +643,8 @@
 
 .fila-admin-app .metric-card__value {
   font-size: 1.25rem;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
 }
 
 .fila-admin-app .insight-grid {
@@ -639,6 +681,67 @@
   background: rgba(129, 140, 248, 0.08);
   color: #dbe2ff;
   font-size: 0.76rem;
+}
+
+.fila-admin-app .simple-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.fila-admin-app .simple-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 0.75rem;
+  background: rgba(6, 10, 18, 0.48);
+}
+
+.fila-admin-app .simple-list__item span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.fila-admin-app .detail-collapse {
+  display: grid;
+  gap: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 1rem;
+  background: rgba(13, 18, 29, 0.72);
+}
+
+.fila-admin-app .detail-collapse__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #dbe2ff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.fila-admin-app .detail-collapse__summary::-webkit-details-marker {
+  display: none;
+}
+
+.fila-admin-app .detail-collapse__summary .material-icons-round {
+  transition: transform 0.16s ease;
+}
+
+.fila-admin-app .detail-collapse[open] .detail-collapse__summary .material-icons-round {
+  transform: rotate(180deg);
+}
+
+.fila-admin-app .detail-collapse__content {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
 }
 
 .fila-admin-app .table-wrap {
@@ -1445,6 +1548,11 @@
 }
 
 @media (max-width: 860px) {
+  .fila-admin-app .module-shell__header {
+    grid-template-columns: 1fr;
+    min-block-size: auto;
+  }
+
   .fila-admin-app .module-shell__meta,
   .fila-admin-app .toolbar-card,
   .fila-admin-app .metric-grid,
@@ -1463,8 +1571,22 @@
     justify-items: stretch;
   }
 
+  .fila-admin-app .module-shell__copy,
+  .fila-admin-app .module-shell__meta {
+    min-block-size: 0;
+  }
+
   .fila-admin-app .toolbar-card__field--grow {
     grid-column: auto;
+  }
+
+  .fila-admin-app .simple-list__item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fila-admin-app .simple-list__item span {
+    text-align: left;
   }
 
   .fila-admin-app .multistore-form__row,
@@ -1492,19 +1614,19 @@
 }
 
 .fila-admin-app .queue-column {
-  min-height: 460px;
+  min-height: 0;
 }
 
 .fila-admin-app .queue-column__header {
-  padding: 14px 12px;
+  padding: 10px 12px;
   text-align: center;
   color: var(--text-main);
 }
 
 .fila-admin-app .queue-column__body {
   align-content: start;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 8px;
   background: linear-gradient(180deg, rgba(10, 14, 24, 0.5), rgba(6, 10, 18, 0.5));
 }
 
@@ -1518,7 +1640,7 @@
 }
 
 .fila-admin-app .queue-card {
-  padding: 12px;
+  padding: 8px 10px;
 }
 
 .fila-admin-app .queue-card__action {

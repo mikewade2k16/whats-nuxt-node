@@ -5,6 +5,7 @@ import { env } from "../../config.js";
 import { prisma } from "../../db.js";
 import { requireConversationWrite } from "../../lib/guards.js";
 import { EvolutionApiError } from "../../services/evolution-client.js";
+import { getTenantRuntimeOrFail } from "../../services/tenant-runtime.js";
 import { normalizeConnectionState } from "../tenant/helpers.js";
 import { asRecord } from "./object-utils.js";
 import { createEvolutionClientForTenant, extractPhone, normalizeAvatarUrl } from "./participants.js";
@@ -384,19 +385,9 @@ export function registerConversationSyncOpenWhatsAppRoute(protectedApp: FastifyI
       });
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: request.authUser.tenantId },
-      select: {
-        id: true,
-        slug: true,
-        whatsappInstance: true,
-        evolutionApiKey: true
-      }
+    const tenant = await getTenantRuntimeOrFail(request.authUser.tenantId, {
+      accessToken: request.coreAccessToken
     });
-
-    if (!tenant) {
-      return reply.code(404).send({ message: "Tenant nao encontrado" });
-    }
 
     const selectedInstance = await resolveTenantInstanceById({
       tenantId: tenant.id,

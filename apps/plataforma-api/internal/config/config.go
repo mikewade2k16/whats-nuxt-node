@@ -16,6 +16,7 @@ type Config struct {
 	JWTSecret          string
 	JWTIssuer          string
 	JWTTTL             time.Duration
+	PersistentJWTTTL   time.Duration
 	PasswordResetTTL   time.Duration
 	SMTP               SMTPConfig
 	AllowedOrigins     []string
@@ -77,6 +78,7 @@ func Load() (Config, error) {
 		JWTSecret:          jwtSecret,
 		JWTIssuer:          envOrDefault("CORE_JWT_ISSUER", "plataforma-api"),
 		JWTTTL:             minutesAsDuration("CORE_JWT_TTL_MINUTES", 720),
+		PersistentJWTTTL:   minutesAsDuration("CORE_PERSISTENT_JWT_TTL_MINUTES", 43200),
 		PasswordResetTTL:   minutesAsDuration("CORE_PASSWORD_RESET_TTL_MINUTES", 15),
 		AllowedOrigins:     csv("CORE_ALLOWED_ORIGINS", "http://localhost:3000"),
 		TrustedProxyRanges: csvWithFallbacks([]string{"CORE_TRUSTED_PROXY_RANGES", "TRUSTED_PROXY_RANGES"}, "loopback,private"),

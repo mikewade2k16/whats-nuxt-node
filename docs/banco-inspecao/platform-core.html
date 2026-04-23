@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schema platform_core</title>
+  <link rel="stylesheet" href="schema-pages.css" />
+</head>
+<body class="theme-core">
+  <main class="shell">
+    <nav class="topbar">
+      <a class="back-link" href="index.html">Voltar ao hub do banco</a>
+      <div class="schema-nav">
+        <a class="active" href="platform-core.html">platform_core</a>
+        <a href="finance.html">finance</a>
+        <a href="public-atendimento-online.html">atendimento_online</a>
+        <a href="indicators.html">indicators</a>
+        <a href="fila-atendimento.html">fila_atendimento</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="eyebrow">Shell Canônico da Plataforma</div>
+      <h1>platform_core concentra identidade, acesso, módulos, cobrança e sessão</h1>
+      <p class="lead">Este schema é o eixo canônico do sistema. Ele já segura o que deveria ser comum para todos os módulos: tenants, usuários, grants por módulo, RBAC, assinatura, pricing, sessões, auditoria e diretório global de lojas. O financeiro foi extraído para schema próprio, então os principais pontos fracos do shell agora estão mais ligados a compatibilidade histórica e semânticas herdadas do que à falta de separação estrutural.</p>
+      <div class="chip-row">
+        <span class="chip">24 tabelas</span>
+        <span class="chip">loja global ativa</span>
+        <span class="chip">soft refs ainda presentes</span>
+        <span class="chip">1 legado em transição</span>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <article class="panel">
+        <p class="metric-value">3</p>
+        <div class="metric-label">núcleos principais: identidade, comercial e trilha técnica</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">8</p>
+        <div class="metric-label">tabelas diretamente ligadas a grants, módulos e assinatura</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">4</p>
+        <div class="metric-label">pontos sensíveis: `legacy_id`, soft ref, compatibilidade e diretório de cobrança</div>
+      </article>
+      <article class="panel">
+        <p class="metric-value">1</p>
+        <div class="metric-label">tabela claramente em transição: `tenant_store_charges`</div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Mapa visual do schema</h2>
+        <p class="subhead">A leitura visual mais útil de `platform_core` é separar o schema por responsabilidade. Isso mostra rápido o que é base canônica, o que é trilha técnica e o que ainda carrega semântica ruim.</p>
+        <div class="cluster-grid">
+          <section class="cluster">
+            <div class="cluster-kicker">Núcleo Canônico</div>
+            <h3>Identidade e acesso</h3>
+            <p class="copy">Aqui está o centro de gravidade real da plataforma: usuário global, vínculo com tenant, RBAC e grants por módulo.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">tenants</span>
+              <span class="entity-pill">tenant_stores</span>
+              <span class="entity-pill">users</span>
+              <span class="entity-pill">tenant_users</span>
+              <span class="entity-pill">roles</span>
+              <span class="entity-pill">permissions</span>
+              <span class="entity-pill">role_permissions</span>
+              <span class="entity-pill">tenant_user_roles</span>
+              <span class="entity-pill">tenant_user_modules</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Comercial e governança</div>
+            <h3>Planos, ativação e pricing</h3>
+            <p class="copy">Este bloco define o que o cliente comprou, o que está habilitado e qual limite ou preço vale de fato.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">modules</span>
+              <span class="entity-pill">plans</span>
+              <span class="entity-pill">plan_modules</span>
+              <span class="entity-pill">plan_module_limits</span>
+              <span class="entity-pill">tenant_subscriptions</span>
+              <span class="entity-pill">tenant_modules</span>
+              <span class="entity-pill">tenant_module_limits</span>
+              <span class="entity-pill">tenant_module_pricing</span>
+            </div>
+          </section>
+
+          <section class="cluster">
+            <div class="cluster-kicker">Técnico-operacional</div>
+            <h3>Sessão, auditoria e presença</h3>
+            <p class="copy">São tabelas de trilha, expiração, rastreio e suporte à operação do painel e do realtime.</p>
+            <div class="entity-pills">
+              <span class="entity-pill">user_sessions</span>
+              <span class="entity-pill">auth_session_settings</span>
+              <span class="entity-pill">auth_password_resets</span>
+              <span class="entity-pill">audit_logs</span>
+              <span class="entity-pill">presence_connections</span>
+            </div>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Fluxo visual do schema</h2>
+        <div class="flowline">
+          <article class="flow-step">
+            <div class="step-index">1</div>
+            <h3>Tenant nasce</h3>
+            <p>`tenants` cria o cliente e `tenant_stores` materializa as lojas globais que os módulos passam a compartilhar.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">2</div>
+            <h3>Identidade entra</h3>
+            <p>`users` cria a identidade global e `tenant_users` materializa o vínculo com o cliente.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">3</div>
+            <h3>Módulos são habilitados</h3>
+            <p>`tenant_subscriptions`, `tenant_modules` e `tenant_module_limits` definem o que o cliente pode usar.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">4</div>
+            <h3>Usuário recebe grant</h3>
+            <p>`tenant_user_modules` e `tenant_user_roles` refinam módulo e RBAC no nível do usuário.</p>
+          </article>
+          <article class="flow-step">
+            <div class="step-index">5</div>
+            <h3>Operação é auditada</h3>
+            <p>`user_sessions`, `auth_password_resets`, `audit_logs` e `presence_connections` sustentam o runtime do shell.</p>
+          </article>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid decision-grid">
+      <article class="decision">
+        <div class="decision-kicker">Canônico</div>
+        <h3>O que deve continuar como fonte de verdade</h3>
+        <ul class="simple-list">
+          <li>`users`, `tenant_users`, `roles`, `tenant_user_roles` e `tenant_user_modules`.</li>
+          <li>`modules`, `plans`, `tenant_modules` e `tenant_module_limits`.</li>
+          <li>`user_sessions` e `auth_password_resets` como dono de auth do shell.</li>
+          <li>`tenants` e `tenant_stores` como base compartilhada para módulos extraídos, incluindo `finance`.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">Em transição</div>
+        <h3>O que ainda carrega desenho ruim</h3>
+        <ul class="simple-list">
+          <li>`tenant_store_charges` ainda existe como overlay financeiro de compatibilidade.</li>
+          <li>`tenant_users.store_id` já aponta para `tenant_stores`, e `tenant_store_charges` também ficou subordinada a esse diretório por `store_id` obrigatório.</li>
+          <li>`legacy_id` em entidades principais ainda prende o schema a compatibilidade antiga.</li>
+          <li>a fronteira com o schema `finance` ainda depende do tenant canônico do shell.</li>
+        </ul>
+      </article>
+      <article class="decision">
+        <div class="decision-kicker">O que remover depois</div>
+        <h3>Alvos naturais de limpeza</h3>
+        <ul class="simple-list">
+          <li>leitura e input operacional de `tenant_store_charges` fora do billing por loja.</li>
+          <li>dependência operacional de `legacy_id` em fluxos novos.</li>
+          <li>mapeamentos de papel que só existem para conciliar legado e vocabulário novo.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid risk-grid">
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Semântica de loja ainda em transição</h3>
+        <p class="copy">`tenant_stores` já resolveu a loja global do shell e a Fase 1 do banco tornou `tenant_store_charges` dependente dela por `store_id` obrigatório e sincronização automática. O que resta aqui é cleanup operacional, não mais ambiguidade estrutural bruta.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Fronteira cross-schema ainda recente</h3>
+        <p class="copy">O financeiro saiu do `platform_core`, mas ainda depende diretamente de `tenants` e da compatibilidade histórica de algumas chaves para manter a transição segura.</p>
+      </article>
+      <article class="risk">
+        <div class="risk-kicker">Ponto fraco</div>
+        <h3>Compatibilidade ainda visível</h3>
+        <p class="copy">`legacy_id`, `user_type`, `business_role` e outros campos mostram o esforço de transição entre modelos antigos e o padrão novo.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 class="section-title">Tabelas detalhadas</h2>
+        <p class="subhead">Cada entrada abaixo traz papel da tabela, campos finais, relações, um exemplo de dado e observações de integração. A ideia é deixar a leitura técnica navegável sem perder detalhe.</p>
+
+        <div class="table-groups">
+          <section class="group-card">
+            <h3>Identidade, tenant e acesso</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">tenants</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Cliente da plataforma e raiz do isolamento multi-tenant do shell.</p>
+                <div class="detail-grid">
+                  <div>
+                    <h4>Campos</h4>
+                    <ul class="field-list">
+                      <li>`id` uuid PK</li>
+                      <li>`slug` varchar(80) unique</li>
+                      <li>`name`, `legal_name`, `document`</li>
+                      <li>`status` enum `trialing|active|suspended|cancelled`</li>
+                      <li>`timezone`, `locale`</li>
+                      <li>`contact_email`, `contact_phone`, `contact_site`, `contact_address`, `logo_url`</li>
+                      <li>`billing_mode`, `billing_day`, `monthly_payment_amount`</li>
+                      <li>`webhook_enabled`, `webhook_key`</li>
+                      <li>`user_count`, `project_count`, `user_nicks`, `project_segments`</li>
+                      <li>`require_user_store_link`, `require_user_registration`</li>
+                      <li>`metadata`, `legacy_id`, `created_at`, `updated_at`, `deleted_at`</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Relações</h4>
+                    <ul class="relation-list">
+                      <li>1:N com `tenant_users`, `tenant_subscriptions`, `tenant_modules`.</li>
+                      <li>1:N com `tenant_module_limits`, `tenant_store_charges` e `tenant_stores`.</li>
+                      <li>1:N cross-schema com `finance.finance_configs` e `finance.finance_sheets`.</li>
+                      <li>1:N com `presence_connections` e `audit_logs`.</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="example-block">
+                  <h4>Exemplo</h4>
+                  <pre>{
+  "slug": "acme-core",
+  "name": "ACME",
+  "status": "active",
+  "contact_email": "admin@acme.local",
+  "legacy_id": 4,
+  "require_user_store_link": true
+}</pre>
+                </div>
+                <p class="table-notes">`legacy_id` é compatibilidade. A loja canônica do shell agora está em `tenant_stores`, enquanto `tenant_store_charges` ficou subordinada a ela por `store_id` obrigatório e campos-espelho de compatibilidade.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">users</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Identidade global da plataforma.</p>
+                <div class="detail-grid">
+                  <div>
+                    <h4>Campos</h4>
+                    <ul class="field-list">
+                      <li>`id` uuid PK</li>
+                      <li>`name`, `display_name`, `email` citext unique</li>
+                      <li>`password_hash`, `phone`, `avatar_url`, `nick`</li>
+                      <li>`status` enum `active|inactive|blocked|pending_invite`</li>
+                      <li>`is_platform_admin`, `two_factor_enabled`</li>
+                      <li>`email_verified_at`, `last_login_at`</li>
+                      <li>`preferences`, `metadata`, `legacy_id`</li>
+                      <li>`created_at`, `updated_at`, `deleted_at`</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Relações</h4>
+                    <ul class="relation-list">
+                      <li>1:N com `tenant_users`.</li>
+                      <li>1:N com `user_sessions`, `auth_password_resets`.</li>
+                      <li>1:N com grants e auditoria por `created_by_user_id`, `assigned_by_user_id` e `granted_by_user_id`.</li>
+                    </ul>
+                  </div>
+                </div>
+                <h4>Exemplo</h4>
+                <pre>{
+  "email": "root@core.local",
+  "name": "Platform Root",
+  "status": "active",
+  "is_platform_admin": true
+}</pre>
+                <p class="table-notes">Esta é a identidade canônica. Todos os usuários locais em outros módulos deveriam convergir para referências desta tabela.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_users</span><span class="status status-current">Atual + compatibilidade</span></summary>
+              <div class="table-body">
+                <p class="table-role">Vínculo entre usuário global e tenant, com papel de negócio e nível de acesso.</p>
+                <div class="detail-grid">
+                  <div>
+                    <h4>Campos</h4>
+                    <ul class="field-list">
+                      <li>`id` uuid PK; `tenant_id` FK; `user_id` FK</li>
+                      <li>`status` enum `invited|active|suspended`; `is_owner`</li>
+                      <li>`job_title`, `invited_by_user_id`, `joined_at`, `last_seen_at`</li>
+                      <li>`access_level` com conjunto final `admin|manager|marketing|finance|viewer|consultant`</li>
+                      <li>`user_type` com conjunto `admin|client`</li>
+                      <li>`business_role` com conjunto `consultant|store_manager|marketing|finance|general_manager|owner|viewer|system_admin`</li>
+                      <li>`store_id` nullable apontando para `tenant_stores(id)`</li>
+                      <li>`registration_number`, `metadata`, `created_at`, `updated_at`</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Relações</h4>
+                    <ul class="relation-list">
+                      <li>N:1 com `tenants` e `users`.</li>
+                      <li>1:N com `tenant_user_modules`.</li>
+                      <li>1:N com `tenant_user_roles`.</li>
+                    </ul>
+                  </div>
+                </div>
+                <h4>Exemplo</h4>
+                <pre>{
+  "tenant": "acme-core",
+  "user": "admin@acme.local",
+  "status": "active",
+  "is_owner": true,
+  "access_level": "admin",
+  "business_role": "owner"
+}</pre>
+                <p class="table-notes">É uma das tabelas mais sensíveis do shell, porque acumula a transição entre o vocabulário antigo de acesso e o modelo novo.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">roles</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Papel RBAC global ou específico por tenant/módulo.</p>
+                <div class="detail-grid">
+                  <div>
+                    <h4>Campos</h4>
+                    <ul class="field-list">
+                      <li>`id` uuid PK</li>
+                      <li>`tenant_id` FK nullable; `module_id` FK nullable</li>
+                      <li>`code`, `name`, `description`</li>
+                      <li>`is_system`, `is_active`, `metadata`, `created_at`, `updated_at`</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Relações</h4>
+                    <ul class="relation-list">
+                      <li>1:N com `role_permissions`.</li>
+                      <li>1:N com `tenant_user_roles`.</li>
+                    </ul>
+                  </div>
+                </div>
+                <h4>Exemplo</h4>
+                <pre>{
+  "code": "tenant_admin",
+  "name": "Tenant Admin",
+  "is_system": true,
+  "tenant_id": null,
+  "module_id": null
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">permissions</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Permissões atômicas usadas pelo RBAC.</p>
+                <div class="detail-grid">
+                  <div>
+                    <h4>Campos</h4>
+                    <ul class="field-list">
+                      <li>`id` uuid PK</li>
+                      <li>`code` unique, `name`, `description`</li>
+                      <li>`module_id` FK nullable</li>
+                      <li>`is_active`, `metadata`, `created_at`</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Exemplo</h4>
+                    <pre>{
+  "code": "tenant.users.invite",
+  "name": "Invite tenant users",
+  "module_id": "core_panel"
+}</pre>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">role_permissions</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Ligação N:N entre papéis e permissões.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK</li>
+                  <li>`role_id` FK</li>
+                  <li>`permission_id` FK</li>
+                  <li>`created_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "role": "tenant_admin",
+  "permission": "tenant.users.update"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_user_roles</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Atribuição efetiva de papel RBAC a um usuário de tenant.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_user_id` FK; `role_id` FK</li>
+                  <li>`assigned_by_user_id` FK nullable</li>
+                  <li>`assigned_at`, `metadata`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "tenant_user": "admin@acme.local@acme-core",
+  "role": "tenant_admin",
+  "metadata": {"bootstrap": "migration_0016"}
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_user_modules</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Grant de módulo por usuário dentro do tenant.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `tenant_user_id` FK; `module_id` FK</li>
+                  <li>`status` enum `active|inactive`</li>
+                  <li>`granted_by_user_id` FK nullable</li>
+                  <li>`granted_at`, `revoked_at`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "tenant": "acme-core",
+  "user": "agente@acme.local",
+  "module": "atendimento",
+  "status": "active"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">user_sessions</span><span class="status status-technical">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">Sessão ativa, revogada ou expirada do shell.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `user_id` FK; `tenant_id` FK nullable</li>
+                  <li>`session_token_hash` unique; `refresh_token_hash` nullable</li>
+                  <li>`ip`, `user_agent`, `device_name`</li>
+                  <li>`status` enum `active|revoked|expired`</li>
+                  <li>`last_seen_at`, `expires_at`, `revoked_at`, `metadata`, `created_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "user": "root@core.local",
+  "status": "active",
+  "device_name": "Chrome Windows",
+  "tenant_id": null
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">auth_session_settings</span><span class="status status-technical">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">TTL de sessão por escopo.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`scope_key` PK</li>
+                  <li>`ttl_minutes`</li>
+                  <li>`updated_by_user_id` FK nullable</li>
+                  <li>`created_at`, `updated_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "scope_key": "shell-admin",
+  "ttl_minutes": 480
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">auth_password_resets</span><span class="status status-technical">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">Trilha de recuperação de senha do shell.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `user_id` FK; `email` citext</li>
+                  <li>`code_hash`, `attempts`, `status`</li>
+                  <li>`requested_ip`, `requested_user_agent`</li>
+                  <li>`expires_at`, `used_at`, `created_at`, `updated_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "email": "admin@acme.local",
+  "status": "pending",
+  "attempts": 0
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">audit_logs</span><span class="status status-technical">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">Auditoria administrativa do shell.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id`, `user_id`, `module_id` nullable</li>
+                  <li>`action`, `entity_type`, `entity_id`</li>
+                  <li>`before_data`, `after_data`, `metadata`, `created_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "action": "tenant.modules.update",
+  "entity_type": "tenant_module",
+  "metadata": {"source": "admin-panel"}
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">presence_connections</span><span class="status status-technical">Técnico-operacional</span></summary>
+              <div class="table-body">
+                <p class="table-role">Conexão e presença do usuário em canais de realtime do shell.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `user_id` FK; `module_id` FK nullable</li>
+                  <li>`connection_id`, `channel`, `status`</li>
+                  <li>`last_ping_at`, `connected_at`, `disconnected_at`, `metadata`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "tenant": "acme-core",
+  "user": "admin@acme.local",
+  "channel": "admin-dashboard",
+  "status": "connected"
+}</pre>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Módulos, plano, assinatura e pricing</h3>
+
+            <details class="table-detail" open>
+              <summary><span class="table-name">modules</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Catálogo mestre de módulos da plataforma.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `code` unique; `name`; `description`</li>
+                  <li>`is_active`, `is_core`</li>
+                  <li>`base_price_monthly`, `base_price_yearly`, `billing_currency`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "code": "atendimento",
+  "name": "Atendimento",
+  "base_price_monthly": 200.0,
+  "billing_currency": "BRL"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">plans</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Catálogo comercial de planos.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `code` unique; `name`; `status`</li>
+                  <li>`is_custom`, `currency`</li>
+                  <li>`price_monthly`, `price_yearly`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <h4>Exemplo</h4>
+                <pre>{
+  "code": "pro",
+  "name": "Pro",
+  "status": "active",
+  "price_monthly": 199.9,
+  "price_yearly": 1990.0
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">plan_modules</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Define os módulos incluídos em cada plano.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `plan_id` FK; `module_id` FK</li>
+                  <li>`enabled`, `metadata`, `created_at`</li>
+                </ul>
+                <pre>{
+  "plan": "pro",
+  "module": "kanban",
+  "enabled": true
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">plan_module_limits</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Limites padrão do módulo dentro do plano.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `plan_id` FK; `module_id` FK</li>
+                  <li>`limit_key`</li>
+                  <li>`limit_value_int`, `limit_value_numeric`, `limit_value_bool`, `limit_value_json`</li>
+                  <li>`is_unlimited`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "plan": "starter",
+  "module": "atendimento",
+  "limit_key": "users",
+  "limit_value_int": 1
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_subscriptions</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Assinatura ativa ou histórica do tenant.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `plan_id` FK</li>
+                  <li>`status` enum `trialing|active|past_due|cancelled`</li>
+                  <li>`billing_cycle` enum `monthly|yearly`</li>
+                  <li>`starts_at`, `ends_at`, `trial_ends_at`, `price_snapshot`, `currency`</li>
+                  <li>`external_provider`, `external_subscription_id`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "demo-core",
+  "plan": "pro",
+  "status": "active",
+  "billing_cycle": "monthly",
+  "price_snapshot": 199.9
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_modules</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Módulo realmente ativado no tenant.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `module_id` FK</li>
+                  <li>`status` enum `active|inactive|suspended`</li>
+                  <li>`source` enum `plan|addon|custom`</li>
+                  <li>`activated_at`, `deactivated_at`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "acme-core",
+  "module": "core_panel",
+  "status": "active",
+  "source": "plan"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_module_limits</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Override de limite por tenant e módulo.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `module_id` FK</li>
+                  <li>`limit_key`</li>
+                  <li>`limit_value_int`, `limit_value_numeric`, `limit_value_bool`, `limit_value_json`</li>
+                  <li>`is_unlimited`, `source`, `notes`, `created_by_user_id`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "acme-core",
+  "module": "atendimento",
+  "limit_key": "instances",
+  "limit_value_int": 1,
+  "source": "migration_0016"
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_module_pricing</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Precificação customizada por tenant e módulo.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `module_id` FK</li>
+                  <li>`pricing_mode` enum lógico `fixed|percent_discount|amount_discount`</li>
+                  <li>`fixed_price_monthly`, `fixed_price_yearly`, `discount_percent`, `discount_amount`</li>
+                  <li>`notes`, `created_by_user_id`, `metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "acme-core",
+  "module": "atendimento",
+  "pricing_mode": "fixed",
+  "fixed_price_monthly": 149.9
+}</pre>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_store_charges</span><span class="status status-legacy">Legado em transição</span></summary>
+              <div class="table-body">
+                <p class="table-role">Overlay financeiro por loja do tenant. O diretório canônico já não mora mais aqui.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK; `store_id` FK obrigatória</li>
+                  <li>`store_name` e `sort_order` como espelho de compatibilidade; `amount`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "acme-core",
+  "storeId": "33000000-0000-4000-8000-000000000014",
+  "store_name": "Shopping Jardins",
+  "amount": 0.0
+}</pre>
+                <p class="table-notes">`store_name` e `sort_order` são sincronizados por trigger a partir de `tenant_stores`, e a FK composta `(tenant_id, store_id)` impede divergência de tenant. O próximo passo é remover leituras operacionais residuais dessa tabela.</p>
+              </div>
+            </details>
+
+            <details class="table-detail">
+              <summary><span class="table-name">tenant_stores</span><span class="status status-current">Atual</span></summary>
+              <div class="table-body">
+                <p class="table-role">Diretório global de lojas do shell.</p>
+                <h4>Campos</h4>
+                <ul class="field-list">
+                  <li>`id` uuid PK; `tenant_id` FK</li>
+                  <li>`code`, `name`, `city`</li>
+                  <li>`is_active`, `sort_order`</li>
+                  <li>`metadata`, `created_at`, `updated_at`</li>
+                </ul>
+                <pre>{
+  "tenant": "perola-core",
+  "code": "garcia",
+  "name": "Garcia",
+  "city": "Blumenau",
+  "is_active": true
+}</pre>
+                <p class="table-notes">Esta é a loja canônica da plataforma. `tenant_users.store_id` já aponta para esta tabela, módulos convergidos como `fila_atendimento` também a referenciam diretamente, e `tenant_store_charges` ficou subordinada a ela por `store_id` obrigatório.</p>
+              </div>
+            </details>
+          </section>
+
+          <section class="group-card">
+            <h3>Fronteira do financeiro</h3>
+            <p class="table-role">O bloco `finance_*` foi extraído do `platform_core` e agora vive em schema próprio `finance`, preservando apenas a referência compartilhada ao tenant canônico do shell.</p>
+            <p class="table-notes">O catálogo detalhado atualizado do financeiro está em <a href="finance.html">finance.html</a>.</p>
+          </section>
+        </div>
+      </article>
+    </section>
+
+    <p class="footer-note">Síntese: `platform_core` continua sendo o centro absoluto da plataforma para identidade, tenant, grants e auditoria. A Fase 1 do banco já consolidou a loja canônica em `tenant_stores`; o próximo trabalho aqui é tirar o backend dos resíduos operacionais de `tenant_store_charges` e seguir limpando compatibilidades antigas.</p>
+  </main>
+</body>
+</html>

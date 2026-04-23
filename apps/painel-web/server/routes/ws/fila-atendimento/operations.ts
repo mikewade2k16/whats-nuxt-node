@@ -1,3 +1,1 @@
-import { buildFilaAtendimentoRealtimeProxyHandler } from '~~/server/utils/fila-atendimento-realtime-ws'
-
-export default buildFilaAtendimentoRealtimeProxyHandler('operations')
+export { default } from '@fila-atendimento/server/routes/ws/fila-atendimento/operations'

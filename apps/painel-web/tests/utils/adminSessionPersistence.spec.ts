@@ -36,26 +36,28 @@ describe("admin session persistence", () => {
     expect(window.localStorage.getItem("admin:login:remembered-email")).toBeNull();
   });
 
-  it("persiste apenas a preferencia de sessao e nao grava token no browser", () => {
+  it("persiste snapshot no localStorage quando o modo e persistente", () => {
     persistAdminSessionSnapshot(STORAGE_KEYS, {
       token: "token-local",
       userRaw: '{"id":"u-1"}',
       expiresAt: "2026-04-09T12:00:00Z"
     }, "persistent");
 
-    expect(window.localStorage.getItem(STORAGE_KEYS.tokenKey)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEYS.tokenKey)).toBe("token-local");
+    expect(window.localStorage.getItem(STORAGE_KEYS.userKey)).toBe('{"id":"u-1"}');
+    expect(window.localStorage.getItem(STORAGE_KEYS.expiresAtKey)).toBe("2026-04-09T12:00:00Z");
     expect(window.sessionStorage.getItem(STORAGE_KEYS.tokenKey)).toBeNull();
     expect(getAdminSessionPersistenceMode()).toBe("persistent");
     expect(isPersistentAdminSessionPreferred()).toBe(true);
     expect(readAdminSessionSnapshot(STORAGE_KEYS)).toEqual({
-      token: null,
-      userRaw: null,
-      expiresAt: null,
+      token: "token-local",
+      userRaw: '{"id":"u-1"}',
+      expiresAt: "2026-04-09T12:00:00Z",
       mode: "persistent"
     });
   });
 
-  it("atualiza o modo para sessao sem manter snapshot local", () => {
+  it("move o snapshot para sessionStorage quando o modo muda para sessao", () => {
     persistAdminSessionSnapshot(STORAGE_KEYS, {
       token: "token-local",
       userRaw: '{"id":"u-1"}',
@@ -69,13 +71,17 @@ describe("admin session persistence", () => {
     }, "session");
 
     expect(window.localStorage.getItem(STORAGE_KEYS.tokenKey)).toBeNull();
-    expect(window.sessionStorage.getItem(STORAGE_KEYS.tokenKey)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEYS.userKey)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEYS.expiresAtKey)).toBeNull();
+    expect(window.sessionStorage.getItem(STORAGE_KEYS.tokenKey)).toBe("token-session");
+    expect(window.sessionStorage.getItem(STORAGE_KEYS.userKey)).toBe('{"id":"u-2"}');
+    expect(window.sessionStorage.getItem(STORAGE_KEYS.expiresAtKey)).toBe("2026-04-10T12:00:00Z");
     expect(getAdminSessionPersistenceMode()).toBe("session");
     expect(isPersistentAdminSessionPreferred()).toBe(false);
     expect(readAdminSessionSnapshot(STORAGE_KEYS)).toEqual({
-      token: null,
-      userRaw: null,
-      expiresAt: null,
+      token: "token-session",
+      userRaw: '{"id":"u-2"}',
+      expiresAt: "2026-04-10T12:00:00Z",
       mode: "session"
     });
   });
