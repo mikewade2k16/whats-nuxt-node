@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Block legacy Actions runtimes
         run: |
@@ -35,7 +35,7 @@ jobs:
         working-directory: apps/atendimento-online-api
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -60,7 +60,7 @@ jobs:
         working-directory: apps/painel-web
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -108,7 +108,7 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -221,7 +221,7 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Start stack
         run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api
@@ -289,7 +289,7 @@ jobs:
       API_DB_SEED_ON_BOOT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Start stack
         run: docker compose -f docker-compose.dev.yml up -d --build postgres redis plataforma-api atendimento-online-api atendimento-online-worker
